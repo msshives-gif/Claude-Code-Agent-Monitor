@@ -24,5 +24,7 @@
     "monitor": "监控",
     "health": "健康状态"
   },
-  "toolCallGroup": "{{count}} 次工具调用"
+  "toolCallGroup": "{{count}} 次工具调用",
+  "toolCallGroup_one": "{{count}} 次工具调用",
+  "toolCallGroup_other": "{{count}} 次工具调用"
 }

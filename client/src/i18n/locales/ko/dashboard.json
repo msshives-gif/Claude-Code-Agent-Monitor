@@ -24,5 +24,7 @@
     "monitor": "모니터",
     "health": "상태"
   },
-  "toolCallGroup": "도구 호출 {{count}}회"
+  "toolCallGroup": "도구 호출 {{count}}회",
+  "toolCallGroup_one": "도구 호출 {{count}}회",
+  "toolCallGroup_other": "도구 호출 {{count}}회"
 }

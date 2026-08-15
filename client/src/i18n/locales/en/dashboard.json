@@ -24,5 +24,7 @@
     "monitor": "Monitor",
     "health": "Health"
   },
-  "toolCallGroup": "{{count}} tool calls"
+  "toolCallGroup": "{{count}} tool calls",
+  "toolCallGroup_one": "{{count}} tool call",
+  "toolCallGroup_other": "{{count}} tool calls"
 }

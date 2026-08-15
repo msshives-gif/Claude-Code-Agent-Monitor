@@ -24,5 +24,7 @@
     "monitor": "Monitor",
     "health": "Estado"
   },
-  "toolCallGroup": "{{count}} llamadas a herramientas"
+  "toolCallGroup": "{{count}} llamadas a herramientas",
+  "toolCallGroup_one": "{{count}} llamada a herramienta",
+  "toolCallGroup_other": "{{count}} llamadas a herramientas"
 }

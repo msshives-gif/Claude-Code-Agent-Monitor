@@ -24,5 +24,7 @@
     "monitor": "Giám sát",
     "health": "Tình trạng"
   },
-  "toolCallGroup": "{{count}} lượt gọi công cụ"
+  "toolCallGroup": "{{count}} lượt gọi công cụ",
+  "toolCallGroup_one": "{{count}} lượt gọi công cụ",
+  "toolCallGroup_other": "{{count}} lượt gọi công cụ"
 }
