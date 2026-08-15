@@ -20,5 +20,6 @@
   "failedLoad": "Failed to load data",
   "activeTrend": " active",
   "totalTrend": " in active sessions",
-  "toolCallGroup": "{{count}} tool calls"
+  "toolCallGroup_one": "{{count}} tool call",
+  "toolCallGroup_other": "{{count}} tool calls"
 }

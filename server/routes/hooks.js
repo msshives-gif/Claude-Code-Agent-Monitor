@@ -1225,22 +1225,42 @@ function isLoopbackRequest(req) {
 }
 
 // Persist the hook handler's owner-process report onto the session row so the
-// liveness reaper can check the exact process. Guarded to loopback requests
-// and re-written only when the identity actually changed (`claude --resume`
-// gives a session a NEW process, so this must track the latest report).
+// liveness reaper can check the exact process, re-written only when the
+// identity actually changed (`claude --resume` gives a session a NEW process,
+// so this must track the latest report).
 //
-// A loopback event WITHOUT a valid report clears any stored owner: a resumed
-// session whose ancestry lookup failed must not keep the previous process's
-// identity — once that stale PID dies, the reaper would treat its death as
-// authoritative and reap the live resumed session. Clearing degrades it to
-// the cwd fallback instead (the pre-owner-pid behavior).
+// Clearing rules, both directions of staleness:
+//   - A NON-loopback event for a session that HAS a recorded owner clears it:
+//     the session is now evidenced from elsewhere (forwarded/proxied), so the
+//     locally-recorded process identity no longer describes it — once that
+//     stale PID died, the reaper would authoritatively complete the live
+//     session. Clearing degrades it to the conservative cwd fallback.
+//   - A loopback event whose sender report is present but invalid (the
+//     handler's explicit `{lookupFailed: true}`, or a malformed/token-less
+//     claim) clears likewise: the handler looked and could not identify the
+//     current owner, so a previous process's identity must not survive a
+//     resume. An ABSENT sender makes no claim either way — API clients other
+//     than the hook handler (e.g. the MCP event tool) post events without
+//     one, and they must not erase a valid identity.
 function recordSessionOwner(req, sessionId) {
   try {
-    if (!isLoopbackRequest(req)) return;
     const sess = stmts.getSession.get(sessionId);
     if (!sess) return;
+    const clear = () => {
+      if (sess.owner_pid != null || sess.owner_pid_start != null) {
+        stmts.setSessionOwnerPid.run(null, null, sessionId);
+      }
+    };
+    if (!isLoopbackRequest(req)) {
+      clear();
+      return;
+    }
     const sender = req.body?.sender;
-    const pid = sender && Number.isInteger(sender.pid) && sender.pid > 1 ? sender.pid : null;
+    if (sender === undefined || sender === null) return; // no claim made
+    const pid =
+      typeof sender === "object" && Number.isInteger(sender.pid) && sender.pid > 1
+        ? sender.pid
+        : null;
     // The start token is mandatory: it is the PID-reuse guard, and the exact
     // probe refuses token-less rows. Bounded to reject garbage payloads.
     const start =
@@ -1248,9 +1268,7 @@ function recordSessionOwner(req, sessionId) {
         ? sender.start
         : null;
     if (pid === null || start === null) {
-      if (sess.owner_pid != null || sess.owner_pid_start != null) {
-        stmts.setSessionOwnerPid.run(null, null, sessionId);
-      }
+      clear();
       return;
     }
     if (sess.owner_pid === pid && sess.owner_pid_start === start) return;

@@ -79,8 +79,12 @@ const RECENT_USER_MESSAGES_LIMIT = 2;
 // typed: local slash-command invocations/output and the caveat preamble
 // Claude Code writes before locally-generated messages. These must never
 // become a session descriptor.
+// Harness-injected turns recorded with role:"user" that no human typed:
+// slash-command plumbing, background-task notifications, inter-session
+// mailbox/teammate traffic, and channel relays. Surfacing these as "prompts"
+// dumps raw XML into session cards.
 const SYNTHETIC_USER_TEXT_RE =
-  /^<(?:command-name|command-message|local-command-stdout|local-command-caveat)>/;
+  /^<(?:command-name|command-message|local-command-stdout|local-command-caveat|task-notification|teammate-message|agent-message|cross-session-message|channel\b|system-reminder)/;
 
 /**
  * Extract the human-typed text of a user transcript entry, or null when the

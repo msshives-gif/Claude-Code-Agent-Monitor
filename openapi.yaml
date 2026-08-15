@@ -1261,6 +1261,18 @@ components:
             transcript_path:
               type: string
           additionalProperties: true
+        sender:
+          type: object
+          nullable: true
+          description: 'Owner-process report attached by the local hook handler: either { pid, start } identifying the provider CLI process that owns the session (start = PID-reuse-guard start-of-process token), or { lookupFailed: true } when the ancestry walk could not identify it (which clears any recorded owner). Honored only on direct-loopback requests; other API clients should omit this field entirely (an absent sender makes no ownership claim).'
+          properties:
+            pid:
+              type: integer
+            start:
+              type: string
+            lookupFailed:
+              type: boolean
+          additionalProperties: false
     HookEventResponse:
       type: object
       required:

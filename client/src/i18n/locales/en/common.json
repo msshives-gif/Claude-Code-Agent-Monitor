@@ -84,6 +84,8 @@
   },
   "cost": {
     "model": "Model",
+    "model_one": "Model",
+    "model_other": "Models",
     "cost": "Cost",
     "totalCost": "Total Cost",
     "totalEstimatedCost": "Total Estimated Cost"
@@ -188,5 +190,9 @@
     }
   },
   "examples": "Examples",
-  "help": "Help"
+  "help": "Help",
+  "contextGauge": {
+    "title": "Context window used: {{used}} of {{window}} tokens ({{pct}}%)",
+    "tokens": "{{used}} / {{window}} tokens"
+  }
 }

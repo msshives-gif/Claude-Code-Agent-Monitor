@@ -84,6 +84,8 @@
   },
   "cost": {
     "model": "모델",
+    "model_one": "모델",
+    "model_other": "모델",
     "cost": "비용",
     "totalCost": "총 비용",
     "totalEstimatedCost": "총 예상 비용"
@@ -188,5 +190,9 @@
     }
   },
   "examples": "예시",
-  "help": "도움말"
+  "help": "도움말",
+  "contextGauge": {
+    "title": "컨텍스트 윈도우 사용량: {{window}} 토큰 중 {{used}} ({{pct}}%)",
+    "tokens": "{{used}} / {{window}} 토큰"
+  }
 }

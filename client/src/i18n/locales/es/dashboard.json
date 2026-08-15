@@ -20,5 +20,6 @@
   "failedLoad": "No se pudieron cargar los datos",
   "activeTrend": " activo",
   "totalTrend": " en sesiones activas",
-  "toolCallGroup": "{{count}} llamadas a herramientas"
+  "toolCallGroup_one": "{{count}} llamada a herramienta",
+  "toolCallGroup_other": "{{count}} llamadas a herramientas"
 }

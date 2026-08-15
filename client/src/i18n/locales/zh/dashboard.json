@@ -20,5 +20,6 @@
   "failedLoad": "数据加载失败",
   "activeTrend": " 活跃",
   "totalTrend": "（活跃会话中）",
-  "toolCallGroup": "{{count}} 次工具调用"
+  "toolCallGroup_one": "{{count}} 次工具调用",
+  "toolCallGroup_other": "{{count}} 次工具调用"
 }
