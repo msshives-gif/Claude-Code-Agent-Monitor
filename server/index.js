@@ -583,6 +583,13 @@ function startCodexSessionSync(broadcast) {
   } = require("./lib/codex-ingest");
   const liveness = require("./lib/session-liveness");
   const fingerprints = new Map();
+  // The response-item tool-call backfill (ingestCodexToolEvents) keeps its own
+  // byte cursor, so semantically it is safe to call every sweep — but its
+  // "no-op" early exit still costs a statSync plus two DB lookups per file.
+  // Across thousands of historical rollouts every 4s that is a constant CPU
+  // tax. Run it for every file once per process (backfill), then only for
+  // files whose fingerprint changed.
+  let toolBackfillDone = false;
   let running = false;
   let queued = false;
   let watcher = null;
@@ -630,7 +637,8 @@ function startCodexSessionSync(broadcast) {
           continue;
         }
         const fingerprint = `${stat.size}:${stat.mtimeMs}`;
-        if (fingerprints.get(transcriptPath) !== fingerprint) {
+        const changed = fingerprints.get(transcriptPath) !== fingerprint;
+        if (changed) {
           try {
             // Only retain a successful fingerprint. A temporarily unreadable or
             // malformed rollout must retry on the next sweep rather than being
@@ -644,17 +652,20 @@ function startCodexSessionSync(broadcast) {
             );
           }
         }
-        try {
-          // This independent cursor backfills response-item tool calls from
-          // rollouts imported before Workflows understood Codex. It is a
-          // no-op after the first pass, and also catches records that arrive
-          // without one of Codex's lower-volume lifecycle event messages.
-          publish(ingestCodexToolEvents(transcriptPath));
-        } catch (err) {
-          console.warn(
-            `[CODEX SYNC] Failed to index tools for ${path.basename(transcriptPath)}:`,
-            err.message
-          );
+        if (changed || !toolBackfillDone) {
+          try {
+            // This independent cursor backfills response-item tool calls from
+            // rollouts imported before Workflows understood Codex. It is a
+            // no-op after the first pass, and also catches records that arrive
+            // without one of Codex's lower-volume lifecycle event messages —
+            // hence the full pass once per process, then changed-files-only.
+            publish(ingestCodexToolEvents(transcriptPath));
+          } catch (err) {
+            console.warn(
+              `[CODEX SYNC] Failed to index tools for ${path.basename(transcriptPath)}:`,
+              err.message
+            );
+          }
         }
         // Cold history can contain hundreds of large JSONL files. Yielding in
         // modest batches lets fs.watch/hook callbacks and WebSocket delivery
@@ -663,6 +674,9 @@ function startCodexSessionSync(broadcast) {
           await new Promise((resolve) => setImmediate(resolve));
         }
       }
+      // Only after one complete pass over every discovered transcript has the
+      // backfill actually covered the full corpus.
+      toolBackfillDone = true;
       for (const result of reconcileCodexSessionLiveness()) publish(result);
     } catch {
       // Codex is optional; an unreadable/missing home must not affect startup.
@@ -775,6 +789,7 @@ function startCodexSessionSync(broadcast) {
   // response has been sent so a large history never delays the UI action.
   onCodexHomeChanged(() => {
     fingerprints.clear();
+    toolBackfillDone = false; // new home → new corpus needs one full backfill pass
     watchSessionsDir();
     watchCodexHome();
     setImmediate(() => void runSweep());

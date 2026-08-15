@@ -90,20 +90,24 @@ function findCodexTranscripts(root = getCodexSessionsDir(), options = {}) {
         (entry.name.startsWith("rollout-") || options.includeAllJsonl)
       ) {
         rememberTranscriptPath(fullPath);
-        files.push(fullPath);
+        // Stat once here rather than inside the sort comparator below — with
+        // thousands of historical rollouts a comparator statSync turns one
+        // discovery pass into O(n log n) stat syscalls (measured 25k+ per
+        // sweep on a 4k-file corpus).
+        let mtimeMs = 0;
+        try {
+          mtimeMs = fs.statSync(fullPath).mtimeMs;
+        } catch {
+          /* sort unstattable files last */
+        }
+        files.push({ path: fullPath, mtimeMs });
       }
     }
   }
   // New/active rollouts must win over a large historical backlog. The syncer
   // yields between files, but this ordering ensures a just-created session is
   // visible on the first cooperative slice rather than after every old file.
-  return files.sort((a, b) => {
-    try {
-      return fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs;
-    } catch {
-      return 0;
-    }
-  });
+  return files.sort((a, b) => b.mtimeMs - a.mtimeMs).map((file) => file.path);
 }
 
 /**

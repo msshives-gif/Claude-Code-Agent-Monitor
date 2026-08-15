@@ -16,6 +16,21 @@ const MAX_TEXT = 500;
 const MAX_LINE_BYTES = 16 * 1024 * 1024;
 const MAX_SCAN_BYTES = 32 * 1024 * 1024;
 const READ_CHUNK_BYTES = 1024 * 1024;
+// How long a parse of a since-grown transcript may be served from cache. The
+// size+mtime cache key can never hit while a file is being appended to, so
+// without this floor a burst of list requests (e.g. the dashboard reloading on
+// every hook-driven WebSocket event) re-parses a multi-MB active transcript
+// once per request. Task summaries tolerate a couple seconds of staleness.
+// Tunable via DASHBOARD_TASK_SUMMARY_TTL_MS; 0 disables the floor (every
+// change re-parses immediately, the pre-TTL behavior). Read lazily so tests
+// and operators can adjust it without a restartable module-load dependency.
+const FRESH_PARSE_TTL_MS = 2_000;
+function freshParseTtlMs() {
+  const raw = process.env.DASHBOARD_TASK_SUMMARY_TTL_MS;
+  if (raw === undefined || raw === "") return FRESH_PARSE_TTL_MS;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? value : FRESH_PARSE_TTL_MS;
+}
 const cache = new Map();
 const RESET_ALL_EVENT_TYPES = new Set(["UserPromptSubmit"]);
 const FINALIZE_ALL_EVENT_TYPES = new Set(["Stop", "SessionEnd", "Interrupted"]);
@@ -529,7 +544,11 @@ function parseTranscript(filePath, owner) {
   }
   const key = `${filePath}:${owner.id}:${owner.type}`;
   const cached = cache.get(key);
-  if (cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) {
+  if (
+    cached &&
+    ((cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) ||
+      Date.now() - cached.parsedAt < freshParseTtlMs())
+  ) {
     cache.delete(key);
     cache.set(key, cached);
     return cached.observations;
@@ -582,7 +601,7 @@ function parseTranscript(filePath, owner) {
   } catch {
     return [];
   }
-  cacheSet(key, { size: stat.size, mtimeMs: stat.mtimeMs, observations });
+  cacheSet(key, { size: stat.size, mtimeMs: stat.mtimeMs, parsedAt: Date.now(), observations });
   return observations;
 }
 
@@ -628,7 +647,14 @@ function observationFromEvent(event, agentsById) {
   });
 }
 
+// A JSONL transcript is append-only, so its first timestamp never changes —
+// cache it per path. Without this, every list request re-opens (with a 1 MiB
+// read buffer) every discovered subagent file just to re-read line one.
+const timestampCache = new Map();
+const MAX_TIMESTAMP_CACHE_ENTRIES = 2_000;
+
 function transcriptTimestamp(filePath) {
+  if (timestampCache.has(filePath)) return timestampCache.get(filePath);
   let timestamp = null;
   try {
     parseFileLines(filePath, (line) => {
@@ -642,6 +668,13 @@ function transcriptTimestamp(filePath) {
     });
   } catch {
     return null;
+  }
+  // Only a found timestamp is immutable; a file with none yet may gain one.
+  if (timestamp) {
+    timestampCache.set(filePath, timestamp);
+    while (timestampCache.size > MAX_TIMESTAMP_CACHE_ENTRIES) {
+      timestampCache.delete(timestampCache.keys().next().value);
+    }
   }
   return timestamp;
 }

@@ -755,16 +755,56 @@ describe("task progress extraction", () => {
     ]);
   });
 
-  it("invalidates the stat cache when a transcript grows", () => {
+  it("invalidates the stat cache when a transcript grows (TTL disabled)", () => {
+    // TTL 0 restores immediate re-parse on growth; the default TTL's
+    // serve-stale window is covered by the next test.
+    process.env.DASHBOARD_TASK_SUMMARY_TTL_MS = "0";
+    try {
+      const root = tempRoot();
+      const transcript = path.join(root, "growing.jsonl");
+      writeJsonl(transcript, [
+        claudeToolUse("2026-08-07T10:00:00.000Z", "todo-1", "TodoWrite", {
+          todos: [{ content: "Inspect", status: "in_progress" }],
+        }),
+      ]);
+      const first = extractSessionTaskProgress({
+        session: { id: "growing", provider: "claude" },
+        mainTranscriptPath: transcript,
+      });
+      assert.equal(first.snapshot.completed, 0);
+
+      fs.appendFileSync(
+        transcript,
+        `${JSON.stringify(
+          claudeToolUse("2026-08-07T10:01:00.000Z", "todo-2", "TodoWrite", {
+            todos: [{ content: "Inspect", status: "completed" }],
+          })
+        )}\n`
+      );
+
+      const second = extractSessionTaskProgress({
+        session: { id: "growing", provider: "claude" },
+        mainTranscriptPath: transcript,
+      });
+      assert.equal(second.snapshot.completed, 1);
+    } finally {
+      delete process.env.DASHBOARD_TASK_SUMMARY_TTL_MS;
+    }
+  });
+
+  it("serves a just-parsed result for a grown transcript within the TTL", () => {
+    // Default TTL: a burst of requests against an actively-appended transcript
+    // must not re-parse per request — the second read inside the window sees
+    // the cached (stale) snapshot, and clearing the cache forces a fresh one.
     const root = tempRoot();
-    const transcript = path.join(root, "growing.jsonl");
+    const transcript = path.join(root, "growing-ttl.jsonl");
     writeJsonl(transcript, [
       claudeToolUse("2026-08-07T10:00:00.000Z", "todo-1", "TodoWrite", {
         todos: [{ content: "Inspect", status: "in_progress" }],
       }),
     ]);
     const first = extractSessionTaskProgress({
-      session: { id: "growing", provider: "claude" },
+      session: { id: "growing-ttl", provider: "claude" },
       mainTranscriptPath: transcript,
     });
     assert.equal(first.snapshot.completed, 0);
@@ -778,10 +818,17 @@ describe("task progress extraction", () => {
       )}\n`
     );
 
-    const second = extractSessionTaskProgress({
-      session: { id: "growing", provider: "claude" },
+    const stale = extractSessionTaskProgress({
+      session: { id: "growing-ttl", provider: "claude" },
       mainTranscriptPath: transcript,
     });
-    assert.equal(second.snapshot.completed, 1);
+    assert.equal(stale.snapshot.completed, 0);
+
+    clearTaskProgressCache();
+    const fresh = extractSessionTaskProgress({
+      session: { id: "growing-ttl", provider: "claude" },
+      mainTranscriptPath: transcript,
+    });
+    assert.equal(fresh.snapshot.completed, 1);
   });
 });

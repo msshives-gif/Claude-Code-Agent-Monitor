@@ -240,9 +240,24 @@ export function Sessions() {
   }, [filter, search, cwds, sortBy, sortDesc]);
 
   useEffect(() => {
+    // Trailing throttle: session_updated arrives on nearly every hook event
+    // from every active session, and each un-throttled load() is an expensive
+    // include_task_progress request server-side. Collapse bursts to at most
+    // one load per window; the trailing call keeps the list current.
+    const THROTTLE_MS = 2_000;
+    const throttleRef = { timer: null as ReturnType<typeof setTimeout> | null, lastRun: 0 };
+    const scheduleLoad = () => {
+      if (throttleRef.timer) return; // trailing run already scheduled
+      const wait = Math.max(0, THROTTLE_MS - (Date.now() - throttleRef.lastRun));
+      throttleRef.timer = setTimeout(() => {
+        throttleRef.timer = null;
+        throttleRef.lastRun = Date.now();
+        load();
+      }, wait);
+    };
     return eventBus.subscribe((msg) => {
       if (msg.type === "session_created" || msg.type === "session_updated") {
-        load();
+        scheduleLoad();
       }
       if (msg.type === "new_event") {
         const ev = msg.data as DashboardEvent;
@@ -255,7 +270,7 @@ export function Sessions() {
             ev.tool_name || ""
           )
         ) {
-          load();
+          scheduleLoad();
         }
       }
       if (msg.type === "run_status") {
@@ -264,9 +279,9 @@ export function Sessions() {
       // A remote source finished syncing: new remote sessions may have landed.
       if (msg.type === "remote_source.status") {
         loadSourceLabels();
-        if (isRemoteDataRefreshMessage(msg)) load();
+        if (isRemoteDataRefreshMessage(msg)) scheduleLoad();
       } else if (isRemoteDataRefreshMessage(msg)) {
-        load();
+        scheduleLoad();
       }
     });
     // loadDashboardRuns is a stable useCallback declared below; referenced at
