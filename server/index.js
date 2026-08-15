@@ -703,10 +703,14 @@ function startCodexSessionSync(broadcast) {
   let debounce;
   const schedule = () => {
     if (debounce) return;
+    // A live Codex process appends to its WAL near-continuously; each sweep is
+    // a full discovery pass (directory walk + state-DB read + `ps` probe), so
+    // coalesce watcher bursts to at most ~1 sweep/second rather than one per
+    // 150ms. Sub-second card latency isn't worth a background full scan loop.
     debounce = setTimeout(() => {
       debounce = null;
       void runSweep();
-    }, 150);
+    }, 1_000);
     if (debounce.unref) debounce.unref();
   };
   function watchSessionsDir() {
@@ -758,11 +762,12 @@ function startCodexSessionSync(broadcast) {
     try {
       const nextWatcher = fs.watch(codexHome, { recursive: false }, (_event, filename) => {
         const name = filename && path.basename(String(filename));
-        if (
-          !name ||
-          name === "session_index.jsonl" ||
-          /^state_\d+\.sqlite(?:-(wal|shm))?$/.test(name)
-        ) {
+        // Deliberately NOT matching the `-shm` sidecar: SQLite touches it on
+        // every WAL-mode reader open — including this sweep's own read-only
+        // open of the state DB — so reacting to it makes each sweep schedule
+        // the next one, a self-sustaining full-scan loop. Durable changes
+        // always reach the main file or `-wal`, which still match.
+        if (!name || name === "session_index.jsonl" || /^state_\d+\.sqlite(?:-wal)?$/.test(name)) {
           schedule();
         }
       });
