@@ -638,7 +638,10 @@ function getErrorPropagation(statusFilter) {
   // "errors" and dominated the error rate. They are split into their own
   // metric below; the error rate keeps only genuine failures. The `%` after
   // `rate_limit` also matches ingest variants that omit the colon.
-  const THROTTLE_SUMMARY = "rate_limit%";
+  // ESCAPE'd literal underscore: bare `_` is a single-char LIKE wildcard and
+  // would also match "rate limit…"/"rate-limit…" summaries that may be
+  // genuine errors from other providers.
+  const THROTTLE_SUMMARY = "rate\\_limit%";
 
   // Also capture error events (Stop with error summary, API errors from transcripts)
   const eventErrors = db
@@ -646,7 +649,7 @@ function getErrorPropagation(statusFilter) {
       `SELECT e.summary, COUNT(*) as count
        FROM events e
        WHERE ((e.event_type = 'Stop' AND e.summary LIKE 'Error in%')
-          OR (e.event_type IN ('APIError', 'codex_error') AND e.summary NOT LIKE ?))${eventSessions.clause}
+          OR (e.event_type IN ('APIError', 'codex_error') AND e.summary NOT LIKE ? ESCAPE '\\'))${eventSessions.clause}
        GROUP BY e.summary ORDER BY count DESC LIMIT 10`
     )
     .all(THROTTLE_SUMMARY, ...eventSessions.params);
@@ -657,7 +660,7 @@ function getErrorPropagation(statusFilter) {
     .prepare(
       `SELECT e.summary, COUNT(*) as count
        FROM events e
-       WHERE e.event_type IN ('APIError', 'codex_error') AND e.summary LIKE ?${eventSessions.clause}
+       WHERE e.event_type IN ('APIError', 'codex_error') AND e.summary LIKE ? ESCAPE '\\'${eventSessions.clause}
        GROUP BY e.summary ORDER BY count DESC LIMIT 10`
     )
     .all(THROTTLE_SUMMARY, ...eventSessions.params);
@@ -672,7 +675,7 @@ function getErrorPropagation(statusFilter) {
         UNION
         SELECT DISTINCT session_id as id FROM events
         WHERE ((event_type = 'Stop' AND summary LIKE 'Error in%')
-           OR (event_type IN ('APIError', 'codex_error') AND summary NOT LIKE ?))${sf.clause}
+           OR (event_type IN ('APIError', 'codex_error') AND summary NOT LIKE ? ESCAPE '\\'))${sf.clause}
       )`
     )
     .get(...ss.params, ...sf.params, THROTTLE_SUMMARY, ...sf.params).c;
@@ -681,7 +684,7 @@ function getErrorPropagation(statusFilter) {
   const throttledSessions = db
     .prepare(
       `SELECT COUNT(DISTINCT session_id) as c FROM events
-       WHERE event_type IN ('APIError', 'codex_error') AND summary LIKE ?${sf.clause}`
+       WHERE event_type IN ('APIError', 'codex_error') AND summary LIKE ? ESCAPE '\\'${sf.clause}`
     )
     .get(THROTTLE_SUMMARY, ...sf.params).c;
   const totalSessions = db

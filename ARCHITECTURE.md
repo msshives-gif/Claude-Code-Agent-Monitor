@@ -486,7 +486,7 @@ graph TD
     DASH --> SC1["StatCard x6<br/>(sessions/agents/subagents/<br/>events today/total events/cost)<br/>3-column grid"]
     DASH --> AC1["AgentCard[]<br/>with collapsible subagent hierarchy"]
     DASH --> EV1["Event rows"]
-    DASH --> HEALTH["SystemHealthTab<br/>(health score ring, storage donut,<br/>cache/error/success gauges,<br/>tool bars, subagent effectiveness,<br/>model tokens, compaction stats)"]
+    DASH --> HEALTH["SystemHealthTab<br/>(health score ring, storage donut,<br/>cache/error/success/limits gauges,<br/>tool bars, subagent effectiveness,<br/>model tokens, compaction stats)"]
 
     KANBAN --> COL["Agents view: 4 columns<br/>(working/waiting/<br/>completed/error)<br/>Sessions view: 5 columns<br/>(active/waiting/completed/<br/>error/abandoned)"]
     COL --> AC2["AgentCard[]"]
