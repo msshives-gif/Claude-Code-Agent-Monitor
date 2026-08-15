@@ -20,5 +20,6 @@
   "failedLoad": "Không thể tải dữ liệu",
   "activeTrend": " đang hoạt động",
   "totalTrend": " trong phiên hoạt động",
-  "toolCallGroup": "{{count}} lượt gọi công cụ"
+  "toolCallGroup_one": "{{count}} lượt gọi công cụ",
+  "toolCallGroup_other": "{{count}} lượt gọi công cụ"
 }

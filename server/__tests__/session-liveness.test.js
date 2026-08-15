@@ -603,7 +603,7 @@ describe("owner-pid exact liveness (cwd-drift fix)", () => {
     assert.equal(sess.owner_pid_start, "b");
   });
 
-  it("a loopback event without a sender clears a stale recorded owner", async () => {
+  it("the handler's explicit lookup-failure report clears a stale recorded owner", async () => {
     // Resume path whose ancestry lookup failed: keeping the OLD process's
     // identity would let its death reap the live resumed session.
     const sid = "opid0000-0000-0000-0000-000000000008";
@@ -618,7 +618,56 @@ describe("owner-pid exact liveness (cwd-drift fix)", () => {
     await req("POST", "/api/hooks/event", {
       hook_type: "UserPromptSubmit",
       data: { session_id: sid, cwd },
+      sender: { lookupFailed: true },
     });
+    const sess = stmts.getSession.get(sid);
+    assert.equal(sess.owner_pid, null);
+    assert.equal(sess.owner_pid_start, null);
+  });
+
+  it("a sender-less loopback event (non-handler API client) leaves a recorded owner untouched", async () => {
+    // The MCP event tool and other API clients post events with no sender at
+    // all — they make no ownership claim and must not erase a valid identity
+    // (that would reintroduce the cwd-drift false reap until the next hook).
+    const sid = "opid0000-0000-0000-0000-00000000000b";
+    const cwd = "/tmp/liveness-owner-preserve";
+    await req("POST", "/api/hooks/event", {
+      hook_type: "SessionStart",
+      data: { session_id: sid, cwd },
+      sender: { pid: 600, start: "f" },
+    });
+    await req("POST", "/api/hooks/event", {
+      hook_type: "UserPromptSubmit",
+      data: { session_id: sid, cwd },
+    });
+    const sess = stmts.getSession.get(sid);
+    assert.equal(sess.owner_pid, 600);
+    assert.equal(sess.owner_pid_start, "f");
+  });
+
+  it("a forwarded event for an owned session clears the local owner identity", async () => {
+    // The session is now evidenced from elsewhere (proxied/household path) —
+    // a locally-recorded PID no longer describes it, and once that stale PID
+    // died the reaper would authoritatively complete the live session.
+    const sid = "opid0000-0000-0000-0000-00000000000c";
+    const cwd = "/tmp/liveness-owner-migrated";
+    await req("POST", "/api/hooks/event", {
+      hook_type: "SessionStart",
+      data: { session_id: sid, cwd },
+      sender: { pid: 700, start: "g" },
+    });
+    assert.equal(stmts.getSession.get(sid).owner_pid, 700);
+
+    await req(
+      "POST",
+      "/api/hooks/event",
+      {
+        hook_type: "UserPromptSubmit",
+        data: { session_id: sid, cwd },
+        sender: { pid: 701, start: "h" },
+      },
+      { "X-Forwarded-For": "192.168.1.50" }
+    );
     const sess = stmts.getSession.get(sid);
     assert.equal(sess.owner_pid, null);
     assert.equal(sess.owner_pid_start, null);
@@ -713,6 +762,19 @@ describe("probeAgentPidLive / findAgentAncestor — real-process behavior", () =
       // if it happens to exist it won't be a claude process.
       const verdict = realProbeAgentPidLive(4194304, "any-token", "claude");
       assert.deepEqual(verdict, { available: true, alive: false });
+    });
+  });
+
+  const linuxOnly = process.platform === "linux" ? it : it.skip;
+  linuxOnly("EPERM (exists, can't signal) yields no answer, not a death verdict", () => {
+    withProbeEnabled(() => {
+      // PID 2 is kthreadd (root-owned) on Linux; kill(2, 0) as non-root gives
+      // EPERM. Nothing guarantees the dashboard and CLI share a UID, so this
+      // must fall back to the conservative cwd probe instead of reaping.
+      if (process.getuid && process.getuid() === 0) return; // root can signal it
+      if (!fs.existsSync("/proc/2")) return;
+      const verdict = realProbeAgentPidLive(2, "any-token", "claude");
+      assert.deepEqual(verdict, { available: false, alive: false });
     });
   });
 

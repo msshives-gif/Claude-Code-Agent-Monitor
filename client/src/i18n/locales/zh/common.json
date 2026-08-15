@@ -84,6 +84,8 @@
   },
   "cost": {
     "model": "模型",
+    "model_one": "模型",
+    "model_other": "模型",
     "cost": "费用",
     "totalCost": "总费用",
     "totalEstimatedCost": "预估总费用"
@@ -188,5 +190,9 @@
     }
   },
   "examples": "示例",
-  "help": "帮助"
+  "help": "帮助",
+  "contextGauge": {
+    "title": "上下文窗口已用：{{used}} / {{window}} 个 token（{{pct}}%）",
+    "tokens": "{{used}} / {{window}} token"
+  }
 }

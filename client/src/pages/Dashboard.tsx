@@ -983,10 +983,19 @@ function groupActivity(events: DashboardEvent[]): ActivityItem[] {
   return items;
 }
 
-/** "Read ×3, Bash ×2" — tool names by frequency within a collapsed group. */
+/** A tool CALL is one PreToolUse/PostToolUse pair — counting raw events would
+ * show one Read as "2 tool calls". Each call has exactly one PreToolUse, so
+ * count those; a group holding only PostToolUse rows (its Pre fell outside
+ * the fetched window) falls back to its own row count. */
+function toolCallEvents(events: DashboardEvent[]): DashboardEvent[] {
+  const pres = events.filter((e) => e.event_type === "PreToolUse");
+  return pres.length > 0 ? pres : events;
+}
+
+/** "Read ×3, Bash ×2" — tool names by call frequency within a collapsed group. */
 function toolGroupBreakdown(events: DashboardEvent[]): string {
   const counts = new Map<string, number>();
-  for (const e of events) {
+  for (const e of toolCallEvents(events)) {
     const name = e.tool_name || "?";
     counts.set(name, (counts.get(name) || 0) + 1);
   }
@@ -1573,11 +1582,19 @@ export function Dashboard() {
                         }
                         const newest = item.events[0];
                         if (!newest) return null;
-                        // A lone tool event needs no group chrome.
-                        if (item.events.length === 1) {
+                        // A single tool CALL needs no group chrome — that
+                        // covers both a lone event and a complete Pre/Post
+                        // pair, which render as their newest semantic row.
+                        if (item.events.length <= 2 && toolCallEvents(item.events).length <= 1) {
                           return eventRow(newest, newest.id ?? `t-${i}`);
                         }
-                        const groupKey = String(newest.id ?? `g-${i}`);
+                        // WS-pushed events carry no DB id — key on the stable
+                        // (session, newest timestamp) pair rather than the list
+                        // index, which re-points to a different group as the
+                        // feed shifts and would expand the wrong run.
+                        const groupKey = String(
+                          newest.id ?? `${item.sessionId}:${newest.created_at}`
+                        );
                         const expanded = expandedActivityGroups.has(groupKey);
                         return (
                           <div key={groupKey}>
@@ -1598,7 +1615,7 @@ export function Dashboard() {
                                 <ChevronRight className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
                               )}
                               <span className="text-sm text-gray-400 truncate flex-1">
-                                {t("toolCallGroup", { count: item.events.length })}
+                                {t("toolCallGroup", { count: toolCallEvents(item.events).length })}
                                 <span className="text-gray-500">
                                   {" · "}
                                   {toolGroupBreakdown(item.events)}

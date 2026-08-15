@@ -9,6 +9,8 @@
  * @author Son Nguyen <hoangson091104@gmail.com>
  */
 
+import { useTranslation } from "react-i18next";
+import { Gauge } from "lucide-react";
 import { fmt } from "../lib/format";
 
 /** Warning thresholds, as fractions of the model's context window. */
@@ -32,6 +34,7 @@ interface ContextGaugeProps {
 }
 
 export function ContextGauge({ tokens, window: win, compact, className }: ContextGaugeProps) {
+  const { t } = useTranslation("common");
   if (
     typeof tokens !== "number" ||
     typeof win !== "number" ||
@@ -45,7 +48,11 @@ export function ContextGauge({ tokens, window: win, compact, className }: Contex
   const ratio = Math.min(1, tokens / win);
   const pct = Math.round(ratio * 100);
   const { bar, text } = gaugeColors(ratio);
-  const title = `Context window used: ${tokens.toLocaleString()} of ${win.toLocaleString()} tokens (${pct}%)`;
+  const title = t("contextGauge.title", {
+    used: tokens.toLocaleString(),
+    window: win.toLocaleString(),
+    pct,
+  });
 
   if (compact) {
     return (
@@ -54,6 +61,9 @@ export function ContextGauge({ tokens, window: win, compact, className }: Contex
         title={title}
         data-testid="context-gauge-compact"
       >
+        {/* The icon disambiguates the pill — a bare bar+percent next to cost
+            and time reads as task progress, not context fullness. */}
+        <Gauge className="w-3 h-3" />
         <span className="w-10 h-1.5 rounded-full bg-surface-3/80 overflow-hidden inline-block">
           <span
             className={`block h-full rounded-full ${bar} opacity-80`}
@@ -69,7 +79,7 @@ export function ContextGauge({ tokens, window: win, compact, className }: Contex
     <div className={className} title={title} data-testid="context-gauge">
       <div className="flex items-center justify-between mb-1.5">
         <span className="text-[11px] text-gray-500 font-mono">
-          {fmt(tokens)} / {fmt(win)} tokens
+          {t("contextGauge.tokens", { used: fmt(tokens), window: fmt(win) })}
         </span>
         <span className={`text-[11px] font-mono ${text}`}>{pct}%</span>
       </div>

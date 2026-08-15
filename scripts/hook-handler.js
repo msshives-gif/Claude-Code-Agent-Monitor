@@ -72,8 +72,12 @@ process.stdin.on("end", () => {
     data: parsedData,
   };
 
-  const owner = findOwnerProcess();
-  if (owner) payload.sender = owner;
+  // Always attach a report — success or an explicit failure marker. The
+  // server must distinguish "the handler looked and couldn't identify the
+  // owner" (clear any stale identity) from "some other client posted an
+  // event with no sender at all" (make no claim either way): only the
+  // explicit failure report may clear a recorded owner.
+  payload.sender = findOwnerProcess() || { lookupFailed: true };
 
   // Give the kernel one tick to hand the buffered request bytes to the local
   // server before our sockets close, then exit. The hook returns in ms.

@@ -106,10 +106,15 @@ function readProcessStartToken(pid) {
     }
   }
   try {
+    // LC_ALL=C pins the date format; whitespace is collapsed so the token
+    // compares stably against snapshot-derived captures (ps pads day-of-month).
     const out = execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], {
       encoding: "utf8",
       timeout: 5_000,
-    }).trim();
+      env: { ...process.env, LC_ALL: "C" },
+    })
+      .trim()
+      .replace(/\s+/g, " ");
     return out || null;
   } catch {
     return null;
@@ -183,30 +188,41 @@ function findAgentAncestor(binary = "claude", fromPid = process.ppid) {
     return null;
   }
 
-  // Non-Linux POSIX: single bounded snapshot, walked in memory.
+  // Non-Linux POSIX: ONE bounded snapshot carrying everything the walk and
+  // the reuse-guard token need — a second per-match `ps` would double the
+  // worst-case synchronous stall on the hook path. lstart under LC_ALL=C is
+  // a fixed 5-token date ("Thu Aug 15 04:00:00 2026"); whitespace-collapsed
+  // to match readProcessStartToken's normalization.
   let psOut;
   try {
-    psOut = execFileSync("ps", ["-Ao", "pid=,ppid=,args="], {
+    psOut = execFileSync("ps", ["-Ao", "pid=,ppid=,lstart=,args="], {
       encoding: "utf8",
-      timeout: 5_000,
+      timeout: 2_000,
       maxBuffer: 16 * 1024 * 1024,
+      env: { ...process.env, LC_ALL: "C" },
     });
   } catch {
     return null;
   }
   const parentOf = new Map();
   const argsOf = new Map();
+  const startOf = new Map();
   for (const line of psOut.split("\n")) {
-    const m = line.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/);
+    const m = line.match(/^\s*(\d+)\s+(\d+)\s+(\S+\s+\S+\s+\S+\s+\S+\s+\S+)\s+(.*)$/);
     if (!m) continue;
-    parentOf.set(Number(m[1]), Number(m[2]));
-    argsOf.set(Number(m[1]), m[3]);
+    const p = Number(m[1]);
+    parentOf.set(p, Number(m[2]));
+    startOf.set(p, m[3].replace(/\s+/g, " "));
+    argsOf.set(p, m[4]);
   }
   let pid = fromPid;
   for (let hops = 0; hops < 25 && Number.isInteger(pid) && pid > 1; hops++) {
     const args = argsOf.get(pid);
     if (args === undefined) return null;
-    if (isAgentCommand(args, binary)) return finish(pid);
+    if (isAgentCommand(args, binary)) {
+      const start = startOf.get(pid);
+      return start ? { pid, start } : null;
+    }
     pid = parentOf.get(pid);
   }
   return null;
@@ -240,9 +256,11 @@ function probeAgentPidLive(pid, startToken, binary = "claude") {
     process.kill(pid, 0);
   } catch (err) {
     if (err && err.code === "ESRCH") return { available: true, alive: false };
-    // EPERM: exists but not ours — such a process cannot be a claude we
-    // spawned as this user; treat as reused-by-other → authoritative dead.
-    if (err && err.code === "EPERM") return { available: true, alive: false };
+    // EPERM: the process exists but we can't signal it. That usually means
+    // PID reuse by another user's process — but nothing guarantees the
+    // dashboard and the CLI share a UID (daemonized dashboard, `sudo claude`),
+    // so an authoritative "dead" here could reap a live session. No answer;
+    // the conservative cwd fallback decides.
     return NO_ANSWER;
   }
 

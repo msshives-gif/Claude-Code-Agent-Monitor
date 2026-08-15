@@ -20,5 +20,6 @@
   "failedLoad": "데이터를 불러오지 못했습니다",
   "activeTrend": " 활성",
   "totalTrend": " 활성 세션 기준",
-  "toolCallGroup": "도구 호출 {{count}}회"
+  "toolCallGroup_one": "도구 호출 {{count}}회",
+  "toolCallGroup_other": "도구 호출 {{count}}회"
 }

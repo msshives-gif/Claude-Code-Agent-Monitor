@@ -84,6 +84,8 @@
   },
   "cost": {
     "model": "Mô hình",
+    "model_one": "mô hình",
+    "model_other": "mô hình",
     "cost": "Chi phí",
     "totalCost": "Tổng chi phí",
     "totalEstimatedCost": "Tổng chi phí ước tính"
@@ -188,5 +190,9 @@
     }
   },
   "examples": "Ví dụ",
-  "help": "Trợ giúp"
+  "help": "Trợ giúp",
+  "contextGauge": {
+    "title": "Đã dùng cửa sổ ngữ cảnh: {{used}} trên {{window}} token ({{pct}}%)",
+    "tokens": "{{used}} / {{window}} token"
+  }
 }
