@@ -118,6 +118,25 @@ function accumulateBucket(target, src) {
   return target;
 }
 
+/**
+ * Inverse of accumulateBucket. Used to retract a message's earlier usage
+ * contribution when a later record for the same message.id carries the
+ * final (larger) usage — streaming writes partial usage first. A bucket may
+ * go transiently negative when the retracted contribution was counted in a
+ * previous incremental parse; the merge step nets it out.
+ */
+function subtractBucket(target, src) {
+  target.input -= src.input || 0;
+  target.output -= src.output || 0;
+  target.cacheRead -= src.cacheRead || 0;
+  target.cacheWrite -= src.cacheWrite || 0;
+  target.cacheWrite1h -= src.cacheWrite1h || 0;
+  target.webSearch -= src.webSearch || 0;
+  target.webFetch -= src.webFetch || 0;
+  target.codeExec -= src.codeExec || 0;
+  return target;
+}
+
 module.exports = {
   BUCKET_SEP,
   normalizeSpeed,
@@ -127,4 +146,5 @@ module.exports = {
   emptyBucket,
   extractUsageFields,
   accumulateBucket,
+  subtractBucket,
 };

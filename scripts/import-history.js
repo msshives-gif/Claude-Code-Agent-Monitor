@@ -19,6 +19,7 @@ const {
   bucketKey,
   emptyBucket,
   extractUsageFields,
+  subtractBucket,
   normalizeSpeed,
   normalizeGeo,
   normalizeTier,
@@ -169,6 +170,12 @@ async function parseSessionFile(filePath) {
   let thinkingBlockCount = 0;
   const toolResultErrors = [];
   const usageExtras = { service_tiers: new Set(), speeds: new Set(), inference_geos: new Set() };
+  // One API response spans several JSONL records (one per content block),
+  // each carrying the message's `usage` — summing every record inflates
+  // totals 2-4x, and the copies are not identical: streaming writes partial
+  // usage first, so the LAST record per message.id is authoritative.
+  // Mirrors the reconciliation in server/lib/transcript-cache.js.
+  const usageByMessageId = new Map();
   // Human-readable session title: custom-title (explicit /rename, claude -n)
   // takes precedence over ai-title (auto-generated). Both are append-only
   // metadata lines, so the last value seen wins.
@@ -291,6 +298,11 @@ async function parseSessionFile(filePath) {
       if (!model && msgModel && msgModel !== "<synthetic>") model = msgModel;
       if (msgModel && msgModel !== "<synthetic>" && msg.usage) {
         const usage = msg.usage;
+        const usageMsgId = typeof msg.id === "string" && msg.id ? msg.id : null;
+        if (usageMsgId) {
+          const prev = usageByMessageId.get(usageMsgId);
+          if (prev) subtractBucket(tokensByModel[prev.key], prev.fields);
+        }
         const key = bucketKey(
           msgModel,
           normalizeSpeed(usage),
@@ -305,7 +317,9 @@ async function parseSessionFile(filePath) {
             normalizeTier(usage)
           );
         }
-        accumulateBucket(tokensByModel[key], extractUsageFields(usage));
+        const fields = extractUsageFields(usage);
+        accumulateBucket(tokensByModel[key], fields);
+        if (usageMsgId) usageByMessageId.set(usageMsgId, { key, fields });
       }
       if (msg.usage) {
         if (msg.usage.service_tier) usageExtras.service_tiers.add(msg.usage.service_tier);
@@ -411,6 +425,9 @@ async function parseSubagentFile(filePath) {
   let userMessageCount = 0;
   let assistantMessageCount = 0;
   const tokensByModel = {};
+  // Usage reconciliation (last record per message.id wins) — see the
+  // matching map in parseSessionFile.
+  const usageByMessageId = new Map();
   const toolNames = new Set();
   let thinkingBlockCount = 0;
   // Subagent tool calls aren't broadcast via hooks — they live only in this JSONL.
@@ -475,8 +492,16 @@ async function parseSubagentFile(filePath) {
       const msg = entry.message || {};
       const msgModel = msg.model || null;
       if (!model && msgModel && msgModel !== "<synthetic>") model = msgModel;
+      // Same reconciliation as parseSessionFile: one API response spans
+      // several records (same message.id) whose usage evolves — the last
+      // record is authoritative.
       if (msgModel && msgModel !== "<synthetic>" && msg.usage) {
         const usage = msg.usage;
+        const usageMsgId = typeof msg.id === "string" && msg.id ? msg.id : null;
+        if (usageMsgId) {
+          const prev = usageByMessageId.get(usageMsgId);
+          if (prev) subtractBucket(tokensByModel[prev.key], prev.fields);
+        }
         const key = bucketKey(
           msgModel,
           normalizeSpeed(usage),
@@ -491,7 +516,9 @@ async function parseSubagentFile(filePath) {
             normalizeTier(usage)
           );
         }
-        accumulateBucket(tokensByModel[key], extractUsageFields(usage));
+        const fields = extractUsageFields(usage);
+        accumulateBucket(tokensByModel[key], fields);
+        if (usageMsgId) usageByMessageId.set(usageMsgId, { key, fields });
       }
       const content = msg.content || [];
       if (Array.isArray(content)) {
@@ -798,8 +825,12 @@ function combineSessionTokens(session) {
  * repeatedly: the underlying SQL preserves the highest-seen value via the
  * baseline_* columns, so a re-run never reduces totals.
  */
-function writeSessionTokens(dbModule, sessionId, tokensByModel) {
+function writeSessionTokens(dbModule, sessionId, tokensByModel, options = {}) {
   const { stmts } = dbModule;
+  // resetBaselines: the totals come from a full transcript re-parse and are
+  // the whole truth — zero the compaction baselines instead of letting the
+  // high-water-mark fold preserve a historical over-count.
+  const stmt = options.resetBaselines ? stmts.resetTokenUsage : stmts.replaceTokenUsage;
   let written = 0;
   for (const tokens of Object.values(tokensByModel || {})) {
     if (
@@ -811,7 +842,7 @@ function writeSessionTokens(dbModule, sessionId, tokensByModel) {
       (tokens.webFetch || 0) > 0 ||
       (tokens.codeExec || 0) > 0
     ) {
-      stmts.replaceTokenUsage.run(
+      stmt.run(
         sessionId,
         tokens.model,
         tokens.speed,
@@ -2033,16 +2064,34 @@ async function reconcileTokens(dbModule, options = {}) {
     }
   }
 
-  const known = dbModule.db
-    .prepare("SELECT id FROM sessions WHERE metadata LIKE '%\"imported\":true%'")
-    .all();
+  // options.all widens the sweep from imported sessions to every session
+  // whose transcript is still on disk — needed to repair rows written by the
+  // live ingestion path (they don't carry the imported marker).
+  const known = options.all
+    ? dbModule.db.prepare("SELECT id FROM sessions").all()
+    : dbModule.db
+        .prepare("SELECT id FROM sessions WHERE metadata LIKE '%\"imported\":true%'")
+        .all();
 
   const total = known.length;
   let processed = 0;
 
+  const writeOptions = { resetBaselines: !!options.resetBaselines };
+  // In reset mode the re-derived totals are the whole truth for the session,
+  // so stale bucket rows whose (model, speed, geo, tier) key no longer occurs
+  // in the corrected derivation must not survive — clear before writing.
+  // Workflow rows (service_tier = 'workflow') are owned by workflow-ingest
+  // and derived from run journals, not transcripts — this sweep can't rebuild
+  // them, so it must not delete them.
+  const clearSessionTokens = options.resetBaselines
+    ? dbModule.db.prepare(
+        "DELETE FROM token_usage WHERE session_id = ? AND service_tier != 'workflow'"
+      )
+    : null;
   const tx = dbModule.db.transaction((batch) => {
     for (const { sessionId, tokens } of batch) {
-      const written = writeSessionTokens(dbModule, sessionId, tokens);
+      if (clearSessionTokens) clearSessionTokens.run(sessionId);
+      const written = writeSessionTokens(dbModule, sessionId, tokens, writeOptions);
       if (written > 0) {
         counters.sessionsTouched++;
         counters.modelsWritten += written;
@@ -2085,7 +2134,10 @@ async function reconcileTokens(dbModule, options = {}) {
       }
 
       const tokens = combineSessionTokens(session);
-      if (Object.keys(tokens).length > 0) {
+      // In reset mode an EMPTY corrected derivation still has to reach the
+      // transaction: the session's stale rows must be cleared even when
+      // nothing replaces them.
+      if (Object.keys(tokens).length > 0 || writeOptions.resetBaselines) {
         batch.push({ sessionId, tokens });
         if (batch.length >= FLUSH) {
           tx(batch);
@@ -2127,6 +2179,36 @@ if (require.main === module) {
     }
 
     if (reconcile) {
+      const resetBaselines = process.argv.includes("--reset-baselines");
+      // reconcileTokens has no dry-run support — writes (and in reset mode,
+      // deletes) happen inside its transaction. Refuse rather than pretend.
+      if (dryRun) {
+        console.error("--dry-run is not supported with --reconcile-tokens; aborting.");
+        process.exit(1);
+      }
+      // The reset repair re-derives totals from transcripts parsed OUTSIDE
+      // the write transaction, so a live dashboard ingesting hooks in
+      // parallel can be clobbered with a stale reading (lost update). Refuse
+      // while a dashboard answers on any known port.
+      if (resetBaselines) {
+        const { resolveAllDashboardPorts } = require("../server/lib/server-info");
+        for (const port of resolveAllDashboardPorts()) {
+          try {
+            const res = await fetch(`http://127.0.0.1:${port}/api/health`, {
+              signal: AbortSignal.timeout(1000),
+            });
+            if (res.ok) {
+              console.error(
+                `A dashboard server is running on port ${port} — stop it before running` +
+                  ` --reconcile-tokens --reset-baselines (live hook ingestion races the repair).`
+              );
+              process.exit(1);
+            }
+          } catch {
+            /* no server answering on this port — safe */
+          }
+        }
+      }
       const dbModule = require("../server/db");
       const before = dbModule.db
         .prepare(
@@ -2139,6 +2221,8 @@ if (require.main === module) {
         )
         .get();
       const result = await reconcileTokens(dbModule, {
+        all: process.argv.includes("--all"),
+        resetBaselines,
         onProgress: ({ processed, total, counters }) => {
           process.stdout.write(
             `  reconciling ${processed}/${total} (touched: ${counters.sessionsTouched}, models: ${counters.modelsWritten})\r`
