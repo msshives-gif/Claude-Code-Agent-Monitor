@@ -240,6 +240,9 @@ function SystemHealthTab() {
     0,
     Math.min(100, workflow.errorPropagation?.errorRate ?? 100 - successRate)
   );
+  // Usage-limit throttling (rate_limit notices) is reported separately from
+  // errors — being rate-limited is a subscription state, not a failure.
+  const throttleRate = Math.max(0, Math.min(100, workflow.errorPropagation?.throttleRate ?? 0));
   const cacheHitRate = Math.max(
     0,
     Math.min(
@@ -552,7 +555,7 @@ function SystemHealthTab() {
           </div>
 
           {/* Sub-metrics row */}
-          <div className="grid grid-cols-4 gap-2 border-t border-border/40 pt-3">
+          <div className="grid grid-cols-5 gap-2 border-t border-border/40 pt-3">
             <Tip
               block
               raw={`Cache Hit Rate: ${cacheHitRate.toFixed(1)}%\nHits: ${info.transcript_cache?.hits ?? 0}\nMisses: ${info.transcript_cache?.misses ?? 0}`}
@@ -566,7 +569,7 @@ function SystemHealthTab() {
             </Tip>
             <Tip
               block
-              raw={`Error Rate: ${errorRate.toFixed(2)}%\n<5% = healthy, 5-15% = warning, >15% = critical`}
+              raw={`Error Rate: ${errorRate.toFixed(2)}%\n<5% = healthy, 5-15% = warning, >15% = critical\nUsage-limit throttling is excluded — see Limits.`}
             >
               <div className="text-center cursor-default">
                 <p className="text-[9px] text-gray-600 uppercase">Errors</p>
@@ -574,6 +577,19 @@ function SystemHealthTab() {
                   className={`text-xs font-mono font-bold ${errorRate < 5 ? "text-emerald-400" : errorRate < 15 ? "text-amber-400" : "text-red-400"}`}
                 >
                   {errorRate.toFixed(1)}%
+                </p>
+              </div>
+            </Tip>
+            <Tip
+              block
+              raw={`Sessions throttled by usage limits (rate_limit): ${throttleRate.toFixed(1)}%\nA subscription hitting its usage window — not a failure, so it does not count toward Errors or the health score.`}
+            >
+              <div className="text-center cursor-default">
+                <p className="text-[9px] text-gray-600 uppercase">Limits</p>
+                <p
+                  className={`text-xs font-mono font-bold ${throttleRate < 10 ? "text-gray-300" : "text-amber-400"}`}
+                >
+                  {throttleRate.toFixed(1)}%
                 </p>
               </div>
             </Tip>

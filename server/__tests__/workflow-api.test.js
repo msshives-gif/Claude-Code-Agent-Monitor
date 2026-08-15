@@ -194,3 +194,51 @@ describe("GET /api/sessions/:id includes workflows[]", () => {
     assert.ok(r.body.workflows.some((w) => w.run_id === "wf_apitest1"));
   });
 });
+
+describe("GET /api/workflows errorPropagation — throttling vs errors", () => {
+  it("classifies rate_limit APIError events as throttling, not errors", async () => {
+    const { stmts } = require("../db");
+
+    // Step 1: a session whose only "errors" are usage-limit notices, with the
+    // per-retry duplication a real limit wait produces. It must move the
+    // throttle metric and leave the error metric untouched.
+    stmts.insertSession.run("wfapi-throttled-1", "Throttled", "active", "/tmp/t1", null, null);
+    for (let i = 0; i < 5; i++) {
+      stmts.insertEvent.run(
+        "wfapi-throttled-1",
+        null,
+        "APIError",
+        null,
+        "rate_limit: You've hit your session limit · resets 12:40am",
+        null
+      );
+    }
+    const afterThrottle = (await fetchJson("/api/workflows")).body.errorPropagation;
+    assert.equal(afterThrottle.throttledSessions, 1, "throttled once, retry spam deduplicated");
+    assert.ok(afterThrottle.throttleRate > 0);
+    assert.ok(
+      afterThrottle.throttleEvents.some((e) => e.summary.startsWith("rate_limit") && e.count === 5),
+      "throttle rows grouped with their retry count"
+    );
+    assert.ok(
+      afterThrottle.eventErrors.every((e) => !e.summary.startsWith("rate_limit")),
+      "rate_limit rows excluded from eventErrors"
+    );
+    const errorSessionsBaseline = afterThrottle.sessionsWithErrors;
+
+    // Step 2: a genuine failure in a second session moves ONLY the error
+    // metric — proving the two counters are disjoint.
+    stmts.insertSession.run("wfapi-brokenerr-1", "Broken", "active", "/tmp/t2", null, null);
+    stmts.insertEvent.run(
+      "wfapi-brokenerr-1",
+      null,
+      "APIError",
+      null,
+      "server_error: API Error: 529 Overloaded",
+      null
+    );
+    const afterError = (await fetchJson("/api/workflows")).body.errorPropagation;
+    assert.equal(afterError.sessionsWithErrors, errorSessionsBaseline + 1);
+    assert.equal(afterError.throttledSessions, 1, "throttle count unchanged by a real error");
+  });
+});
