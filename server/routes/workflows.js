@@ -632,16 +632,35 @@ function getErrorPropagation(statusFilter) {
     )
     .all(...sf.params);
 
+  // Rate-limit notices are THROTTLING, not failures. A subscription hitting
+  // its usage window writes one `rate_limit: …` APIError transcript record
+  // per retry attempt, so a single evening at the limit produced hundreds of
+  // "errors" and dominated the error rate. They are split into their own
+  // metric below; the error rate keeps only genuine failures. The `%` after
+  // `rate_limit` also matches ingest variants that omit the colon.
+  const THROTTLE_SUMMARY = "rate_limit%";
+
   // Also capture error events (Stop with error summary, API errors from transcripts)
   const eventErrors = db
     .prepare(
       `SELECT e.summary, COUNT(*) as count
        FROM events e
        WHERE ((e.event_type = 'Stop' AND e.summary LIKE 'Error in%')
-          OR e.event_type IN ('APIError', 'codex_error'))${eventSessions.clause}
+          OR (e.event_type IN ('APIError', 'codex_error') AND e.summary NOT LIKE ?))${eventSessions.clause}
        GROUP BY e.summary ORDER BY count DESC LIMIT 10`
     )
-    .all(...eventSessions.params);
+    .all(THROTTLE_SUMMARY, ...eventSessions.params);
+
+  // Throttle events, grouped the same way (deduplicates the per-retry spam
+  // into one row per distinct limit message).
+  const throttleEvents = db
+    .prepare(
+      `SELECT e.summary, COUNT(*) as count
+       FROM events e
+       WHERE e.event_type IN ('APIError', 'codex_error') AND e.summary LIKE ?${eventSessions.clause}
+       GROUP BY e.summary ORDER BY count DESC LIMIT 10`
+    )
+    .all(THROTTLE_SUMMARY, ...eventSessions.params);
 
   // Error rate per session (sessions with error status OR sessions with error events)
   const sessionsWithErrors = db
@@ -653,10 +672,18 @@ function getErrorPropagation(statusFilter) {
         UNION
         SELECT DISTINCT session_id as id FROM events
         WHERE ((event_type = 'Stop' AND summary LIKE 'Error in%')
-           OR event_type IN ('APIError', 'codex_error'))${sf.clause}
+           OR (event_type IN ('APIError', 'codex_error') AND summary NOT LIKE ?))${sf.clause}
       )`
     )
-    .get(...ss.params, ...sf.params, ...sf.params).c;
+    .get(...ss.params, ...sf.params, THROTTLE_SUMMARY, ...sf.params).c;
+  // Throttle rate per session — inherently deduplicated (a session counts
+  // once no matter how many retry records its rate-limit wait produced).
+  const throttledSessions = db
+    .prepare(
+      `SELECT COUNT(DISTINCT session_id) as c FROM events
+       WHERE event_type IN ('APIError', 'codex_error') AND summary LIKE ?${sf.clause}`
+    )
+    .get(THROTTLE_SUMMARY, ...sf.params).c;
   const totalSessions = db
     .prepare(`SELECT COUNT(*) as c FROM sessions s WHERE 1=1${ss.clause}`)
     .get(...ss.params).c;
@@ -665,9 +692,12 @@ function getErrorPropagation(statusFilter) {
     byDepth: errorsByDepth,
     byType: errorTypes,
     eventErrors,
+    throttleEvents,
     sessionsWithErrors,
+    throttledSessions,
     totalSessions,
     errorRate: totalSessions > 0 ? +((sessionsWithErrors / totalSessions) * 100).toFixed(1) : 0,
+    throttleRate: totalSessions > 0 ? +((throttledSessions / totalSessions) * 100).toFixed(1) : 0,
   };
 }
 
