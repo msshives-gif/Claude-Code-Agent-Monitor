@@ -588,8 +588,11 @@ function startCodexSessionSync(broadcast) {
   // "no-op" early exit still costs a statSync plus two DB lookups per file.
   // Across thousands of historical rollouts every 4s that is a constant CPU
   // tax. Run it for every file once per process (backfill), then only for
-  // files whose fingerprint changed.
+  // files whose fingerprint changed — plus any file whose last tool-event
+  // ingest threw, so a transient failure retries instead of being skipped
+  // until the file happens to grow.
   let toolBackfillDone = false;
+  const toolIngestFailed = new Set();
   let running = false;
   let queued = false;
   let watcher = null;
@@ -652,15 +655,20 @@ function startCodexSessionSync(broadcast) {
             );
           }
         }
-        if (changed || !toolBackfillDone) {
+        if (changed || !toolBackfillDone || toolIngestFailed.has(transcriptPath)) {
           try {
             // This independent cursor backfills response-item tool calls from
             // rollouts imported before Workflows understood Codex. It is a
             // no-op after the first pass, and also catches records that arrive
             // without one of Codex's lower-volume lifecycle event messages —
             // hence the full pass once per process, then changed-files-only.
+            // A thrown failure (e.g. transient SQLITE_BUSY) re-queues the file
+            // so it retries every sweep until it succeeds — the same retry
+            // property the main-ingest fingerprint above deliberately keeps.
             publish(ingestCodexToolEvents(transcriptPath));
+            toolIngestFailed.delete(transcriptPath);
           } catch (err) {
+            toolIngestFailed.add(transcriptPath);
             console.warn(
               `[CODEX SYNC] Failed to index tools for ${path.basename(transcriptPath)}:`,
               err.message
@@ -795,6 +803,7 @@ function startCodexSessionSync(broadcast) {
   onCodexHomeChanged(() => {
     fingerprints.clear();
     toolBackfillDone = false; // new home → new corpus needs one full backfill pass
+    toolIngestFailed.clear();
     watchSessionsDir();
     watchCodexHome();
     setImmediate(() => void runSweep());

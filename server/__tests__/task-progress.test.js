@@ -831,4 +831,42 @@ describe("task progress extraction", () => {
     });
     assert.equal(fresh.snapshot.completed, 1);
   });
+
+  it("re-parses a grown transcript automatically once the TTL expires", async () => {
+    // Guards against an accidentally-infinite TTL: with a 1ms window, a read
+    // after the window must pick up appended data without any manual clear.
+    process.env.DASHBOARD_TASK_SUMMARY_TTL_MS = "1";
+    try {
+      const root = tempRoot();
+      const transcript = path.join(root, "growing-ttl-expiry.jsonl");
+      writeJsonl(transcript, [
+        claudeToolUse("2026-08-07T10:00:00.000Z", "todo-1", "TodoWrite", {
+          todos: [{ content: "Inspect", status: "in_progress" }],
+        }),
+      ]);
+      const first = extractSessionTaskProgress({
+        session: { id: "growing-ttl-expiry", provider: "claude" },
+        mainTranscriptPath: transcript,
+      });
+      assert.equal(first.snapshot.completed, 0);
+
+      fs.appendFileSync(
+        transcript,
+        `${JSON.stringify(
+          claudeToolUse("2026-08-07T10:01:00.000Z", "todo-2", "TodoWrite", {
+            todos: [{ content: "Inspect", status: "completed" }],
+          })
+        )}\n`
+      );
+      await new Promise((resolve) => setTimeout(resolve, 15));
+
+      const fresh = extractSessionTaskProgress({
+        session: { id: "growing-ttl-expiry", provider: "claude" },
+        mainTranscriptPath: transcript,
+      });
+      assert.equal(fresh.snapshot.completed, 1);
+    } finally {
+      delete process.env.DASHBOARD_TASK_SUMMARY_TTL_MS;
+    }
+  });
 });

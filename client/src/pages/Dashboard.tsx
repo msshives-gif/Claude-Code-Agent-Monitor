@@ -1174,7 +1174,7 @@ export function Dashboard() {
         load();
       }, wait);
     };
-    return eventBus.subscribe((msg: WSMessage) => {
+    const unsubscribe = eventBus.subscribe((msg: WSMessage) => {
       if (
         msg.type === "agent_created" ||
         msg.type === "agent_updated" ||
@@ -1198,6 +1198,12 @@ export function Dashboard() {
         });
       }
     });
+    return () => {
+      unsubscribe();
+      // Drop any pending trailing reload: after cleanup its closure is stale
+      // (old filters/scope) and its response could overwrite newer state.
+      if (throttleRef.timer) clearTimeout(throttleRef.timer);
+    };
   }, [load]);
 
   const wsConnected = useSyncExternalStore(eventBus.onConnection, () => eventBus.connected);

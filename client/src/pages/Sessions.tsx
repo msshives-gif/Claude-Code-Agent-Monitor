@@ -255,7 +255,7 @@ export function Sessions() {
         load();
       }, wait);
     };
-    return eventBus.subscribe((msg) => {
+    const unsubscribe = eventBus.subscribe((msg) => {
       if (msg.type === "session_created" || msg.type === "session_updated") {
         scheduleLoad();
       }
@@ -284,6 +284,12 @@ export function Sessions() {
         scheduleLoad();
       }
     });
+    return () => {
+      unsubscribe();
+      // Drop any pending trailing reload: after cleanup its closure is stale
+      // (old filters/scope) and its response could overwrite newer state.
+      if (throttleRef.timer) clearTimeout(throttleRef.timer);
+    };
     // loadDashboardRuns is a stable useCallback declared below; referenced at
     // event time only (not in deps) to avoid a temporal-dead-zone at render.
   }, [load, loadSourceLabels]);

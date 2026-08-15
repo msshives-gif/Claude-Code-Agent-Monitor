@@ -634,6 +634,7 @@ flowchart LR
 | `DASHBOARD_SESSION_SYNC_MS` | `30000` | 持续 `~/.claude/projects` 后台同步的轮询间隔（毫秒），用于显示启动后才加入、其会话从不经过 Hook 流入的项目。无论如何 `fs.watch` 监听器都会近乎即时触发；该轮询是安全兜底（监听器可能错过事件 / 在网络文件系统上不触发）。设为 `0` 可禁用轮询，同时让监听器保持运行 |
 | `DASHBOARD_CODEX_HOME` | `CODEX_HOME` 或 `~/.codex` | 可选的本地 Codex 状态目录。在设置中保存新位置会持久化此仪表盘专用覆盖、重新启用实时监视，并立即扫描新的 `sessions/` 树。 |
 | `DASHBOARD_CODEX_SYNC_MS` | `4000` | 仅追加 Codex rollout 的安全兜底轮询间隔（毫秒）。Codex Hook 会立即触发同一个增量采集器；设为 `0` 仅禁用轮询，在可用时仍保留文件系统监听器。 |
+| `DASHBOARD_TASK_SUMMARY_TTL_MS` | `2000` | 任务进度缓存的宽限窗口（毫秒），作用于 `include_task_progress` 列表请求**以及**会话详情的 `todo_snapshot`。正在持续追加的转录文件几乎无法命中 size+mtime 缓存键，若无此下限，一连串列表刷新（例如仪表盘随 Hook 驱动的 WebSocket 事件刷新）会导致每个请求都完整重新解析数 MB 的活跃转录。窗口内改为返回刚解析的（略有滞后、仅用于展示的）结果；设为 `0` 恢复每次变更立即重新解析 |
 | `DASHBOARD_REMOTE_SYNC_MS` | `15000` | **远程数据源**后台同步的间隔（毫秒），会独立拉取每个已启用远程的 `~/.claude/projects` 和 `~/.codex/sessions`（另含 Codex 的轻量 `session_index.jsonl` 标题索引），再分别通过本地导入器重新导入。新增或重新启用数据源时也会立即同步一次。设为 `0` 可禁用远程源轮询 |
 | `DASHBOARD_REMOTE_ACTIVE_WINDOW_MS` | `600000`（10 分钟） | **远程数据源**会话实时状态的新鲜度窗口。每次同步时，若远程 Claude Code 或 Codex 会话对应镜像 transcript 的 **JSONL 最后事件**在此窗口内，仍视为运行中（`active`）；镜像停止推进超过该时长后，会话会被协调为 `completed`。远程会话不接收实时 Hook，因此按 provider 的镜像协调取代本地 liveness；失败、缺失或卡住的 provider 镜像会回退到常规 stale 扫描。链路较慢或空闲回合很长时可调大 |
 | `DASHBOARD_REMOTE_SYNC_TIMEOUT_MS` | `600000` | 每个远程源 `scp` 的超时时间 |

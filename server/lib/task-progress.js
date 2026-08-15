@@ -649,12 +649,26 @@ function observationFromEvent(event, agentsById) {
 
 // A JSONL transcript is append-only, so its first timestamp never changes —
 // cache it per path. Without this, every list request re-opens (with a 1 MiB
-// read buffer) every discovered subagent file just to re-read line one.
+// read buffer) every discovered subagent file just to re-read line one. A hit
+// still pays one statSync: a file whose size SHRANK was truncated or replaced
+// at the same path, so the cached first line no longer applies and the entry
+// is dropped. Growth keeps the hit — appends cannot change line one.
 const timestampCache = new Map();
 const MAX_TIMESTAMP_CACHE_ENTRIES = 2_000;
 
 function transcriptTimestamp(filePath) {
-  if (timestampCache.has(filePath)) return timestampCache.get(filePath);
+  let size = null;
+  try {
+    size = fs.statSync(filePath).size;
+  } catch {
+    timestampCache.delete(filePath);
+    return null;
+  }
+  const cached = timestampCache.get(filePath);
+  if (cached) {
+    if (size >= cached.size) return cached.timestamp;
+    timestampCache.delete(filePath);
+  }
   let timestamp = null;
   try {
     parseFileLines(filePath, (line) => {
@@ -671,7 +685,7 @@ function transcriptTimestamp(filePath) {
   }
   // Only a found timestamp is immutable; a file with none yet may gain one.
   if (timestamp) {
-    timestampCache.set(filePath, timestamp);
+    timestampCache.set(filePath, { timestamp, size });
     while (timestampCache.size > MAX_TIMESTAMP_CACHE_ENTRIES) {
       timestampCache.delete(timestampCache.keys().next().value);
     }
@@ -996,6 +1010,7 @@ function extractSessionTaskProgress({
 
 function clearTaskProgressCache() {
   cache.clear();
+  timestampCache.clear();
 }
 
 module.exports = {
