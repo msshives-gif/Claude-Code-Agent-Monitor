@@ -2029,12 +2029,24 @@ export interface ErrorPropagationData {
   /** Top 10 recurring error-event summaries (Stop-with-error, APIError) by count.
    *  Surfaces the most common concrete failure messages. */
   eventErrors: Array<{ summary: string; count: number }>;
+  /** Top 10 recurring usage-limit (`rate_limit:`) notice summaries by count.
+   *  Reported separately from `eventErrors`: being throttled by a
+   *  subscription's usage window is not a failure, and one limit wait writes
+   *  a record per retry attempt — grouping collapses that spam. Optional for
+   *  responses from servers predating the split. */
+  throttleEvents?: Array<{ summary: string; count: number }>;
   /** Sessions with at least one error (agent error, session error, or error event). */
   sessionsWithErrors: number;
+  /** Sessions with at least one usage-limit notice — counted once per session
+   *  regardless of retry-record volume. Optional (see `throttleEvents`). */
+  throttledSessions?: number;
   /** Total sessions considered (denominator for `errorRate`). */
   totalSessions: number;
   /** `sessionsWithErrors` as a percentage of `totalSessions`. */
   errorRate: number;
+  /** `throttledSessions` as a percentage of `totalSessions`. Optional (see
+   *  `throttleEvents`). */
+  throttleRate?: number;
 }
 
 /** One row of the Workflows page's concurrency chart: a role/subagent-type's

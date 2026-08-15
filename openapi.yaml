@@ -6274,7 +6274,7 @@ paths:
       tags:
         - Workflows
       summary: Get workflow intelligence aggregates
-      description: 'Returns the full workflow-intelligence aggregate powering the Workflows analytics page — 11 sections in one payload: `stats` (headline counters: sessions, agents, subagents, success rate, avg depth/duration, compactions, top tool flow), `orchestration` (subagent-type breakdown + delegation edges + outcomes), `toolFlow` (tool-to-tool transitions + tool counts), `effectiveness` (per-subagent-type success rate, avg duration, weekly trend), `patterns` (frequent subagent sequences + solo-session share), `modelDelegation` (model usage for main/sub agents + tokens by model), `errorPropagation` (errors by depth/type + error rate), `concurrency` (averaged agent swim-lane start/end), `complexity` (per-session agent/token/duration rows), `compaction` (compaction counts + tokens recovered), and `cooccurrence` (directed subagent-after-subagent pairs). `status`, `sources`, and `providers` scope every section. Codex tool flow is derived from its persisted `response_item` calls and Codex compactions from `context_compacted` events; Claude-only Workflow-tool journals are not represented as Codex runs. Errors use the SHORT `{ error: { message } }` shape.'
+      description: 'Returns the full workflow-intelligence aggregate powering the Workflows analytics page — 11 sections in one payload: `stats` (headline counters: sessions, agents, subagents, success rate, avg depth/duration, compactions, top tool flow), `orchestration` (subagent-type breakdown + delegation edges + outcomes), `toolFlow` (tool-to-tool transitions + tool counts), `effectiveness` (per-subagent-type success rate, avg duration, weekly trend), `patterns` (frequent subagent sequences + solo-session share), `modelDelegation` (model usage for main/sub agents + tokens by model), `errorPropagation` (errors by depth/type + error rate; usage-limit `rate_limit` notices split out as `throttleEvents`/`throttledSessions`/`throttleRate` so throttling never counts as failure), `concurrency` (averaged agent swim-lane start/end), `complexity` (per-session agent/token/duration rows), `compaction` (compaction counts + tokens recovered), and `cooccurrence` (directed subagent-after-subagent pairs). `status`, `sources`, and `providers` scope every section. Codex tool flow is derived from its persisted `response_item` calls and Codex compactions from `context_compacted` events; Claude-only Workflow-tool journals are not represented as Codex runs. Errors use the SHORT `{ error: { message } }` shape.'
       operationId: getWorkflowIntelligence
       parameters:
         - $ref: '#/components/parameters/WorkflowStatusQuery'
@@ -6389,9 +6389,14 @@ paths:
                   eventErrors:
                     - summary: 'Error in Bash: command not found'
                       count: 5
+                  throttleEvents:
+                    - summary: 'rate_limit: You''ve hit your session limit · resets 12:40am'
+                      count: 554
                   sessionsWithErrors: 33
+                  throttledSessions: 12
                   totalSessions: 412
                   errorRate: 8
+                  throttleRate: 2.9
                 concurrency:
                   aggregateLanes:
                     - name: Main Agent
