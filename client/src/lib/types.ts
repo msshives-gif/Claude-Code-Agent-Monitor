@@ -688,6 +688,14 @@ export interface Session {
    *  active pricing rules. Only present on responses that attach pricing.
    *  Absolute dollars (e.g. `0.42`), already summed across all buckets. */
   cost?: number;
+  /** Context occupancy of the session's newest usage record (input + cache
+   *  read + cache write + output), in tokens. Stamped by hook ingestion from
+   *  the transcript; null/undefined until the first usage record is seen.
+   *  Maps to `sessions.latest_context_tokens`. Drives {@link ContextGauge}. */
+  latest_context_tokens?: number | null;
+  /** Context window (tokens) of the model that produced the latest usage
+   *  record, e.g. 200000 or 1000000. Maps to `sessions.context_window`. */
+  context_window?: number | null;
   /** ISO timestamp set when an agent CLI is blocked waiting for the user
    * (permission prompt or "waiting for your input" notice). Cleared when the
    * source reports that work has resumed. Null when the session is not waiting.

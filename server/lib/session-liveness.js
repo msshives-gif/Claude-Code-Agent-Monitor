@@ -53,6 +53,217 @@ function probeDisabledByEnv() {
 }
 
 /**
+ * Read a process's command line, or `null` when the process is gone.
+ * Throws on non-ENOENT/ESRCH errors so callers can distinguish "dead"
+ * (an authoritative answer) from "couldn't look" (no answer).
+ */
+function readProcessArgs(pid) {
+  if (process.platform === "linux") {
+    try {
+      const raw = fs.readFileSync(`/proc/${pid}/cmdline`, "utf8");
+      return raw.split("\0").filter(Boolean).join(" ") || null;
+    } catch (err) {
+      if (err && (err.code === "ENOENT" || err.code === "ESRCH")) return null;
+      throw err;
+    }
+  }
+  try {
+    const out = execFileSync("ps", ["-o", "args=", "-p", String(pid)], {
+      encoding: "utf8",
+      timeout: 5_000,
+    }).trim();
+    return out || null;
+  } catch (err) {
+    // ps exits non-zero (with empty stdout) when the pid doesn't exist —
+    // that's an authoritative "dead". A missing/failed ps binary is not.
+    if (err && typeof err.status === "number") return null;
+    throw err;
+  }
+}
+
+/**
+ * Opaque start-of-process token used to detect PID reuse: Linux uses the
+ * kernel starttime field (clock ticks since boot, field 22 of /proc/pid/stat);
+ * other POSIX hosts use `ps -o lstart=`. Returns `null` when unavailable.
+ * Two reads of the same live process always return the same token; a reused
+ * PID practically never does.
+ */
+function readProcessStartToken(pid) {
+  if (process.platform === "linux") {
+    try {
+      const raw = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+      // comm (field 2) may contain spaces/parens — split after the LAST ')'.
+      const close = raw.lastIndexOf(")");
+      if (close < 0) return null;
+      const rest = raw
+        .slice(close + 1)
+        .trim()
+        .split(/\s+/);
+      // rest[0] = state (field 3) … starttime is overall field 22 → rest[19].
+      return rest[19] || null;
+    } catch {
+      return null;
+    }
+  }
+  try {
+    const out = execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], {
+      encoding: "utf8",
+      timeout: 5_000,
+    }).trim();
+    return out || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Parent pid of `pid`, or null when it can't be determined. */
+function readParentPid(pid) {
+  if (process.platform === "linux") {
+    try {
+      const raw = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+      const close = raw.lastIndexOf(")");
+      if (close < 0) return null;
+      const rest = raw
+        .slice(close + 1)
+        .trim()
+        .split(/\s+/);
+      const ppid = parseInt(rest[1], 10);
+      return Number.isInteger(ppid) ? ppid : null;
+    } catch {
+      return null;
+    }
+  }
+  try {
+    const out = execFileSync("ps", ["-o", "ppid=", "-p", String(pid)], {
+      encoding: "utf8",
+      timeout: 5_000,
+    }).trim();
+    const ppid = parseInt(out, 10);
+    return Number.isInteger(ppid) ? ppid : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Walk up the process ancestry from `fromPid` looking for the provider CLI
+ * that owns this process tree. Hook handlers are always descendants of the
+ * CLI (claude → sh → node hook-handler), so this identifies the exact process
+ * whose death means the session ended — immune to the cwd drift that breaks
+ * cwd-set matching (the session's recorded cwd follows in-session `cd`; the
+ * CLI process's cwd does not). Returns `{ pid, start }` — with `start` always
+ * a non-empty reuse-guard token — or `null`; never throws. A `null` simply
+ * means callers fall back to the cwd heuristic.
+ *
+ * On Linux the walk reads /proc directly (a few µs per hop). Elsewhere it
+ * takes ONE `ps` snapshot and walks it in memory — per-hop `ps` spawns would
+ * cost hundreds of ms on the hook path, which must never block Claude Code.
+ */
+function findAgentAncestor(binary = "claude", fromPid = process.ppid) {
+  if (process.platform === "win32") return null;
+  const finish = (pid) => {
+    const start = readProcessStartToken(pid);
+    // Without a reuse-guard token the report is not exact enough to act on.
+    return start ? { pid, start } : null;
+  };
+
+  if (process.platform === "linux") {
+    let pid = fromPid;
+    for (let hops = 0; hops < 25 && Number.isInteger(pid) && pid > 1; hops++) {
+      let args;
+      try {
+        args = readProcessArgs(pid);
+      } catch {
+        return null;
+      }
+      if (args === null) return null;
+      if (isAgentCommand(args, binary)) return finish(pid);
+      pid = readParentPid(pid);
+    }
+    return null;
+  }
+
+  // Non-Linux POSIX: single bounded snapshot, walked in memory.
+  let psOut;
+  try {
+    psOut = execFileSync("ps", ["-Ao", "pid=,ppid=,args="], {
+      encoding: "utf8",
+      timeout: 5_000,
+      maxBuffer: 16 * 1024 * 1024,
+    });
+  } catch {
+    return null;
+  }
+  const parentOf = new Map();
+  const argsOf = new Map();
+  for (const line of psOut.split("\n")) {
+    const m = line.match(/^\s*(\d+)\s+(\d+)\s+(.*)$/);
+    if (!m) continue;
+    parentOf.set(Number(m[1]), Number(m[2]));
+    argsOf.set(Number(m[1]), m[3]);
+  }
+  let pid = fromPid;
+  for (let hops = 0; hops < 25 && Number.isInteger(pid) && pid > 1; hops++) {
+    const args = argsOf.get(pid);
+    if (args === undefined) return null;
+    if (isAgentCommand(args, binary)) return finish(pid);
+    pid = parentOf.get(pid);
+  }
+  return null;
+}
+
+/**
+ * Exact per-session liveness: is the recorded owner process still this
+ * session's provider CLI? `available: false` means "no trustworthy answer —
+ * fall back to the cwd probe"; `available: true, alive: false` is an
+ * authoritative death verdict (process gone, or its PID was reused by an
+ * unrelated command / a different CLI instance per the start token).
+ *
+ * A start token is REQUIRED: without the reuse guard, a recycled PID that
+ * happens to be another `claude` would wrongly pin a dead session alive.
+ * (The recorder never stores a token-less owner, so this only rejects rows
+ * written by out-of-tree callers.)
+ */
+function probeAgentPidLive(pid, startToken, binary = "claude") {
+  const NO_ANSWER = { available: false, alive: false };
+  if (probeDisabledByEnv()) return NO_ANSWER;
+  if (process.platform === "win32") return NO_ANSWER;
+  if (isInsideContainer()) return NO_ANSWER;
+  if (!Number.isInteger(pid) || pid <= 1) return NO_ANSWER;
+  if (typeof startToken !== "string" || !startToken) return NO_ANSWER;
+
+  // Signal-0 existence check first: ESRCH is an authoritative "gone" on every
+  // POSIX platform, independent of `ps` exit-code ambiguity (a numeric ps
+  // failure could also mean a permission or operational error, which must
+  // read as "no answer", not "dead").
+  try {
+    process.kill(pid, 0);
+  } catch (err) {
+    if (err && err.code === "ESRCH") return { available: true, alive: false };
+    // EPERM: exists but not ours — such a process cannot be a claude we
+    // spawned as this user; treat as reused-by-other → authoritative dead.
+    if (err && err.code === "EPERM") return { available: true, alive: false };
+    return NO_ANSWER;
+  }
+
+  let args;
+  try {
+    args = readProcessArgs(pid);
+  } catch {
+    return NO_ANSWER;
+  }
+  // kill(0) said it exists, so a null args read here is a race or lookup
+  // failure — no trustworthy answer rather than "dead".
+  if (args === null) return NO_ANSWER;
+  if (!isAgentCommand(args, binary)) return { available: true, alive: false };
+  const current = readProcessStartToken(pid);
+  // Race: the process died between the two reads — no trustworthy answer.
+  if (!current) return NO_ANSWER;
+  if (current !== startToken) return { available: true, alive: false };
+  return { available: true, alive: true };
+}
+
+/**
  * Enumerate the working directories of every live provider CLI process.
  *
  * @returns {{ available: boolean, cwds: Set<string> }} `available: false`
@@ -192,6 +403,8 @@ function probeLiveCodexRollouts() {
 module.exports = {
   probeLiveCwds,
   probeLiveCodexRollouts,
+  findAgentAncestor,
+  probeAgentPidLive,
   isAgentCommand,
   isClaudeCommand,
   isCodexCommand,

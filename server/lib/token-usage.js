@@ -137,6 +137,39 @@ function subtractBucket(target, src) {
   return target;
 }
 
+// ── Model context windows (for the context-fullness gauge) ─────────────────
+// The context a request consumed is exactly what its usage record reports
+// (input + cache read + cache write + output); the window it consumed it FROM
+// depends on the model. Conservative fallback: 200K, the floor for every
+// modern Claude model — a gauge that warns early beats one that never warns.
+const DEFAULT_CONTEXT_WINDOW = 200_000;
+const CONTEXT_WINDOW_1M = 1_000_000;
+
+/** Context window (tokens) for a model id, e.g. "claude-opus-4-6". */
+function contextWindowForModel(model) {
+  if (typeof model !== "string" || !model) return DEFAULT_CONTEXT_WINDOW;
+  const m = model.toLowerCase();
+  // 1M-context Claude models: the Claude 5 family, Opus 4.6+, Sonnet 4.6+.
+  if (/(?:fable|mythos|opus|sonnet)-5\b/.test(m)) return CONTEXT_WINDOW_1M;
+  if (/(?:opus|sonnet)-4-[678]/.test(m)) return CONTEXT_WINDOW_1M;
+  // Codex sessions store OpenAI model ids on the same column. Codex-catalog
+  // windows (not the raw API maximum): spark variants 128K, others 272K.
+  if (/gpt-5[.\d-]*codex-spark/.test(m)) return 128_000;
+  if (/gpt-5/.test(m)) return 272_000;
+  return DEFAULT_CONTEXT_WINDOW;
+}
+
+/**
+ * Context tokens a usage record occupied: everything the request sent plus
+ * what it generated. `null` when the record carries no usage at all.
+ */
+function contextTokensFromUsageFields(fields) {
+  if (!fields || typeof fields !== "object") return null;
+  return (
+    (fields.input || 0) + (fields.cacheRead || 0) + (fields.cacheWrite || 0) + (fields.output || 0)
+  );
+}
+
 module.exports = {
   BUCKET_SEP,
   normalizeSpeed,
@@ -147,4 +180,6 @@ module.exports = {
   extractUsageFields,
   accumulateBucket,
   subtractBucket,
+  contextWindowForModel,
+  contextTokensFromUsageFields,
 };

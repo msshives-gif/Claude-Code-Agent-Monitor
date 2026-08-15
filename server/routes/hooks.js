@@ -18,6 +18,7 @@ const { ingestWorkflowsForSession } = require("../lib/workflow-ingest");
 // Required as a module object (not destructured) so tests can swap
 // `liveness.probeLiveCwds` and the watchdog picks the stub up at call time.
 const liveness = require("../lib/session-liveness");
+const { contextWindowForModel } = require("../lib/token-usage");
 
 const router = Router();
 
@@ -795,6 +796,25 @@ const processEvent = db.transaction((hookType, data) => {
         }
       }
 
+      // Context-fullness stamp: the newest usage record's context occupancy
+      // vs the owning model's window. Change-guarded in SQL so unchanged
+      // readings neither write nor broadcast.
+      if (result.latestContext && Number.isFinite(result.latestContext.tokens)) {
+        const ctxTokens = Math.max(0, Math.round(result.latestContext.tokens));
+        const ctxWindow = contextWindowForModel(result.latestContext.model || latestModel);
+        const upd = stmts.updateSessionContext.run(
+          ctxTokens,
+          ctxWindow,
+          sessionId,
+          ctxTokens,
+          ctxWindow
+        );
+        if (upd.changes > 0) {
+          const refreshed = stmts.getSession.get(sessionId);
+          if (refreshed) broadcast("session_updated", refreshed);
+        }
+      }
+
       // Keep the displayed session name in sync with the transcript title
       // (set via /rename, `claude -n`, or the auto ai-title). Re-read the row
       // so we see any name set earlier in this same transaction.
@@ -1191,6 +1211,55 @@ router.post("/codex", (req, res) => {
   });
 });
 
+// True when the request arrived over loopback DIRECTLY. Owner-PID reports are
+// only meaningful for processes on THIS host — a household-forwarded hook
+// from another machine carries the origin machine's PID, and trusting it
+// would let an unrelated local process keep (or worse, reap) a remote
+// session. A same-host reverse proxy (nginx/Caddy) also connects over
+// loopback while relaying REMOTE senders, so any forwarding header
+// disqualifies the request regardless of socket address.
+function isLoopbackRequest(req) {
+  if (req.headers?.["x-forwarded-for"] || req.headers?.["forwarded"]) return false;
+  const addr = req.socket?.remoteAddress || "";
+  return addr === "127.0.0.1" || addr === "::1" || addr === "::ffff:127.0.0.1";
+}
+
+// Persist the hook handler's owner-process report onto the session row so the
+// liveness reaper can check the exact process. Guarded to loopback requests
+// and re-written only when the identity actually changed (`claude --resume`
+// gives a session a NEW process, so this must track the latest report).
+//
+// A loopback event WITHOUT a valid report clears any stored owner: a resumed
+// session whose ancestry lookup failed must not keep the previous process's
+// identity — once that stale PID dies, the reaper would treat its death as
+// authoritative and reap the live resumed session. Clearing degrades it to
+// the cwd fallback instead (the pre-owner-pid behavior).
+function recordSessionOwner(req, sessionId) {
+  try {
+    if (!isLoopbackRequest(req)) return;
+    const sess = stmts.getSession.get(sessionId);
+    if (!sess) return;
+    const sender = req.body?.sender;
+    const pid = sender && Number.isInteger(sender.pid) && sender.pid > 1 ? sender.pid : null;
+    // The start token is mandatory: it is the PID-reuse guard, and the exact
+    // probe refuses token-less rows. Bounded to reject garbage payloads.
+    const start =
+      pid !== null && typeof sender.start === "string" && sender.start && sender.start.length <= 64
+        ? sender.start
+        : null;
+    if (pid === null || start === null) {
+      if (sess.owner_pid != null || sess.owner_pid_start != null) {
+        stmts.setSessionOwnerPid.run(null, null, sessionId);
+      }
+      return;
+    }
+    if (sess.owner_pid === pid && sess.owner_pid_start === start) return;
+    stmts.setSessionOwnerPid.run(pid, start, sessionId);
+  } catch {
+    /* fail-safe — liveness falls back to the cwd probe */
+  }
+}
+
 router.post("/event", (req, res) => {
   const { hook_type, data } = req.body;
   if (!hook_type || !data) {
@@ -1205,6 +1274,8 @@ router.post("/event", (req, res) => {
       error: { code: "MISSING_SESSION", message: "session_id is required in data" },
     });
   }
+
+  if (data.session_id) recordSessionOwner(req, data.session_id);
 
   res.json({ ok: true, event: result });
 
@@ -1602,50 +1673,68 @@ function livenessReap({ ignoreIdleGate = false, provider = "claude" } = {}) {
   // transcript), so the local process probe must leave them alone.
   const activeSessions = db
     .prepare(
-      `SELECT id, name, cwd, transcript_path, updated_at FROM sessions
+      `SELECT id, name, cwd, transcript_path, updated_at, owner_pid, owner_pid_start FROM sessions
        WHERE status = 'active'
          AND (source = 'local' OR source IS NULL)
          AND COALESCE(provider, 'claude') = ?
-         AND ((cwd IS NOT NULL AND cwd <> '') OR (? = 'codex' AND transcript_path IS NOT NULL))`
+         AND ((cwd IS NOT NULL AND cwd <> '')
+              OR owner_pid IS NOT NULL
+              OR (? = 'codex' AND transcript_path IS NOT NULL))`
     )
     .all(provider, provider);
   if (activeSessions.length === 0) return; // nothing to check — skip the ps/lsof cost
 
-  const probe = liveness.probeLiveCwds(cli);
+  // Lazily-probed cwd set: only pay the ps/lsof cost if some session actually
+  // needs the fallback (no owner-pid verdict available).
+  let cwdProbe = null;
+  const getCwdProbe = () => (cwdProbe ??= liveness.probeLiveCwds(cli));
   const rolloutProbe = provider === "codex" ? liveness.probeLiveCodexRollouts() : null;
-  if (!probe.available && !rolloutProbe?.available) return;
   const now = Date.now();
   for (const sess of activeSessions) {
-    if (rolloutProbe?.available && sess.transcript_path) {
-      if (rolloutProbe.paths.has(path.resolve(sess.transcript_path))) continue;
-    } else {
-      if (!probe.available || !sess.cwd) continue;
-      // Household-hook-forwarded sessions report cwd in the ORIGIN machine's own
-      // path syntax (e.g. Windows `D:\Git\ai-deck`). This probe only ever
-      // discovers *local* claude processes' cwds via /proc or lsof on THIS host,
-      // so a non-POSIX-absolute cwd can never appear in probe.cwds — treating
-      // that mismatch as "process is dead" is a false positive for every remote
-      // session, not a real crash signal. This guard protects the common mixed
-      // deployment (this host has BOTH local sessions the probe should keep
-      // reaping, AND remote household-hook sessions it must leave alone)
-      // without sacrificing local crash detection via DASHBOARD_LIVENESS_PROBE=0.
-      // The probe only ever reports POSIX cwds (/proc + lsof, and it bails out
-      // entirely on win32), so "could this cwd be local?" is precisely "is it
-      // POSIX-absolute?" — a leading-"/" check. Use path.posix.isAbsolute()
-      // explicitly rather than the platform-sensitive path.isAbsolute(): in
-      // production this only runs on POSIX hosts so the two are identical, but
-      // the unit tests mock probeLiveCwds() to exercise this reaper on a Windows
-      // host too, where bare path.isAbsolute("D:\\Git\\ai-deck") would be true
-      // and wrongly reap a forwarded remote session. posix keeps it host-agnostic.
-      if (!path.posix.isAbsolute(sess.cwd)) continue;
+    // Exact owner-process check first (recorded from the hook handler's
+    // ancestry report). An `available` verdict is authoritative either way:
+    // alive → the session cannot be dead, skip regardless of cwd (this is
+    // what the cwd-set match gets wrong — the recorded cwd follows
+    // in-session `cd`, the process cwd does not). Dead → reap (idle gate
+    // below still applies on watchdog ticks). No verdict → cwd fallback.
+    const ownerVerdict =
+      sess.owner_pid != null
+        ? liveness.probeAgentPidLive(sess.owner_pid, sess.owner_pid_start, cli)
+        : null;
+    if (ownerVerdict?.available && ownerVerdict.alive) continue;
+    if (!ownerVerdict?.available) {
+      if (rolloutProbe?.available && sess.transcript_path) {
+        if (rolloutProbe.paths.has(path.resolve(sess.transcript_path))) continue;
+      } else {
+        const probe = getCwdProbe();
+        if (!probe.available || !sess.cwd) continue;
+        // Household-hook-forwarded sessions report cwd in the ORIGIN machine's own
+        // path syntax (e.g. Windows `D:\Git\ai-deck`). This probe only ever
+        // discovers *local* claude processes' cwds via /proc or lsof on THIS host,
+        // so a non-POSIX-absolute cwd can never appear in probe.cwds — treating
+        // that mismatch as "process is dead" is a false positive for every remote
+        // session, not a real crash signal. This guard protects the common mixed
+        // deployment (this host has BOTH local sessions the probe should keep
+        // reaping, AND remote household-hook sessions it must leave alone)
+        // without sacrificing local crash detection via DASHBOARD_LIVENESS_PROBE=0.
+        // The probe only ever reports POSIX cwds (/proc + lsof, and it bails out
+        // entirely on win32), so "could this cwd be local?" is precisely "is it
+        // POSIX-absolute?" — a leading-"/" check. Use path.posix.isAbsolute()
+        // explicitly rather than the platform-sensitive path.isAbsolute(): in
+        // production this only runs on POSIX hosts so the two are identical, but
+        // the unit tests mock probeLiveCwds() to exercise this reaper on a Windows
+        // host too, where bare path.isAbsolute("D:\\Git\\ai-deck") would be true
+        // and wrongly reap a forwarded remote session. posix keeps it host-agnostic.
+        if (!path.posix.isAbsolute(sess.cwd)) continue;
 
-      let resolvedCwd;
-      try {
-        resolvedCwd = path.resolve(sess.cwd);
-      } catch {
-        continue;
+        let resolvedCwd;
+        try {
+          resolvedCwd = path.resolve(sess.cwd);
+        } catch {
+          continue;
+        }
+        if (probe.cwds.has(resolvedCwd)) continue;
       }
-      if (probe.cwds.has(resolvedCwd)) continue;
     }
 
     // Idle gate (watchdog ticks only — boot passes skip it, see above): the

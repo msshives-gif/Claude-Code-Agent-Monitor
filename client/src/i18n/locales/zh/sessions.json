@@ -74,7 +74,7 @@
     "agents": "Agent",
     "noAgents": "暂无Agent记录。",
     "unparented": "独立Subagent",
-    "costBreakdown": "费用明细",
+    "costBreakdown": "费用明细（API 等价）",
     "eventTimeline": "事件时间线",
     "noEvents": "暂无事件记录。",
     "conversation": "对话",
