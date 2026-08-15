@@ -233,6 +233,10 @@ classDiagram
         +string awaiting_reason "notification|stop|session_start|interrupted; null unless Waiting"
         +number cost
         +number agent_count
+        +number latest_context_tokens "newest usage record's context occupancy; null until seen"
+        +number context_window "model window for that record (e.g. 200000, 1000000)"
+        +number owner_pid "owning CLI process on this host; null for remote/legacy rows"
+        +string owner_pid_start "PID-reuse guard token for owner_pid"
     }
     
     SessionListResponse --> Session

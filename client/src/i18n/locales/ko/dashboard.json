@@ -6,7 +6,8 @@
   "activeSubagents": "활성 Subagent",
   "eventsToday": "오늘의 이벤트",
   "totalEvents": "전체 이벤트",
-  "totalCost": "총 비용",
+  "totalCost": "API 환산 비용",
+  "totalCostScope": "전체 기간 · API 정가 기준",
   "viewBoard": "보드 보기",
   "viewAll": "전체 보기",
   "activeAgentsSection": "활성 Agent",
@@ -18,5 +19,6 @@
   "failedConnect": "서버에 연결하지 못했습니다",
   "failedLoad": "데이터를 불러오지 못했습니다",
   "activeTrend": " 활성",
-  "totalTrend": " 활성 세션 기준"
+  "totalTrend": " 활성 세션 기준",
+  "toolCallGroup": "도구 호출 {{count}}회"
 }

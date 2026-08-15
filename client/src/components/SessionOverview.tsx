@@ -70,7 +70,9 @@ import {
   Clock,
   Coins,
   Bot,
+  Gauge as GaugeIcon,
 } from "lucide-react";
+import { ContextGauge } from "./ContextGauge";
 import { api } from "../lib/api";
 import { eventBus } from "../lib/eventBus";
 import { isRemoteDataRefreshMessage } from "../lib/remoteDataEvents";
@@ -465,6 +467,28 @@ export function SessionOverview({ session, agents }: SessionOverviewProps) {
           })()}
         </div>
       </div>
+
+      {/* Context-window fullness — how close the latest request came to the
+          model's context limit (the thing that ends a session; cumulative
+          token flow below can't show it). Hidden until the first usage
+          record stamps a reading. */}
+      {typeof session.latest_context_tokens === "number" &&
+        session.latest_context_tokens > 0 &&
+        typeof session.context_window === "number" &&
+        session.context_window > 0 && (
+          <div className="rounded-lg border border-surface-3 bg-surface-2/60 p-3.5">
+            <div className="flex items-center justify-between mb-2.5">
+              <h3 className="text-xs font-semibold text-gray-300 uppercase tracking-wider flex items-center gap-1.5">
+                <GaugeIcon className="w-3.5 h-3.5 text-sky-400" />
+                Context window
+              </h3>
+              <span className="text-[10px] text-gray-500 font-mono">
+                latest request vs {fmt(session.context_window)} window
+              </span>
+            </div>
+            <ContextGauge tokens={session.latest_context_tokens} window={session.context_window} />
+          </div>
+        )}
 
       {/* Token flow strip */}
       {totalTokens > 0 && (

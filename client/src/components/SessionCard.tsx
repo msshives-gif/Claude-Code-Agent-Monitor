@@ -62,6 +62,7 @@
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import { FolderOpen, Bot, Clock, Coins, Cpu } from "lucide-react";
+import { ContextGauge } from "./ContextGauge";
 import { SessionStatusBadge } from "./StatusBadge";
 import {
   effectiveSessionStatus,
@@ -209,6 +210,15 @@ export function SessionCard({ session, onClick }: SessionCardProps) {
             <Coins className="w-3 h-3" />
             {formatCost(session.cost)}
           </span>
+        )}
+        {/* Context-window fullness — live sessions only: a finished
+            session's context can't exhaust anymore. */}
+        {isActive && (
+          <ContextGauge
+            tokens={session.latest_context_tokens}
+            window={session.context_window}
+            compact
+          />
         )}
         <span className="flex items-center gap-1 flex-shrink-0">
           <Clock className="w-3 h-3" />

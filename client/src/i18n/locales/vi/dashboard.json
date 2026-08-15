@@ -6,7 +6,8 @@
   "activeSubagents": "Subagent đang hoạt động",
   "eventsToday": "Sự kiện hôm nay",
   "totalEvents": "Tổng sự kiện",
-  "totalCost": "Tổng chi phí",
+  "totalCost": "Chi phí quy đổi API",
+  "totalCostScope": "toàn bộ thời gian · theo giá niêm yết API",
   "viewBoard": "Xem bảng",
   "viewAll": "Xem tất cả",
   "activeAgentsSection": "Agent đang hoạt động",
@@ -18,5 +19,6 @@
   "failedConnect": "Không thể kết nối máy chủ",
   "failedLoad": "Không thể tải dữ liệu",
   "activeTrend": " đang hoạt động",
-  "totalTrend": " trong phiên hoạt động"
+  "totalTrend": " trong phiên hoạt động",
+  "toolCallGroup": "{{count}} lượt gọi công cụ"
 }

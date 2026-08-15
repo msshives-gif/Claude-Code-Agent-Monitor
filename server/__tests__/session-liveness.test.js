@@ -39,6 +39,7 @@ const hooksRouter = require("../routes/hooks");
 
 const realProbe = liveness.probeLiveCwds;
 const realRolloutProbe = liveness.probeLiveCodexRollouts;
+const realProbeAgentPidLive = liveness.probeAgentPidLive;
 
 const enc = (cwd) => cwd.replace(/[^a-zA-Z0-9]/g, "-");
 const PROJECTS = path.join(CLAUDE_HOME, "projects");
@@ -57,7 +58,7 @@ function backdate(sessionId, tpath, ageMs = 10 * 60 * 1000) {
   if (tpath) fs.utimesSync(tpath, old, old);
 }
 
-function req(method, urlPath, body) {
+function req(method, urlPath, body, extraHeaders = {}) {
   return new Promise((resolve, reject) => {
     const url = new URL(urlPath, BASE);
     const payload = body ? JSON.stringify(body) : null;
@@ -67,9 +68,12 @@ function req(method, urlPath, body) {
         port: url.port,
         path: url.pathname + url.search,
         method,
-        headers: payload
-          ? { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) }
-          : {},
+        headers: {
+          ...(payload
+            ? { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) }
+            : {}),
+          ...extraHeaders,
+        },
       },
       (res) => {
         let b = "";
@@ -152,6 +156,7 @@ before(async () => {
 after(() => {
   liveness.probeLiveCwds = realProbe;
   liveness.probeLiveCodexRollouts = realRolloutProbe;
+  liveness.probeAgentPidLive = realProbeAgentPidLive;
   if (server) server.close();
   if (db) db.close();
   try {
@@ -164,6 +169,7 @@ after(() => {
 beforeEach(() => {
   liveness.probeLiveCwds = realProbe;
   liveness.probeLiveCodexRollouts = realRolloutProbe;
+  liveness.probeAgentPidLive = realProbeAgentPidLive;
 });
 
 describe("isClaudeCommand — claude CLI process matcher", () => {
@@ -485,5 +491,243 @@ describe("watchdog liveness reap", () => {
     hooksRouter.watchdogCheck();
 
     assert.equal(stmts.getSession.get(sid).status, "completed");
+  });
+});
+
+describe("owner-pid exact liveness (cwd-drift fix)", () => {
+  // The regression that motivated owner_pid: the session's recorded cwd
+  // follows in-session `cd` (hook payload cwd), while the claude process's
+  // /proc cwd stays at the launch directory — so the cwd-set match reaped
+  // LIVE sessions whenever the user changed directory in the Bash tool.
+  it("spares a live session whose recorded cwd drifted away from the process cwd", async () => {
+    const sid = "opid0000-0000-0000-0000-000000000001";
+    const cwd = "/tmp/liveness-drifted-recorded-cwd";
+    await seedSession(sid, cwd);
+    stmts.setSessionOwnerPid.run(4242, "start-token", sid);
+
+    // cwd probe says "no claude here" (the false-positive input)…
+    liveness.probeLiveCwds = () => ({ available: true, cwds: new Set() });
+    // …but the exact process check says the owner is alive.
+    liveness.probeAgentPidLive = () => ({ available: true, alive: true });
+    hooksRouter.livenessReap();
+
+    assert.equal(stmts.getSession.get(sid).status, "active");
+  });
+
+  it("reaps a dead session even when an unrelated claude runs in the same cwd", async () => {
+    const sid = "opid0000-0000-0000-0000-000000000002";
+    const cwd = "/tmp/liveness-shared-cwd";
+    await seedSession(sid, cwd);
+    stmts.setSessionOwnerPid.run(4243, "start-token", sid);
+
+    // cwd probe would have spared it (another claude lives in this dir)…
+    liveness.probeLiveCwds = () => ({ available: true, cwds: new Set([path.resolve(cwd)]) });
+    // …but the exact process check proves THIS session's process is gone.
+    liveness.probeAgentPidLive = () => ({ available: true, alive: false });
+    hooksRouter.livenessReap();
+
+    assert.equal(stmts.getSession.get(sid).status, "completed");
+  });
+
+  it("falls back to the cwd probe when the owner verdict is unavailable", async () => {
+    const sid = "opid0000-0000-0000-0000-000000000003";
+    const cwd = "/tmp/liveness-owner-unavailable";
+    await seedSession(sid, cwd);
+    stmts.setSessionOwnerPid.run(4244, null, sid);
+
+    liveness.probeAgentPidLive = () => ({ available: false, alive: false });
+    liveness.probeLiveCwds = () => ({ available: true, cwds: new Set([path.resolve(cwd)]) });
+    hooksRouter.livenessReap();
+    assert.equal(stmts.getSession.get(sid).status, "active", "cwd match spares it");
+
+    liveness.probeLiveCwds = () => ({ available: true, cwds: new Set() });
+    hooksRouter.livenessReap();
+    assert.equal(stmts.getSession.get(sid).status, "completed", "cwd mismatch reaps it");
+  });
+
+  it("owner-dead verdict still respects the idle gate on watchdog ticks", async () => {
+    const sid = "opid0000-0000-0000-0000-000000000004";
+    const cwd = "/tmp/liveness-owner-idle-gate";
+    await seedSession(sid, cwd, { old: false }); // fresh activity
+    stmts.setSessionOwnerPid.run(4245, null, sid);
+
+    liveness.probeAgentPidLive = () => ({ available: true, alive: false });
+    hooksRouter.livenessReap();
+
+    assert.equal(stmts.getSession.get(sid).status, "active");
+  });
+
+  it("hook ingestion records the sender's owner pid onto the session (loopback)", async () => {
+    const sid = "opid0000-0000-0000-0000-000000000005";
+    const cwd = "/tmp/liveness-owner-record";
+    const res = await req("POST", "/api/hooks/event", {
+      hook_type: "UserPromptSubmit",
+      data: { session_id: sid, cwd },
+      sender: { pid: 31337, start: "9876543" },
+    });
+    assert.equal(res.status, 200);
+    const sess = stmts.getSession.get(sid);
+    assert.equal(sess.owner_pid, 31337);
+    assert.equal(sess.owner_pid_start, "9876543");
+  });
+
+  it("ignores malformed sender reports", async () => {
+    const sid = "opid0000-0000-0000-0000-000000000006";
+    const cwd = "/tmp/liveness-owner-malformed";
+    const res = await req("POST", "/api/hooks/event", {
+      hook_type: "UserPromptSubmit",
+      data: { session_id: sid, cwd },
+      sender: { pid: "not-a-number", start: 12345 },
+    });
+    assert.equal(res.status, 200);
+    const sess = stmts.getSession.get(sid);
+    assert.equal(sess.owner_pid, null);
+    assert.equal(sess.owner_pid_start, null);
+  });
+
+  it("a resumed session's new process replaces the recorded owner", async () => {
+    const sid = "opid0000-0000-0000-0000-000000000007";
+    const cwd = "/tmp/liveness-owner-resume";
+    await req("POST", "/api/hooks/event", {
+      hook_type: "SessionStart",
+      data: { session_id: sid, cwd },
+      sender: { pid: 100, start: "a" },
+    });
+    await req("POST", "/api/hooks/event", {
+      hook_type: "UserPromptSubmit",
+      data: { session_id: sid, cwd },
+      sender: { pid: 200, start: "b" },
+    });
+    const sess = stmts.getSession.get(sid);
+    assert.equal(sess.owner_pid, 200);
+    assert.equal(sess.owner_pid_start, "b");
+  });
+
+  it("a loopback event without a sender clears a stale recorded owner", async () => {
+    // Resume path whose ancestry lookup failed: keeping the OLD process's
+    // identity would let its death reap the live resumed session.
+    const sid = "opid0000-0000-0000-0000-000000000008";
+    const cwd = "/tmp/liveness-owner-clear";
+    await req("POST", "/api/hooks/event", {
+      hook_type: "SessionStart",
+      data: { session_id: sid, cwd },
+      sender: { pid: 300, start: "c" },
+    });
+    assert.equal(stmts.getSession.get(sid).owner_pid, 300);
+
+    await req("POST", "/api/hooks/event", {
+      hook_type: "UserPromptSubmit",
+      data: { session_id: sid, cwd },
+    });
+    const sess = stmts.getSession.get(sid);
+    assert.equal(sess.owner_pid, null);
+    assert.equal(sess.owner_pid_start, null);
+  });
+
+  it("rejects a sender without a start token (no reuse guard, no exact probe)", async () => {
+    const sid = "opid0000-0000-0000-0000-000000000009";
+    const cwd = "/tmp/liveness-owner-tokenless";
+    await req("POST", "/api/hooks/event", {
+      hook_type: "SessionStart",
+      data: { session_id: sid, cwd },
+      sender: { pid: 400 },
+    });
+    assert.equal(stmts.getSession.get(sid).owner_pid, null);
+  });
+
+  it("ignores sender reports on proxied requests (forwarding header present)", async () => {
+    const sid = "opid0000-0000-0000-0000-00000000000a";
+    const cwd = "/tmp/liveness-owner-proxied";
+    await req(
+      "POST",
+      "/api/hooks/event",
+      {
+        hook_type: "SessionStart",
+        data: { session_id: sid, cwd },
+        sender: { pid: 500, start: "e" },
+      },
+      { "X-Forwarded-For": "192.168.1.50" }
+    );
+    const sess = stmts.getSession.get(sid);
+    assert.equal(sess.owner_pid, null);
+    assert.equal(sess.owner_pid_start, null);
+  });
+});
+
+describe("probeAgentPidLive / findAgentAncestor — real-process behavior", () => {
+  // These run against the REAL implementations (no stubs). The suite sets
+  // DASHBOARD_LIVENESS_PROBE=0 globally, so flip it on per-test and restore.
+  function withProbeEnabled(fn) {
+    const saved = process.env.DASHBOARD_LIVENESS_PROBE;
+    process.env.DASHBOARD_LIVENESS_PROBE = "1";
+    try {
+      return fn();
+    } finally {
+      process.env.DASHBOARD_LIVENESS_PROBE = saved;
+    }
+  }
+  const posixOnly = process.platform === "win32" ? it.skip : it;
+
+  it("is disabled by DASHBOARD_LIVENESS_PROBE=0", () => {
+    assert.deepEqual(realProbeAgentPidLive(process.pid, null, "node"), {
+      available: false,
+      alive: false,
+    });
+  });
+
+  posixOnly("reports the test's own node process alive when matched as 'node'", () => {
+    withProbeEnabled(() => {
+      // findAgentAncestor("node", own pid) resolves to this process and its
+      // real start token — the same pair the hook handler would report.
+      const self = liveness.findAgentAncestor("node", process.pid);
+      assert.ok(self && self.start, "resolved own process with a start token");
+      const verdict = realProbeAgentPidLive(self.pid, self.start, "node");
+      assert.deepEqual(verdict, { available: true, alive: true });
+    });
+  });
+
+  posixOnly("refuses to answer without a start token (reuse guard mandatory)", () => {
+    withProbeEnabled(() => {
+      const verdict = realProbeAgentPidLive(process.pid, null, "node");
+      assert.deepEqual(verdict, { available: false, alive: false });
+    });
+  });
+
+  posixOnly("treats an args mismatch (pid reused by another command) as dead", () => {
+    withProbeEnabled(() => {
+      const verdict = realProbeAgentPidLive(process.pid, "any-token", "claude");
+      assert.deepEqual(verdict, { available: true, alive: false });
+    });
+  });
+
+  posixOnly("treats a start-token mismatch (pid reuse by same CLI) as dead", () => {
+    withProbeEnabled(() => {
+      const verdict = realProbeAgentPidLive(process.pid, "not-the-real-start-token", "node");
+      assert.deepEqual(verdict, { available: true, alive: false });
+    });
+  });
+
+  posixOnly("reports a long-gone pid as authoritatively dead", () => {
+    withProbeEnabled(() => {
+      // PID 2^22 is beyond the default pid_max on Linux and unused in practice;
+      // if it happens to exist it won't be a claude process.
+      const verdict = realProbeAgentPidLive(4194304, "any-token", "claude");
+      assert.deepEqual(verdict, { available: true, alive: false });
+    });
+  });
+
+  posixOnly("findAgentAncestor locates an ancestor by CLI name", () => {
+    // Walking up from our own pid with binary 'node' finds the test process
+    // itself (tokens[0] is the node binary).
+    const found = liveness.findAgentAncestor("node", process.pid);
+    assert.ok(found, "expected to find the node test process");
+    assert.equal(found.pid, process.pid);
+    assert.ok(found.start, "start token captured");
+  });
+
+  posixOnly("findAgentAncestor returns null when no ancestor matches", () => {
+    // NOT "claude": when this suite runs from inside a Claude Code session
+    // (e.g. the pre-commit hook), claude genuinely IS an ancestor.
+    assert.equal(liveness.findAgentAncestor("no-such-cli-binary", process.pid), null);
   });
 });

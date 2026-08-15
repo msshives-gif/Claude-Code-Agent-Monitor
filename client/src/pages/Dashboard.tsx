@@ -956,6 +956,47 @@ function SystemHealthTab() {
   );
 }
 
+/** One rendered row of the Recent Activity feed: either a single event or a
+ * run of consecutive PreToolUse/PostToolUse events from the same session,
+ * collapsed into one expandable summary row. Raw tool events are the bulk of
+ * hook traffic but near-zero monitoring signal — prompts, stops, errors, and
+ * notifications stay top-level while tool chatter folds away. */
+type ActivityItem =
+  | { kind: "single"; event: DashboardEvent }
+  | { kind: "toolGroup"; sessionId: string; events: DashboardEvent[] };
+
+const TOOL_EVENT_TYPES = new Set(["PreToolUse", "PostToolUse"]);
+
+function groupActivity(events: DashboardEvent[]): ActivityItem[] {
+  const items: ActivityItem[] = [];
+  for (const event of events) {
+    const isTool = TOOL_EVENT_TYPES.has(event.event_type);
+    const last = items[items.length - 1];
+    if (isTool && last?.kind === "toolGroup" && last.sessionId === event.session_id) {
+      last.events.push(event);
+    } else if (isTool) {
+      items.push({ kind: "toolGroup", sessionId: event.session_id, events: [event] });
+    } else {
+      items.push({ kind: "single", event });
+    }
+  }
+  return items;
+}
+
+/** "Read ×3, Bash ×2" — tool names by frequency within a collapsed group. */
+function toolGroupBreakdown(events: DashboardEvent[]): string {
+  const counts = new Map<string, number>();
+  for (const e of events) {
+    const name = e.tool_name || "?";
+    counts.set(name, (counts.get(name) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 4)
+    .map(([name, n]) => (n > 1 ? `${name} ×${n}` : name))
+    .join(", ");
+}
+
 export function Dashboard() {
   const navigate = useNavigate();
   const { t } = useTranslation("dashboard");
@@ -983,6 +1024,9 @@ export function Dashboard() {
   const activityContainerRef = useRef<HTMLDivElement>(null);
   const [visibleAgentCount, setVisibleAgentCount] = useState(5);
   const [visibleActivityCount, setVisibleActivityCount] = useState(8);
+  // Collapsed tool-call groups the user has expanded, keyed by the group's
+  // newest event id. Persists across WS refreshes within the page's lifetime.
+  const [expandedActivityGroups, setExpandedActivityGroups] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const AGENT_ROW_H = 56; // ~px per agent card row
@@ -1019,7 +1063,9 @@ export function Dashboard() {
           api.stats.get(),
           api.agents.list({ status: "working", limit: 20 }),
           api.agents.list({ status: "waiting", limit: 20, include_transient: true }),
-          api.events.list({ limit: 30 }),
+          // Over-fetch: consecutive tool events collapse into single rows, so
+          // the feed needs more raw events to fill the same visible depth.
+          api.events.list({ limit: 60 }),
           api.pricing.totalCost(),
           api.sessions.list({
             status: "active",
@@ -1121,7 +1167,9 @@ export function Dashboard() {
         setRecentEvents((prev) => {
           // Deduplicate by event ID to prevent WS + polling race condition
           if (newEvent.id && prev.some((e) => e.id === newEvent.id)) return prev;
-          return [newEvent, ...prev.slice(0, 14)];
+          // Buffer sized for the collapsed feed: tool-event runs fold into
+          // single rows, so more raw events back the same visible depth.
+          return [newEvent, ...prev.slice(0, 59)];
         });
       }
     });
@@ -1293,6 +1341,7 @@ export function Dashboard() {
               }
               icon={DollarSign}
               accentColor="text-emerald-400"
+              trend={t("totalCostScope")}
               loading={totalCost === null}
             />
           </div>
@@ -1480,57 +1529,113 @@ export function Dashboard() {
                 />
               ) : (
                 <div className="card divide-y divide-border">
-                  {recentEvents.slice(0, visibleActivityCount).map((event, i) => (
-                    <div
-                      key={event.id ?? i}
-                      className="px-4 py-3 flex items-center gap-3 hover:bg-surface-4 transition-colors cursor-pointer"
-                      onClick={() => navigate(`/sessions/${event.session_id}`)}
-                    >
-                      <AgentStatusBadge
-                        status={
-                          event.event_type === "Stop"
-                            ? event.summary?.toLowerCase().includes("error")
-                              ? "error"
-                              : "completed"
-                            : event.event_type === "APIError" ||
-                                event.summary?.toLowerCase().includes("error")
-                              ? "error"
-                              : event.event_type === "PreToolUse"
-                                ? "working"
-                                : "waiting"
-                        }
-                      />
-                      <span className="text-sm text-gray-300 truncate flex-1">
-                        {event.summary || event.event_type}
-                      </span>
-                      {(() => {
-                        // Session label: real name when one exists, else the
-                        // short ID - keeps every activity row attributable.
-                        const sname = sessionsById.get(event.session_id)?.name?.trim() || "";
-                        const isAuto = /^Session [0-9a-f]{8}$/i.test(sname);
-                        return (
-                          <span
-                            className="text-[11px] text-gray-500 truncate max-w-[9rem] flex-shrink-0"
-                            title={event.session_id}
-                          >
-                            {sname && !isAuto ? (
-                              sname
-                            ) : (
-                              <span className="font-mono">{event.session_id.slice(0, 8)}</span>
-                            )}
-                          </span>
-                        );
-                      })()}
-                      {event.tool_name && (
-                        <span className="text-[11px] text-gray-500 font-mono">
-                          {event.tool_name}
+                  {(() => {
+                    // Session label: real name when one exists, else the
+                    // short ID - keeps every activity row attributable.
+                    const sessionLabel = (sessionId: string) => {
+                      const sname = sessionsById.get(sessionId)?.name?.trim() || "";
+                      const isAuto = /^Session [0-9a-f]{8}$/i.test(sname);
+                      return (
+                        <span
+                          className="text-[11px] text-gray-500 truncate max-w-[9rem] flex-shrink-0"
+                          title={sessionId}
+                        >
+                          {sname && !isAuto ? (
+                            sname
+                          ) : (
+                            <span className="font-mono">{sessionId.slice(0, 8)}</span>
+                          )}
                         </span>
-                      )}
-                      <span className="text-[11px] text-gray-600 flex-shrink-0">
-                        {timeAgo(event.created_at)}
-                      </span>
-                    </div>
-                  ))}
+                      );
+                    };
+                    const eventRow = (event: DashboardEvent, key: React.Key, indent = false) => (
+                      <div
+                        key={key}
+                        className={`px-4 py-3 flex items-center gap-3 hover:bg-surface-4 transition-colors cursor-pointer ${
+                          indent ? "pl-9 bg-surface-2/40" : ""
+                        }`}
+                        onClick={() => navigate(`/sessions/${event.session_id}`)}
+                      >
+                        <AgentStatusBadge
+                          status={
+                            event.event_type === "Stop"
+                              ? event.summary?.toLowerCase().includes("error")
+                                ? "error"
+                                : "completed"
+                              : event.event_type === "APIError" ||
+                                  event.summary?.toLowerCase().includes("error")
+                                ? "error"
+                                : event.event_type === "PreToolUse"
+                                  ? "working"
+                                  : "waiting"
+                          }
+                        />
+                        <span className="text-sm text-gray-300 truncate flex-1">
+                          {event.summary || event.event_type}
+                        </span>
+                        {sessionLabel(event.session_id)}
+                        {event.tool_name && (
+                          <span className="text-[11px] text-gray-500 font-mono">
+                            {event.tool_name}
+                          </span>
+                        )}
+                        <span className="text-[11px] text-gray-600 flex-shrink-0">
+                          {timeAgo(event.created_at)}
+                        </span>
+                      </div>
+                    );
+                    return groupActivity(recentEvents)
+                      .slice(0, visibleActivityCount)
+                      .map((item, i) => {
+                        if (item.kind === "single") {
+                          return eventRow(item.event, item.event.id ?? `s-${i}`);
+                        }
+                        const newest = item.events[0];
+                        if (!newest) return null;
+                        // A lone tool event needs no group chrome.
+                        if (item.events.length === 1) {
+                          return eventRow(newest, newest.id ?? `t-${i}`);
+                        }
+                        const groupKey = String(newest.id ?? `g-${i}`);
+                        const expanded = expandedActivityGroups.has(groupKey);
+                        return (
+                          <div key={groupKey}>
+                            <div
+                              className="px-4 py-3 flex items-center gap-3 hover:bg-surface-4 transition-colors cursor-pointer"
+                              onClick={() =>
+                                setExpandedActivityGroups((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(groupKey)) next.delete(groupKey);
+                                  else next.add(groupKey);
+                                  return next;
+                                })
+                              }
+                            >
+                              {expanded ? (
+                                <ChevronDown className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
+                              ) : (
+                                <ChevronRight className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
+                              )}
+                              <span className="text-sm text-gray-400 truncate flex-1">
+                                {t("toolCallGroup", { count: item.events.length })}
+                                <span className="text-gray-500">
+                                  {" · "}
+                                  {toolGroupBreakdown(item.events)}
+                                </span>
+                              </span>
+                              {sessionLabel(newest.session_id)}
+                              <span className="text-[11px] text-gray-600 flex-shrink-0">
+                                {timeAgo(newest.created_at)}
+                              </span>
+                            </div>
+                            {expanded &&
+                              item.events.map((event, j) =>
+                                eventRow(event, event.id ?? `${groupKey}-${j}`, true)
+                              )}
+                          </div>
+                        );
+                      });
+                  })()}
                 </div>
               )}
             </div>

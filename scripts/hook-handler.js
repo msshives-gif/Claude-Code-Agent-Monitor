@@ -39,6 +39,22 @@ function resolvePorts() {
 
 const ports = resolvePorts();
 
+/**
+ * Identify the `claude` CLI process this hook belongs to (hooks always run as
+ * its descendants). The dashboard uses this for exact per-session liveness —
+ * the session's reported cwd follows in-session `cd` and so can never be
+ * matched against process cwds reliably. Fail-safe: any error yields null and
+ * the server falls back to its cwd heuristic.
+ */
+function findOwnerProcess() {
+  try {
+    const liveness = require("../server/lib/session-liveness");
+    return liveness.findAgentAncestor("claude", process.ppid);
+  } catch {
+    return null;
+  }
+}
+
 let input = "";
 
 process.stdin.setEncoding("utf8");
@@ -55,6 +71,9 @@ process.stdin.on("end", () => {
     hook_type: hookType,
     data: parsedData,
   };
+
+  const owner = findOwnerProcess();
+  if (owner) payload.sender = owner;
 
   // Give the kernel one tick to hand the buffered request bytes to the local
   // server before our sockets close, then exit. The hook returns in ms.

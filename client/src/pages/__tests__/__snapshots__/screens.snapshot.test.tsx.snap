@@ -1034,7 +1034,7 @@ exports[`screen snapshots > Analytics 1`] = `
           <span
             class="text-xs text-gray-500 uppercase tracking-wider"
           >
-            Total Cost
+            API-Equiv. Cost
           </span>
           <svg
             class="lucide lucide-dollar-sign w-4 h-4 text-emerald-400"
@@ -5203,7 +5203,7 @@ exports[`screen snapshots > Dashboard 1`] = `
             <span
               class="text-xs font-medium text-gray-500 uppercase tracking-wider truncate"
             >
-              Total Cost
+              API-Equiv. Cost
             </span>
             <svg
               class="lucide lucide-dollar-sign w-5 h-5 flex-shrink-0 text-emerald-400"
@@ -5239,6 +5239,11 @@ exports[`screen snapshots > Dashboard 1`] = `
               >
                 $0.00
               </span>
+            </span>
+            <span
+              class="text-xs text-gray-500 mb-1 flex-shrink-0"
+            >
+              all-time · at API list prices
             </span>
           </div>
         </div>

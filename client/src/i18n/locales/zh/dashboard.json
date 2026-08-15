@@ -6,7 +6,8 @@
   "activeSubagents": "活跃Subagent",
   "eventsToday": "今日事件",
   "totalEvents": "总事件数",
-  "totalCost": "总费用",
+  "totalCost": "API 等价成本",
+  "totalCostScope": "全部时间 · 按 API 标价",
   "viewBoard": "查看看板",
   "viewAll": "查看全部",
   "activeAgentsSection": "活跃Agent",
@@ -18,5 +19,6 @@
   "failedConnect": "无法连接到服务器",
   "failedLoad": "数据加载失败",
   "activeTrend": " 活跃",
-  "totalTrend": "（活跃会话中）"
+  "totalTrend": "（活跃会话中）",
+  "toolCallGroup": "{{count}} 次工具调用"
 }

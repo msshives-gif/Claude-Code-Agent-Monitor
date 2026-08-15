@@ -6,7 +6,8 @@
   "activeSubagents": "Active Subagents",
   "eventsToday": "Events Today",
   "totalEvents": "Total Events",
-  "totalCost": "Total Cost",
+  "totalCost": "API-Equiv. Cost",
+  "totalCostScope": "all-time · at API list prices",
   "viewBoard": "View Board",
   "viewAll": "View All",
   "activeAgentsSection": "Active Agents",
@@ -18,5 +19,6 @@
   "failedConnect": "Failed to connect to server",
   "failedLoad": "Failed to load data",
   "activeTrend": " active",
-  "totalTrend": " in active sessions"
+  "totalTrend": " in active sessions",
+  "toolCallGroup": "{{count}} tool calls"
 }

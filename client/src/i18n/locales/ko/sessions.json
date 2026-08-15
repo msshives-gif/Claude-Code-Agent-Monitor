@@ -74,7 +74,7 @@
     "agents": "Agent",
     "noAgents": "기록된 Agent가 없습니다.",
     "unparented": "상위가 없는 Subagent",
-    "costBreakdown": "비용 내역",
+    "costBreakdown": "비용 내역 (API 환산)",
     "eventTimeline": "이벤트 타임라인",
     "noEvents": "기록된 이벤트가 없습니다.",
     "conversation": "대화",

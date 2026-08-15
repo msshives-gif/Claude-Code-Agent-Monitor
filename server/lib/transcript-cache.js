@@ -16,6 +16,7 @@ const {
   accumulateBucket,
   subtractBucket,
   rememberUsageContribution,
+  contextTokensFromUsageFields,
 } = require("./token-usage");
 
 const MAX_CACHE_ENTRIES = 200;
@@ -198,6 +199,7 @@ class TranscriptCache {
             usageExtras: hasUsageExtras ? merged.usageExtras : null,
             usageByMessageId: merged.usageByMessageId || null,
             latestModel: merged.latestModel || null,
+            latestContext: merged.latestContext || null,
             customTitle: merged.customTitle || null,
             aiTitle: merged.aiTitle || null,
             firstUserMessage: merged.firstUserMessage || null,
@@ -418,6 +420,10 @@ class TranscriptCache {
       // the user's *current* model — used downstream to keep session.model in
       // sync when the user invokes /model mid-session.
       latestModel: null,
+      // Latest request's context occupancy ({tokens, model, timestamp}) for
+      // the context-fullness gauge. Last usage record wins, same append-only
+      // logic as latestModel.
+      latestContext: null,
       // Track the latest human-readable session title. Two sources, both
       // append-only metadata lines: `custom-title` (explicit /rename, claude
       // -n, picker Ctrl+R) and `ai-title` (auto-generated / plan-accept).
@@ -597,6 +603,18 @@ class TranscriptCache {
     }
     const fields = extractUsageFields(msg.usage);
     accumulateBucket(state.tokensByModel[key], fields);
+    // Latest request's context occupancy (input + cache read + cache write +
+    // output) — what the context-fullness gauge shows. Newest record wins;
+    // compaction naturally resets it because the first post-compaction
+    // request reports the compacted (smaller) context.
+    const contextTokens = contextTokensFromUsageFields(fields);
+    if (contextTokens !== null && contextTokens > 0) {
+      state.latestContext = {
+        tokens: contextTokens,
+        model,
+        timestamp: entry.timestamp || null,
+      };
+    }
     if (usageMsgId) {
       // Bounded tail window (see rememberUsageContribution) — a message's
       // records sit adjacent, so a tail window reconciles every real case
@@ -679,6 +697,7 @@ class TranscriptCache {
         ? this._capArrayFromSet(state.usageByMessageId.entries())
         : null,
       latestModel: state.latestModel,
+      latestContext: state.latestContext,
       customTitle: state.customTitle,
       aiTitle: state.aiTitle,
       firstUserMessage: state.firstUserMessage,
@@ -791,6 +810,8 @@ class TranscriptCache {
     // previously-cached value when the new chunk had no assistant entries.
     const latestModel =
       (incremental && incremental.latestModel) || cached.result?.latestModel || null;
+    const latestContext =
+      (incremental && incremental.latestContext) || cached.result?.latestContext || null;
 
     // Same append-only logic for the session titles: the newest title line in
     // the incremental chunk wins, else keep what was cached.
@@ -839,6 +860,7 @@ class TranscriptCache {
       usageExtras,
       usageByMessageId,
       latestModel,
+      latestContext,
       customTitle,
       aiTitle,
       firstUserMessage,
