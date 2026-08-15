@@ -74,7 +74,7 @@
     "agents": "Agent",
     "noAgents": "Chưa có Agent được ghi nhận.",
     "unparented": "Subagent không có cha",
-    "costBreakdown": "Phân rã chi phí",
+    "costBreakdown": "Phân rã chi phí (quy đổi API)",
     "eventTimeline": "Dòng thời gian sự kiện",
     "noEvents": "Chưa có sự kiện được ghi nhận.",
     "conversation": "Hội thoại",

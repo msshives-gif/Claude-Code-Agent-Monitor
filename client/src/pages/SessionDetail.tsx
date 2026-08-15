@@ -1116,8 +1116,12 @@ export function SessionDetail() {
                       <td className="px-5 py-2.5 text-sm font-medium text-gray-200" colSpan={5}>
                         {t("common:total")}
                       </td>
+                      {/* Total row rounds to cents so it always reconciles
+                          visually with the page header's cost figure; the
+                          per-model rows above keep 4 decimals because small
+                          buckets vanish at 2. */}
                       <td className="px-5 py-2.5 text-sm text-emerald-400 text-right font-mono font-semibold">
-                        {fmtCostFull(cost.total_cost, 4)}
+                        {fmtCostFull(cost.total_cost)}
                       </td>
                     </tr>
                   </tbody>

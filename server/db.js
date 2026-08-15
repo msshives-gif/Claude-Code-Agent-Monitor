@@ -771,6 +771,26 @@ try {
   db.prepare("UPDATE agents SET updated_at = COALESCE(ended_at, started_at)").run();
 }
 
+// Migrate: add owner-process identity columns to sessions (hook ingestion
+// writes them from the hook handler's `sender` report, loopback only; the
+// liveness reaper reads them for exact per-process liveness) and
+// context-fullness columns (the latest usage record's context occupancy and
+// the owning model's window, for the UI context gauge). Each column is
+// guarded independently: ALTER TABLE autocommits, so a crash between two
+// statements must not leave the second column permanently skipped.
+for (const [col, type] of [
+  ["owner_pid", "INTEGER"],
+  ["owner_pid_start", "TEXT"],
+  ["latest_context_tokens", "INTEGER"],
+  ["context_window", "INTEGER"],
+]) {
+  try {
+    db.prepare(`SELECT ${col} FROM sessions LIMIT 1`).get();
+  } catch {
+    db.prepare(`ALTER TABLE sessions ADD COLUMN ${col} ${type}`).run();
+  }
+}
+
 // Composite index on (status, updated_at) — must be AFTER migration adds updated_at
 db.exec(
   `CREATE INDEX IF NOT EXISTS idx_sessions_status_updated ON sessions(status, updated_at DESC)`
@@ -1375,6 +1395,20 @@ const stmts = {
   // of scanning events.
   setSessionTranscriptPath: db.prepare(
     "UPDATE sessions SET transcript_path = ? WHERE id = ? AND (transcript_path IS NULL OR transcript_path = '')"
+  ),
+  // Owner process identity reported by the local hook handler (the `claude`
+  // ancestor of the hook process + a PID-reuse-proof start token). Lets the
+  // liveness reaper check the exact process instead of matching cwd sets —
+  // the recorded session cwd follows in-session `cd` while the CLI process's
+  // cwd does not, so cwd matching falsely reaps live sessions.
+  setSessionOwnerPid: db.prepare(
+    "UPDATE sessions SET owner_pid = ?, owner_pid_start = ? WHERE id = ?"
+  ),
+  // Context-fullness stamp (no-op when unchanged, so callers can broadcast
+  // only on real movement).
+  updateSessionContext: db.prepare(
+    `UPDATE sessions SET latest_context_tokens = ?, context_window = ?
+     WHERE id = ? AND (latest_context_tokens IS NOT ? OR context_window IS NOT ?)`
   ),
   // Used only when an imported Codex snapshot is promoted to its matching live
   // rollout. The byte cursors move with it in codex-ingest before this pointer

@@ -6,7 +6,8 @@
   "activeSubagents": "Subagentes Activos",
   "eventsToday": "Eventos Hoy",
   "totalEvents": "Total de Eventos",
-  "totalCost": "Costo Total",
+  "totalCost": "Costo equiv. API",
+  "totalCostScope": "histórico · a precios de lista de la API",
   "viewBoard": "Ver Tablero",
   "viewAll": "Ver Todo",
   "activeAgentsSection": "Agentes Activos",
@@ -22,5 +23,6 @@
   "tabs": {
     "monitor": "Monitor",
     "health": "Estado"
-  }
+  },
+  "toolCallGroup": "{{count}} llamadas a herramientas"
 }

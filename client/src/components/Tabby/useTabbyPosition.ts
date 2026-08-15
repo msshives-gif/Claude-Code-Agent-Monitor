@@ -88,7 +88,10 @@ const vw = () => (typeof window !== "undefined" ? window.innerWidth : 1024);
 const vh = () => (typeof window !== "undefined" ? window.innerHeight : 768);
 
 function defaultPos(): TabbyPos {
-  return { side: "right", y: 0.5 }; // right edge, vertically centered
+  // Bottom-right corner: the one resting spot that never overlaps page
+  // content (a vertically-centered default sat on top of activity feeds and
+  // charts). Users can still drag Tabby anywhere; the preference persists.
+  return { side: "right", y: 1 };
 }
 
 /** Resting top-left screen coords for a docked position. */

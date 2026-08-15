@@ -377,6 +377,30 @@ function createOpenApiSpec() {
                 "Timestamp of the latest durable session event, falling back to lifecycle timestamps only for eventless historical rows. Unlike updated_at, metadata bookkeeping does not change this value.",
             },
             cost: { type: "number", nullable: true },
+            latest_context_tokens: {
+              type: "integer",
+              nullable: true,
+              description:
+                "Context occupancy of the session's newest transcript usage record (input + cache read + cache write + output), in tokens. Stamped by hook ingestion; null until the first usage record is seen. Drives the UI context-fullness gauge.",
+            },
+            context_window: {
+              type: "integer",
+              nullable: true,
+              description:
+                "Context window (tokens) of the model that produced the latest usage record, e.g. 200000 or 1000000.",
+            },
+            owner_pid: {
+              type: "integer",
+              nullable: true,
+              description:
+                "PID of the provider CLI process that owns this session on the dashboard host, reported by the local hook handler (loopback ingests only). Used with owner_pid_start by the liveness reaper for exact per-process liveness; null for remote/forwarded or pre-upgrade sessions (cwd-probe fallback applies).",
+            },
+            owner_pid_start: {
+              type: "string",
+              nullable: true,
+              description:
+                "Opaque start-of-process token for owner_pid (Linux /proc starttime; `ps -o lstart=` elsewhere) guarding against PID reuse.",
+            },
             awaiting_input_since: {
               type: "string",
               format: "date-time",

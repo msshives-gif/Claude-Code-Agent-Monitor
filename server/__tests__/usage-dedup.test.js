@@ -348,3 +348,61 @@ describe("usage reconciliation across incremental reads", () => {
     assert.deepEqual(negativeBuckets(result), []);
   });
 });
+
+describe("latestContext — newest request's context occupancy", () => {
+  const contextOf = (u) =>
+    u.input_tokens + u.output_tokens + u.cache_read_input_tokens + u.cache_creation_input_tokens;
+
+  it("reports the last usage record's occupancy on a full read", () => {
+    const p = path.join(tmpDir, "ctx-full.jsonl");
+    fs.writeFileSync(
+      p,
+      [assistantRecord("msg_a", USAGE_A), assistantRecord("msg_b", USAGE_B)].join("\n") + "\n"
+    );
+    const cache = new TranscriptCache();
+    const result = cache.extract(p);
+    assert.ok(result.latestContext, "latestContext present");
+    assert.equal(result.latestContext.tokens, contextOf(USAGE_B));
+    assert.equal(result.latestContext.model, "claude-test-1");
+  });
+
+  it("carries the newest reading across an incremental boundary", () => {
+    const p = path.join(tmpDir, "ctx-incremental.jsonl");
+    fs.writeFileSync(p, assistantRecord("msg_a", USAGE_A) + "\n");
+    const cache = new TranscriptCache();
+    assert.equal(cache.extract(p).latestContext.tokens, contextOf(USAGE_A));
+
+    fs.appendFileSync(p, assistantRecord("msg_b", USAGE_B) + "\n");
+    const later = new Date(Date.now() + 5000);
+    fs.utimesSync(p, later, later);
+    assert.equal(cache.extract(p).latestContext.tokens, contextOf(USAGE_B));
+  });
+
+  it("keeps the cached reading when the appended chunk has no usage records", () => {
+    const p = path.join(tmpDir, "ctx-no-usage-chunk.jsonl");
+    fs.writeFileSync(p, assistantRecord("msg_a", USAGE_A) + "\n");
+    const cache = new TranscriptCache();
+    assert.equal(cache.extract(p).latestContext.tokens, contextOf(USAGE_A));
+
+    fs.appendFileSync(p, JSON.stringify({ type: "user", message: { content: "hi" } }) + "\n");
+    const later = new Date(Date.now() + 5000);
+    fs.utimesSync(p, later, later);
+    assert.equal(cache.extract(p).latestContext.tokens, contextOf(USAGE_A));
+  });
+});
+
+describe("contextWindowForModel", () => {
+  const { contextWindowForModel } = require("../lib/token-usage");
+  it("maps model families to their windows", () => {
+    assert.equal(contextWindowForModel("claude-fable-5"), 1_000_000);
+    assert.equal(contextWindowForModel("claude-opus-5"), 1_000_000);
+    assert.equal(contextWindowForModel("claude-opus-4-8"), 1_000_000);
+    assert.equal(contextWindowForModel("claude-sonnet-4-6"), 1_000_000);
+    assert.equal(contextWindowForModel("claude-sonnet-4-5-20250929"), 200_000);
+    assert.equal(contextWindowForModel("claude-haiku-4-5"), 200_000);
+    assert.equal(contextWindowForModel("gpt-5.1-codex"), 272_000);
+    assert.equal(contextWindowForModel("gpt-5.3-codex-spark"), 128_000);
+    assert.equal(contextWindowForModel(null), 200_000);
+    assert.equal(contextWindowForModel("claude-opus-4-5"), 200_000);
+  });
+});

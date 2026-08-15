@@ -6,7 +6,8 @@
   "activeSubagents": "활성 Subagent",
   "eventsToday": "오늘의 이벤트",
   "totalEvents": "전체 이벤트",
-  "totalCost": "총 비용",
+  "totalCost": "API 환산 비용",
+  "totalCostScope": "전체 기간 · API 정가 기준",
   "viewBoard": "보드 보기",
   "viewAll": "전체 보기",
   "activeAgentsSection": "활성 Agent",
@@ -22,5 +23,6 @@
   "tabs": {
     "monitor": "모니터",
     "health": "상태"
-  }
+  },
+  "toolCallGroup": "도구 호출 {{count}}회"
 }

@@ -73,7 +73,7 @@
     "agents": "Agentes",
     "noAgents": "No se registraron agentes.",
     "unparented": "Subagentes Sin Padre",
-    "costBreakdown": "Desglose de Costos",
+    "costBreakdown": "Desglose de Costos (equivalente API)",
     "eventTimeline": "Línea de Tiempo de Eventos",
     "noEvents": "No se registraron eventos.",
     "conversation": "Conversación",

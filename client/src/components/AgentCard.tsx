@@ -62,6 +62,7 @@ import { useTranslation } from "react-i18next";
 import { Bot, GitBranch, Clock, Wrench, Cpu, Coins } from "lucide-react";
 import { useNavigate } from "react-router";
 import { AgentStatusBadge } from "./StatusBadge";
+import { ContextGauge } from "./ContextGauge";
 import { TodoProgressIndicator } from "./TodoProgressIndicator";
 import { effectiveAgentStatus, isAgentAwaitingInput, agentAwaitingReason } from "../lib/types";
 import type { Agent, Session } from "../lib/types";
@@ -307,6 +308,16 @@ export function AgentCard({ agent, session, label, onClick }: AgentCardProps) {
             <Coins className="w-3 h-3" />
             {fmtCost(cost)}
           </span>
+        )}
+        {/* Context-window fullness — main-agent cards only (the reading is
+            session-level), and only while the session is live: a finished
+            session's context can't exhaust anymore. */}
+        {isMain && session?.status === "active" && (
+          <ContextGauge
+            tokens={session.latest_context_tokens}
+            window={session.context_window}
+            compact
+          />
         )}
         {agent.ended_at ? (
           <>

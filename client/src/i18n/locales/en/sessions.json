@@ -73,7 +73,7 @@
     "agents": "Agents",
     "noAgents": "No agents recorded.",
     "unparented": "Unparented Subagents",
-    "costBreakdown": "Cost Breakdown",
+    "costBreakdown": "Cost Breakdown (API-equivalent)",
     "eventTimeline": "Event Timeline",
     "noEvents": "No events recorded.",
     "conversation": "Conversation",
