@@ -199,6 +199,11 @@ describe("GET /api/workflows errorPropagation — throttling vs errors", () => {
   it("classifies rate_limit APIError events as throttling, not errors", async () => {
     const { stmts } = require("../db");
 
+    // Baseline BEFORE any throttle events exist — the regression this test
+    // must catch is "throttled sessions still count as errors", which is only
+    // provable against a pre-insert error count.
+    const baseline = (await fetchJson("/api/workflows")).body.errorPropagation;
+
     // Step 1: a session whose only "errors" are usage-limit notices, with the
     // per-retry duplication a real limit wait produces. It must move the
     // throttle metric and leave the error metric untouched.
@@ -214,6 +219,11 @@ describe("GET /api/workflows errorPropagation — throttling vs errors", () => {
       );
     }
     const afterThrottle = (await fetchJson("/api/workflows")).body.errorPropagation;
+    assert.equal(
+      afterThrottle.sessionsWithErrors,
+      baseline.sessionsWithErrors,
+      "a throttled-only session must not enter the error count"
+    );
     assert.equal(afterThrottle.throttledSessions, 1, "throttled once, retry spam deduplicated");
     assert.ok(afterThrottle.throttleRate > 0);
     assert.ok(
