@@ -56,10 +56,14 @@ function fetchOverview({ timeoutMs = 10_000 } = {}) {
     }, timeoutMs);
     if (typeof timer.unref === "function") timer.unref();
     child.stdout.on("data", (chunk) => {
-      if (stdout.length < MAX_STDOUT_BYTES) stdout += chunk;
+      if (stdout.length < MAX_STDOUT_BYTES) {
+        stdout = (stdout + chunk).slice(0, MAX_STDOUT_BYTES);
+      }
     });
     child.stderr.on("data", (chunk) => {
-      if (stderr.length < MAX_STDERR_BYTES) stderr += chunk;
+      if (stderr.length < MAX_STDERR_BYTES) {
+        stderr = (stderr + chunk).slice(0, MAX_STDERR_BYTES);
+      }
     });
     child.on("error", (err) => {
       finish(
@@ -78,7 +82,18 @@ function fetchOverview({ timeoutMs = 10_000 } = {}) {
       }
       try {
         const overview = JSON.parse(stdout);
-        if (!overview || typeof overview !== "object" || Array.isArray(overview)) {
+        // Structural contract, enforced at the trust boundary: the client
+        // panel dereferences these arrays during render and the app has no
+        // error boundary, so a shape-nonconforming producer (wrong binary
+        // behind DASHBOARD_COMPACT_MANAGER_BIN, future schema drift) must
+        // degrade to unavailable here — never white-screen the Dashboard.
+        if (
+          !overview ||
+          typeof overview !== "object" ||
+          Array.isArray(overview) ||
+          !Array.isArray(overview.watchers) ||
+          !Array.isArray(overview.sessions)
+        ) {
           finish(unavailable("unexpected output shape"));
           return;
         }

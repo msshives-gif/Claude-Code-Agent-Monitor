@@ -128,10 +128,23 @@ export function CompactManagerPanel() {
   const overview = status?.available ? status.overview : undefined;
   if (!overview) return null;
 
-  const watcherBySession = new Map(overview.watchers.map((w) => [w.session_id, w]));
-  const flagged = overview.watchers.filter((w) => w.flags.length > 0);
-  const sessions = overview.sessions.slice(0, MAX_ROWS);
-  const triggerPct = overview.managed_trigger_pct;
+  // Belt-and-braces against a shape-drifted producer (the server already
+  // rejects envelopes without these arrays): default the arrays, drop rows
+  // without a session id, and never let a missing trigger become NaN —
+  // this panel must degrade, never take the Dashboard down with a render
+  // throw (the app has no error boundary).
+  const watchers = (Array.isArray(overview.watchers) ? overview.watchers : []).filter(
+    (w) => typeof w?.session_id === "string"
+  );
+  const allSessions = (Array.isArray(overview.sessions) ? overview.sessions : []).filter(
+    (s) => typeof s?.session_id === "string"
+  );
+  const watcherBySession = new Map(watchers.map((w) => [w.session_id, w]));
+  const flagged = watchers.filter((w) => (w.flags?.length ?? 0) > 0);
+  const sessions = allSessions.slice(0, MAX_ROWS);
+  const triggerPct = Number.isFinite(overview.managed_trigger_pct)
+    ? overview.managed_trigger_pct
+    : 0.8;
 
   return (
     <div className="card p-5 flex flex-col gap-3" data-testid="compact-manager-panel">
@@ -157,7 +170,9 @@ export function CompactManagerPanel() {
         >
           <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
           <span className="font-mono truncate">
-            {flagged.map((w) => `${w.session_id.slice(0, 8)}: ${w.flags.join(",")}`).join("  ·  ")}
+            {flagged
+              .map((w) => `${w.session_id.slice(0, 8)}: ${(w.flags ?? []).join(",")}`)
+              .join("  ·  ")}
           </span>
         </div>
       )}

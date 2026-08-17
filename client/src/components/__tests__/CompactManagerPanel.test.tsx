@@ -59,6 +59,22 @@ describe("CompactManagerPanel", () => {
     expect(screen.queryByTestId("compact-manager-panel")).toBeNull();
   });
 
+  it("survives a shape-drifted overview without crashing the page", async () => {
+    // available:true but the arrays are missing — the server rejects this
+    // shape, but the client must ALSO degrade (no error boundary exists to
+    // catch a render throw).
+    payload = {
+      available: true,
+      fetched_at: Date.now(),
+      overview: { schema: 1 } as never,
+    };
+    render(<CompactManagerPanel />);
+    await settle();
+    const panel = screen.getByTestId("compact-manager-panel");
+    expect(panel).toBeTruthy();
+    expect(screen.queryAllByTestId("compact-manager-row")).toHaveLength(0);
+  });
+
   it("renders session rows and surfaces watcher flags", async () => {
     payload = {
       available: true,
