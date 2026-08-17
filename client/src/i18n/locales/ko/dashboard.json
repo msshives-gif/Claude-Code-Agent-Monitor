@@ -42,6 +42,8 @@
     "ovrSoft": "소프트",
     "ovrHard": "하드",
     "ovrTrigger": "트리거",
-    "colCurrent": "현재"
+    "colCurrent": "현재",
+    "sessionLive": "세션 실행 중",
+    "sessionGone": "세션 종료됨 — 상태 파일 잔존"
   }
 }

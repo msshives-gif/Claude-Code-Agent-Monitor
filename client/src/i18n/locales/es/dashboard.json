@@ -42,6 +42,8 @@
     "ovrSoft": "suave",
     "ovrHard": "duro",
     "ovrTrigger": "disparo",
-    "colCurrent": "actual"
+    "colCurrent": "actual",
+    "sessionLive": "sesión activa",
+    "sessionGone": "sesión finalizada — estado residual"
   }
 }
