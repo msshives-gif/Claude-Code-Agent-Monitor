@@ -1418,6 +1418,11 @@ export interface CompactManagerSession {
    *  false = exited (state file lingering ≤24h), null/absent = unjudgeable
    *  (or an older CLI without the field). */
   session_live?: boolean | null;
+  /** Effective per-row thresholds (advisor-stamped when the session runs
+   *  with env/per-model overrides; readout-derived otherwise). */
+  soft_pct?: number;
+  hard_pct?: number;
+  trigger_pct?: number;
   model?: string | null;
   current?: number;
   peak?: number;
