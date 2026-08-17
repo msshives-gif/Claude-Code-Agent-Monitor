@@ -24,18 +24,13 @@
   "toolCallGroup_other": "{{count}} tool calls",
   "compactManager": {
     "title": "Compact Manager",
-    "watched": "watched",
-    "unwatched": "unwatched",
     "unreadable": "unreadable state row",
     "noSessions": "No sessions touched in the last 24h",
-    "retired": "retired",
     "overrides": "model overrides ({{n}})",
     "colSession": "session",
     "colModel": "model",
-    "colUsage": "usage",
     "colPeak": "peak",
     "colUpdated": "updated",
-    "colWatcher": "watcher",
     "ovrWindow": "window",
     "ovrSoft": "soft",
     "ovrHard": "hard",
@@ -45,9 +40,9 @@
     "sessionGone": "session exited — state lingering",
     "modeLabel": "mode: {{mode}}",
     "globalRow": "global",
-    "sessionsLabel": "sessions touched in the last 24h ({{n}})",
-    "colPid": "pid",
+    "sessionsLabel": "sessions touched <24h ({{n}})",
     "colState": "state",
-    "colReason": "reason"
+    "colWatcherPid": "watcher_pid",
+    "colHealth": "health"
   }
 }
