@@ -335,22 +335,44 @@ export function CompactManagerPanel() {
 
   return (
     <div className="card p-5 flex flex-col gap-3" data-testid="compact-manager-panel">
-      <div className="flex items-center justify-between flex-wrap gap-x-4 gap-y-1">
+      <div className="flex items-start justify-between flex-wrap gap-x-4 gap-y-1">
         <div className="flex items-center gap-3">
           <Archive className="w-4 h-4 text-sky-400" />
           <span className="text-xs text-gray-500 uppercase tracking-wider">
             {t("compactManager.title")}
           </span>
         </div>
-        <span className="text-[10px] font-mono text-gray-500">
-          {t("compactManager.summaryLine", {
-            mode: overview.mode || "?",
-            window: contextWindow !== null ? fmt(contextWindow) : "?",
-            soft: pctText(overview.soft_pct),
-            hard: pctText(overview.hard_pct),
-            trigger: pctText(triggerPct),
-          })}
-        </span>
+        {/* The overrides are per-model versions of exactly these numbers, so
+            the disclosure lives directly under the summary line. */}
+        <div className="flex flex-col items-end gap-1">
+          <span className="text-[11px] font-mono text-gray-300">
+            {t("compactManager.summaryLine", {
+              mode: overview.mode || "?",
+              window: contextWindow !== null ? fmt(contextWindow) : "?",
+              soft: pctText(overview.soft_pct),
+              hard: pctText(overview.hard_pct),
+              trigger: pctText(triggerPct),
+            })}
+          </span>
+          {overrides.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setOverridesOpen((v) => !v)}
+              className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-gray-500 hover:text-gray-400"
+              data-testid="compact-manager-overrides-toggle"
+              aria-expanded={overridesOpen}
+              aria-controls="compact-manager-overrides"
+            >
+              {overridesOpen ? (
+                <ChevronDown className="w-3 h-3" />
+              ) : (
+                <ChevronRight className="w-3 h-3" />
+              )}
+              {t("compactManager.overrides", { n: overrides.length })}
+            </button>
+          )}
+          {overridesOpen && overrides.length > 0 && <OverridesTable overrides={overrides} />}
+        </div>
       </div>
 
       {flagged.length > 0 && (
@@ -362,31 +384,6 @@ export function CompactManagerPanel() {
           <span className="font-mono truncate">
             {flagged.map((w) => `${w.session_id.slice(0, 8)}: ${w.flags.join(",")}`).join("  ·  ")}
           </span>
-        </div>
-      )}
-
-      {overrides.length > 0 && (
-        <div>
-          <button
-            type="button"
-            onClick={() => setOverridesOpen((v) => !v)}
-            className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-gray-500 hover:text-gray-400"
-            data-testid="compact-manager-overrides-toggle"
-            aria-expanded={overridesOpen}
-            aria-controls="compact-manager-overrides"
-          >
-            {overridesOpen ? (
-              <ChevronDown className="w-3 h-3" />
-            ) : (
-              <ChevronRight className="w-3 h-3" />
-            )}
-            {t("compactManager.overrides", { n: overrides.length })}
-          </button>
-          {overridesOpen && (
-            <div className="mt-2 pl-4">
-              <OverridesTable overrides={overrides} />
-            </div>
-          )}
         </div>
       )}
 
