@@ -28,7 +28,6 @@
     "unwatched": "unwatched",
     "unreadable": "unreadable state row",
     "noSessions": "No sessions touched in the last 24h",
-    "summaryLine": "mode {{mode}} · window {{window}} · soft {{soft}}% · hard {{hard}}% · trigger {{trigger}}%",
     "retired": "retired",
     "overrides": "model overrides ({{n}})",
     "colSession": "session",
@@ -37,13 +36,14 @@
     "colPeak": "peak",
     "colUpdated": "updated",
     "colWatcher": "watcher",
-    "ovrPattern": "pattern",
     "ovrWindow": "window",
     "ovrSoft": "soft",
     "ovrHard": "hard",
     "ovrTrigger": "trigger",
     "colCurrent": "current",
     "sessionLive": "session running",
-    "sessionGone": "session exited — state lingering"
+    "sessionGone": "session exited — state lingering",
+    "modeLabel": "mode {{mode}}",
+    "globalRow": "global"
   }
 }

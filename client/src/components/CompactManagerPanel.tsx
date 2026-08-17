@@ -269,41 +269,58 @@ function SessionHeaderRow() {
   );
 }
 
-function OverridesTable({
+/** Global thresholds and per-model overrides as ONE table, so every
+ *  override value sits directly under its global counterpart in the
+ *  same column and format. Override rows appear only when open. */
+function ThresholdTable({
+  globalRow,
   overrides,
+  open,
 }: {
+  globalRow: { window: number | null; soft: unknown; hard: unknown; trigger: unknown };
   overrides: Array<[string, CompactManagerModelOverride]>;
+  open: boolean;
 }) {
   const { t } = useTranslation("dashboard");
   return (
-    <div
-      className="overflow-x-auto"
-      data-testid="compact-manager-overrides"
-      id="compact-manager-overrides"
-    >
-      <table className="text-xs font-mono text-gray-400">
+    <div className="overflow-x-auto" id="compact-manager-thresholds">
+      <table className="text-xs font-mono">
         <thead>
           <tr className="text-[10px] uppercase tracking-wider text-gray-600">
-            <th className="text-left font-normal pr-6 pb-1">{t("compactManager.ovrPattern")}</th>
-            <th className="text-right font-normal pr-6 pb-1">{t("compactManager.ovrWindow")}</th>
-            <th className="text-right font-normal pr-6 pb-1">{t("compactManager.ovrSoft")}</th>
-            <th className="text-right font-normal pr-6 pb-1">{t("compactManager.ovrHard")}</th>
-            <th className="text-right font-normal pb-1">{t("compactManager.ovrTrigger")}</th>
+            <th className="text-left font-normal pr-6 pb-0.5" />
+            <th className="text-right font-normal pr-6 pb-0.5">{t("compactManager.ovrWindow")}</th>
+            <th className="text-right font-normal pr-6 pb-0.5">{t("compactManager.ovrSoft")}</th>
+            <th className="text-right font-normal pr-6 pb-0.5">{t("compactManager.ovrHard")}</th>
+            <th className="text-right font-normal pb-0.5">{t("compactManager.ovrTrigger")}</th>
           </tr>
         </thead>
         <tbody>
-          {overrides.map(([pattern, o]) => {
-            const window = finite(o?.context_window);
-            return (
-              <tr key={pattern}>
-                <td className="pr-6">{pattern}</td>
-                <td className="text-right pr-6">{window !== null ? fmt(window) : "?"}</td>
-                <td className="text-right pr-6">{pctText(o?.soft_pct)}%</td>
-                <td className="text-right pr-6">{pctText(o?.hard_pct)}%</td>
-                <td className="text-right">{pctText(o?.managed_trigger_pct)}%</td>
-              </tr>
-            );
-          })}
+          <tr className="text-gray-300">
+            <td className="pr-6">{t("compactManager.globalRow")}</td>
+            <td className="text-right pr-6">
+              {globalRow.window !== null ? fmt(globalRow.window) : "?"}
+            </td>
+            <td className="text-right pr-6">{pctText(globalRow.soft)}%</td>
+            <td className="text-right pr-6">{pctText(globalRow.hard)}%</td>
+            <td className="text-right">{pctText(globalRow.trigger)}%</td>
+          </tr>
+          {open &&
+            overrides.map(([pattern, o]) => {
+              const window = finite(o?.context_window);
+              return (
+                <tr
+                  key={pattern}
+                  className="text-gray-500"
+                  data-testid="compact-manager-override-row"
+                >
+                  <td className="pr-6">{pattern}</td>
+                  <td className="text-right pr-6">{window !== null ? fmt(window) : "?"}</td>
+                  <td className="text-right pr-6">{pctText(o?.soft_pct)}%</td>
+                  <td className="text-right pr-6">{pctText(o?.hard_pct)}%</td>
+                  <td className="text-right">{pctText(o?.managed_trigger_pct)}%</td>
+                </tr>
+              );
+            })}
         </tbody>
       </table>
     </div>
@@ -366,18 +383,23 @@ export function CompactManagerPanel() {
             {t("compactManager.title")}
           </span>
         </div>
-        {/* The overrides are per-model versions of exactly these numbers, so
-            the disclosure lives directly under the summary line. */}
+        {/* The overrides are per-model versions of exactly the global
+            numbers, so both live in ONE table: global row always visible,
+            override rows joining the same columns on toggle. */}
         <div className="flex flex-col items-end gap-1">
           <span className="text-[11px] font-mono text-gray-300">
-            {t("compactManager.summaryLine", {
-              mode: overview.mode || "?",
-              window: contextWindow !== null ? fmt(contextWindow) : "?",
-              soft: pctText(overview.soft_pct),
-              hard: pctText(overview.hard_pct),
-              trigger: pctText(triggerPct),
-            })}
+            {t("compactManager.modeLabel", { mode: overview.mode || "?" })}
           </span>
+          <ThresholdTable
+            globalRow={{
+              window: contextWindow,
+              soft: overview.soft_pct,
+              hard: overview.hard_pct,
+              trigger: triggerPct,
+            }}
+            overrides={overrides}
+            open={overridesOpen}
+          />
           {overrides.length > 0 && (
             <button
               type="button"
@@ -385,7 +407,7 @@ export function CompactManagerPanel() {
               className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-gray-500 hover:text-gray-400"
               data-testid="compact-manager-overrides-toggle"
               aria-expanded={overridesOpen}
-              aria-controls="compact-manager-overrides"
+              aria-controls="compact-manager-thresholds"
             >
               {overridesOpen ? (
                 <ChevronDown className="w-3 h-3" />
@@ -395,7 +417,6 @@ export function CompactManagerPanel() {
               {t("compactManager.overrides", { n: overrides.length })}
             </button>
           )}
-          {overridesOpen && overrides.length > 0 && <OverridesTable overrides={overrides} />}
         </div>
       </div>
 
