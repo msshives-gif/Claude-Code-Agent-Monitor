@@ -104,6 +104,7 @@ import { AgentCard } from "../components/AgentCard";
 import { AgentStatusBadge } from "../components/StatusBadge";
 import { EmptyState } from "../components/EmptyState";
 import { Tip } from "../components/Tip";
+import { CompactManagerPanel } from "../components/CompactManagerPanel";
 import { timeAgo, fmt, fmtCost, formatModelName } from "../lib/format";
 import type { Stats, Agent, DashboardEvent, WSMessage, WorkflowData, Session } from "../lib/types";
 
@@ -1370,6 +1371,10 @@ export function Dashboard() {
               loading={totalCost === null}
             />
           </div>
+
+          {/* Persistent compact-manager readout; renders nothing when the CLI
+              is absent on this machine. */}
+          <CompactManagerPanel />
 
           <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] gap-0 min-w-0 flex-1 min-h-0">
             {/* Active agents */}

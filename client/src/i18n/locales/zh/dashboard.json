@@ -21,5 +21,13 @@
   "activeTrend": " 活跃",
   "totalTrend": "（活跃会话中）",
   "toolCallGroup_one": "{{count}} 次工具调用",
-  "toolCallGroup_other": "{{count}} 次工具调用"
+  "toolCallGroup_other": "{{count}} 次工具调用",
+  "compactManager": {
+    "title": "压缩管理器",
+    "modeLine": "模式 {{mode}} · 触发 {{trigger}}%",
+    "watched": "监视中",
+    "unwatched": "未监视",
+    "unreadable": "无法读取的状态行",
+    "noSessions": "最近 24 小时内没有活动会话"
+  }
 }
