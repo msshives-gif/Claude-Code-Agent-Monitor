@@ -46,6 +46,7 @@
     "ovrWindow": "윈도우",
     "ovrSoft": "소프트",
     "ovrHard": "하드",
-    "ovrTrigger": "트리거"
+    "ovrTrigger": "트리거",
+    "colCurrent": "현재"
   }
 }

@@ -46,6 +46,7 @@
     "ovrWindow": "cửa sổ",
     "ovrSoft": "mềm",
     "ovrHard": "cứng",
-    "ovrTrigger": "kích hoạt"
+    "ovrTrigger": "kích hoạt",
+    "colCurrent": "hiện tại"
   }
 }
