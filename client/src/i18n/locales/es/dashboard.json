@@ -26,5 +26,13 @@
   },
   "toolCallGroup": "{{count}} llamadas a herramientas",
   "toolCallGroup_one": "{{count}} llamada a herramienta",
-  "toolCallGroup_other": "{{count}} llamadas a herramientas"
+  "toolCallGroup_other": "{{count}} llamadas a herramientas",
+  "compactManager": {
+    "title": "Gestor de Compactación",
+    "modeLine": "modo {{mode}} · disparo {{trigger}}%",
+    "watched": "vigilada",
+    "unwatched": "sin vigilar",
+    "unreadable": "fila de estado ilegible",
+    "noSessions": "Ninguna sesión activa en las últimas 24h"
+  }
 }

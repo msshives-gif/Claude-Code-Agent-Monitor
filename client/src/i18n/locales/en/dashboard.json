@@ -26,5 +26,13 @@
   },
   "toolCallGroup": "{{count}} tool calls",
   "toolCallGroup_one": "{{count}} tool call",
-  "toolCallGroup_other": "{{count}} tool calls"
+  "toolCallGroup_other": "{{count}} tool calls",
+  "compactManager": {
+    "title": "Compact Manager",
+    "modeLine": "mode {{mode}} · trigger {{trigger}}%",
+    "watched": "watched",
+    "unwatched": "unwatched",
+    "unreadable": "unreadable state row",
+    "noSessions": "No sessions touched in the last 24h"
+  }
 }

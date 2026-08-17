@@ -26,5 +26,13 @@
   },
   "toolCallGroup": "도구 호출 {{count}}회",
   "toolCallGroup_one": "도구 호출 {{count}}회",
-  "toolCallGroup_other": "도구 호출 {{count}}회"
+  "toolCallGroup_other": "도구 호출 {{count}}회",
+  "compactManager": {
+    "title": "컴팩트 매니저",
+    "modeLine": "모드 {{mode}} · 트리거 {{trigger}}%",
+    "watched": "감시 중",
+    "unwatched": "감시 없음",
+    "unreadable": "읽을 수 없는 상태 행",
+    "noSessions": "최근 24시간 내 활동한 세션 없음"
+  }
 }

@@ -26,5 +26,13 @@
   },
   "toolCallGroup": "{{count}} lượt gọi công cụ",
   "toolCallGroup_one": "{{count}} lượt gọi công cụ",
-  "toolCallGroup_other": "{{count}} lượt gọi công cụ"
+  "toolCallGroup_other": "{{count}} lượt gọi công cụ",
+  "compactManager": {
+    "title": "Trình quản lý Compact",
+    "modeLine": "chế độ {{mode}} · ngưỡng {{trigger}}%",
+    "watched": "đang theo dõi",
+    "unwatched": "không theo dõi",
+    "unreadable": "hàng trạng thái không đọc được",
+    "noSessions": "Không có phiên nào hoạt động trong 24h qua"
+  }
 }

@@ -1384,6 +1384,74 @@ export interface UpdateStatusPayload {
   fetch_error?: string;
 }
 
+// ───── Compact-manager readout ─────
+// Payloads for GET /api/compact-manager/status: the local compact-manager
+// CLI's `overview --json` (context auto-compaction state), or an
+// "unavailable" marker when the CLI is missing/broken on this machine.
+
+/** Effective per-model threshold set (override merged onto globals by the
+ *  CLI itself - values here are what a matching model actually gets). */
+export interface CompactManagerModelOverride {
+  context_window: number;
+  soft_pct: number;
+  hard_pct: number;
+  managed_trigger_pct: number;
+}
+
+/** One watcher lease/journal row from the CLI. `flags` carries attention
+ *  markers ("ATTENTION" | "DEAD-LEASE" | "MALFORMED-LEASE"); empty = healthy. */
+export interface CompactManagerWatcher {
+  session_id: string;
+  pid: number | null;
+  state: string;
+  live: boolean;
+  reason: string | null;
+  flags: string[];
+}
+
+/** One per-session usage row (state files touched in the last 24h), newest
+ *  first. Rows degrade individually: an `unreadable` row carries only the id;
+ *  `future_mtime` marks an untrustworthy timestamp (no `age_s` then). */
+export interface CompactManagerSession {
+  session_id: string;
+  model?: string | null;
+  current?: number;
+  peak?: number;
+  window?: number;
+  pct?: number;
+  updated_epoch?: number;
+  age_s?: number;
+  future_mtime?: boolean;
+  unreadable?: boolean;
+}
+
+/** The CLI's full structured overview (`overview --json`, schema 1). */
+export interface CompactManagerOverview {
+  schema: number;
+  generated_at: number;
+  mode: string | null;
+  context_window: number | null;
+  soft_pct: number;
+  hard_pct: number;
+  managed_trigger_pct: number;
+  models: Record<string, CompactManagerModelOverride>;
+  watchers: CompactManagerWatcher[];
+  sessions: CompactManagerSession[];
+}
+
+/** Envelope from GET /api/compact-manager/status. Always HTTP 200; a missing
+ *  or failing CLI yields `available: false` + `reason` so panels can quietly
+ *  render nothing on machines without compact-manager. */
+export interface CompactManagerStatusPayload {
+  available: boolean;
+  /** Server-side epoch ms when the CLI was run. */
+  fetched_at: number;
+  /** Present only when `available` is false (e.g. "cli_not_found"). */
+  reason?: string;
+  /** Present only when `available` is true. */
+  overview?: CompactManagerOverview;
+}
+
 // ───── Interactive run streaming ─────
 // Payloads for the "run a `claude` process from the dashboard" feature. A run is
 // started via POST /api/run and identified by a `RunHandle` id; the server then
