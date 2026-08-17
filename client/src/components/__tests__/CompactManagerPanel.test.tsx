@@ -162,13 +162,13 @@ describe("CompactManagerPanel", () => {
     expect(rowText).not.toContain("0.0%");
     // zero window: peak tokens still render (the column is token-scaled)
     const zeroWindowRow = rows.find((r) => r.textContent?.includes("dddd4444"));
-    expect(zeroWindowRow?.textContent).toContain("1.0K");
+    expect(zeroWindowRow?.textContent).toContain("1,000");
     // the object entry in flags is dropped; the string entry survives
     expect(screen.getByTestId("compact-manager-flags").textContent).toContain("ATTENTION");
     // flags win over live in the row's watcher cell (not just the strip)
     const liveFlagRow = rows.find((r) => r.textContent?.includes("bbbb2222"));
-    expect(liveFlagRow?.textContent).toContain("ATTENTION");
-    expect(liveFlagRow?.textContent).not.toContain("watched");
+    expect(liveFlagRow?.textContent).toContain("✗ ATTENTION");
+    expect(liveFlagRow?.textContent).not.toContain("live");
     // non-string state/reason degrade to "?" placeholder, no crash, and the
     // object reason never leaks into a title attribute
     const badStateRow = rows.find((r) => r.textContent?.includes("cccc3333"));
@@ -316,8 +316,18 @@ describe("CompactManagerPanel", () => {
     expect(panelText).toContain("80%");
     expect(panelText).toContain("75%");
 
-    // column headers
-    for (const label of ["session", "model", "usage", "current", "peak", "updated", "watcher"]) {
+    // column headers use the CLI's vocabulary
+    for (const label of [
+      "session",
+      "model",
+      "current",
+      "peak",
+      "pct",
+      "updated",
+      "watcher_pid",
+      "state",
+      "health",
+    ]) {
       expect(panelText.toLowerCase()).toContain(label);
     }
 
@@ -331,18 +341,18 @@ describe("CompactManagerPanel", () => {
     // counts, percentage as its own column
     const rowText = row("aaaa1111");
     expect(rowText).toContain("claude-fable-5");
-    expect(rowText).toContain("123.0K");
-    expect(rowText).toContain("456.0K");
+    expect(rowText).toContain("123,000");
+    expect(rowText).toContain("456,000");
     expect(rowText).toContain("12.3%");
-    expect(rowText).toContain("watched");
-    // full watcher detail columns: pid and short state
+    // CLI watcher columns: pid, short state, health composite
     expect(rowText).toContain("42");
     expect(rowText).toContain("READY");
+    expect(rowText).toContain("live");
 
     // retired watcher renders as retired, not unwatched — with its
     // retirement reason in the reason column
-    expect(row("dddd4444")).toContain("retired");
-    expect(row("dddd4444")).toContain("deadline");
+    expect(row("dddd4444")).toContain("RETIRED");
+    expect(row("dddd4444")).toContain("reason=deadline");
 
     // CLI liveness verdict: live rows carry the dot, dead rows dim and get
     // a gray dot; rows without the field or explicit null show no dot
@@ -365,8 +375,8 @@ describe("CompactManagerPanel", () => {
     // future_mtime renders "?" for age
     expect(row("ffff6666")).toContain("?");
 
-    // live wins over a contradictory retired state
-    expect(row("gggg7777")).toContain("watched");
+    // health says live even alongside a contradictory retired state
+    expect(row("gggg7777")).toContain("live");
 
     // watcher-only rows: id, dashes, state — no fabricated usage. The
     // flagged sessionless watcher shows its flag; the retired one, "retired".
@@ -375,11 +385,11 @@ describe("CompactManagerPanel", () => {
     expect(deadRow).toContain("DEAD-LEASE");
     const watcherOnlyRow = row("eeee5555");
     expect(watcherOnlyRow).toContain("—");
-    expect(watcherOnlyRow).toContain("retired");
+    expect(watcherOnlyRow).toContain("RETIRED");
 
     // unreadable row degrades to its id but keeps its watcher's state
     const unreadableRow = screen.getByText("cccc3333").parentElement;
-    expect(unreadableRow?.textContent).toContain("retired");
+    expect(unreadableRow?.textContent).toContain("RETIRED");
 
     // flagged watcher surfaces in the attention strip
     const flagStrip = screen.getByTestId("compact-manager-flags");

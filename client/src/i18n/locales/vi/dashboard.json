@@ -24,18 +24,13 @@
   "toolCallGroup_other": "{{count}} lượt gọi công cụ",
   "compactManager": {
     "title": "Trình quản lý Compact",
-    "watched": "đang theo dõi",
-    "unwatched": "không theo dõi",
     "unreadable": "hàng trạng thái không đọc được",
     "noSessions": "Không có phiên nào hoạt động trong 24h qua",
-    "retired": "đã nghỉ",
     "overrides": "ghi đè theo mô hình ({{n}})",
     "colSession": "phiên",
     "colModel": "mô hình",
-    "colUsage": "sử dụng",
     "colPeak": "đỉnh",
     "colUpdated": "cập nhật",
-    "colWatcher": "watcher",
     "ovrWindow": "cửa sổ",
     "ovrSoft": "mềm",
     "ovrHard": "cứng",
@@ -45,9 +40,9 @@
     "sessionGone": "phiên đã thoát — trạng thái còn sót",
     "modeLabel": "chế độ: {{mode}}",
     "globalRow": "toàn cục",
-    "sessionsLabel": "phiên hoạt động trong 24h qua ({{n}})",
-    "colPid": "pid",
+    "sessionsLabel": "phiên trong 24h qua ({{n}})",
     "colState": "trạng thái",
-    "colReason": "lý do"
+    "colWatcherPid": "pid_watcher",
+    "colHealth": "sức khỏe"
   }
 }
