@@ -120,11 +120,28 @@ function SessionRow({
 }) {
   const { t } = useTranslation("dashboard");
   const shortId = session.session_id.slice(0, 8);
+  // Proof-based CLI verdict; absent/null (older CLI, unjudgeable machine)
+  // renders no dot and no dimming. The dot column itself is unconditional
+  // so the layout never shifts with the payload.
+  const gone = session.session_live === false;
+  const liveDot =
+    session.session_live === true ? (
+      <span
+        className="block w-1.5 h-1.5 rounded-full bg-emerald-500/80"
+        title={t("compactManager.sessionLive")}
+      />
+    ) : gone ? (
+      <span
+        className="block w-1.5 h-1.5 rounded-full bg-gray-600"
+        title={t("compactManager.sessionGone")}
+      />
+    ) : null;
   if (session.unreadable) {
     // Same column skeleton so the watcher state stays visible and aligned —
     // an unreadable state row can still have a live/retired watcher.
     return (
-      <div className="flex items-center gap-3 text-xs">
+      <div className={`flex items-center gap-3 text-xs${gone ? " opacity-50" : ""}`}>
+        <span className="w-2 flex-shrink-0">{liveDot}</span>
         <span className="font-mono text-gray-500 w-20 flex-shrink-0">{shortId}</span>
         <span className="text-gray-600 truncate w-40 flex-shrink-0">
           {t("compactManager.unreadable")}
@@ -164,7 +181,12 @@ function SessionRow({
           ? `${pct.toFixed(1)}%`
           : "?";
   return (
-    <div className="flex items-center gap-3 text-xs" data-testid="compact-manager-row">
+    <div
+      className={`flex items-center gap-3 text-xs${gone ? " opacity-50" : ""}`}
+      data-testid="compact-manager-row"
+      data-live={session.session_live === true ? "true" : gone ? "false" : "unknown"}
+    >
+      <span className="w-2 flex-shrink-0">{liveDot}</span>
       <span className="font-mono text-gray-400 w-20 flex-shrink-0" title={session.session_id}>
         {shortId}
       </span>
@@ -212,6 +234,7 @@ function SessionRow({
 function WatcherOnlyRow({ watcher }: { watcher: SafeWatcher }) {
   return (
     <div className="flex items-center gap-3 text-xs" data-testid="compact-manager-row">
+      <span className="w-2 flex-shrink-0" />
       <span className="font-mono text-gray-400 w-20 flex-shrink-0" title={watcher.session_id}>
         {watcher.session_id.slice(0, 8)}
       </span>
@@ -233,6 +256,7 @@ function SessionHeaderRow() {
   const { t } = useTranslation("dashboard");
   return (
     <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider text-gray-600">
+      <span className="w-2 flex-shrink-0" />
       <span className="w-20 flex-shrink-0">{t("compactManager.colSession")}</span>
       <span className="w-40 flex-shrink-0">{t("compactManager.colModel")}</span>
       <span className="w-24 flex-shrink-0">{t("compactManager.colUsage")}</span>
@@ -391,7 +415,7 @@ export function CompactManagerPanel() {
         <span className="text-xs text-gray-600">{t("compactManager.noSessions")}</span>
       ) : (
         <div className="overflow-x-auto">
-          <div className="space-y-2 min-w-[45rem]">
+          <div className="space-y-2 min-w-[47rem]">
             <SessionHeaderRow />
             <div className="space-y-2 max-h-56 overflow-y-auto">
               {sessions.map((s) => (

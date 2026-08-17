@@ -1414,6 +1414,10 @@ export interface CompactManagerWatcher {
  *  `future_mtime` marks an untrustworthy timestamp (no `age_s` then). */
 export interface CompactManagerSession {
   session_id: string;
+  /** CLI's proof-based liveness verdict: true = claude process running,
+   *  false = exited (state file lingering ≤24h), null/absent = unjudgeable
+   *  (or an older CLI without the field). */
+  session_live?: boolean | null;
   model?: string | null;
   current?: number;
   peak?: number;

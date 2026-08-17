@@ -42,6 +42,8 @@
     "ovrSoft": "软阈值",
     "ovrHard": "硬阈值",
     "ovrTrigger": "触发",
-    "colCurrent": "当前"
+    "colCurrent": "当前",
+    "sessionLive": "会话运行中",
+    "sessionGone": "会话已退出 — 状态残留"
   }
 }
