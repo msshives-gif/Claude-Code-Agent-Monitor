@@ -24,10 +24,23 @@
   "toolCallGroup_other": "{{count}} tool calls",
   "compactManager": {
     "title": "Compact Manager",
-    "modeLine": "mode {{mode}} · trigger {{trigger}}%",
     "watched": "watched",
     "unwatched": "unwatched",
     "unreadable": "unreadable state row",
-    "noSessions": "No sessions touched in the last 24h"
+    "noSessions": "No sessions touched in the last 24h",
+    "summaryLine": "mode {{mode}} · window {{window}} · soft {{soft}}% · hard {{hard}}% · trigger {{trigger}}%",
+    "retired": "retired",
+    "overrides": "model overrides ({{n}})",
+    "colSession": "session",
+    "colModel": "model",
+    "colUsage": "usage",
+    "colPeak": "peak",
+    "colUpdated": "updated",
+    "colWatcher": "watcher",
+    "ovrPattern": "pattern",
+    "ovrWindow": "window",
+    "ovrSoft": "soft",
+    "ovrHard": "hard",
+    "ovrTrigger": "trigger"
   }
 }
