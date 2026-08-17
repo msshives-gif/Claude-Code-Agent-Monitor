@@ -41,6 +41,7 @@
     "ovrWindow": "window",
     "ovrSoft": "soft",
     "ovrHard": "hard",
-    "ovrTrigger": "trigger"
+    "ovrTrigger": "trigger",
+    "colCurrent": "current"
   }
 }

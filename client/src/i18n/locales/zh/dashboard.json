@@ -41,6 +41,7 @@
     "ovrWindow": "窗口",
     "ovrSoft": "软阈值",
     "ovrHard": "硬阈值",
-    "ovrTrigger": "触发"
+    "ovrTrigger": "触发",
+    "colCurrent": "当前"
   }
 }
