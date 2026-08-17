@@ -271,6 +271,9 @@ describe("CompactManagerPanel", () => {
             peak: 710_000,
             window: 1_000_000,
             pct: 70,
+            // per-row stamped override: 70% >= 60% must color red even
+            // though the global trigger is 75%
+            trigger_pct: 0.6,
             updated_epoch: 1,
             age_s: 4000,
           },
@@ -353,6 +356,15 @@ describe("CompactManagerPanel", () => {
     // retirement reason in the reason column
     expect(row("dddd4444")).toContain("RETIRED");
     expect(row("dddd4444")).toContain("reason=deadline");
+
+    // per-row trigger override: trig column shows the stamp and the pct
+    // colors against it, not the global trigger
+    expect(row("dddd4444")).toContain("60%");
+    const overriddenRow = rows.find((r) => r.textContent?.includes("dddd4444"));
+    const redPct = overriddenRow?.querySelector("span.text-red-400");
+    expect(redPct?.textContent).toBe("70.0%");
+    // rows without a stamp fall back to the global trigger in trig
+    expect(row("aaaa1111")).toContain("75%");
 
     // CLI liveness verdict: live rows carry the dot, dead rows dim and get
     // a gray dot; rows without the field or explicit null show no dot
