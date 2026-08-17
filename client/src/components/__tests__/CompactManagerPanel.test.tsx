@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, act, screen, cleanup } from "@testing-library/react";
+import { render, act, screen, cleanup, fireEvent } from "@testing-library/react";
 import type { CompactManagerStatusPayload } from "../../lib/types";
 
 let payload: CompactManagerStatusPayload | Error = {
@@ -87,7 +87,20 @@ describe("CompactManagerPanel", () => {
         soft_pct: 0.7,
         hard_pct: 0.8,
         managed_trigger_pct: 0.8,
-        models: {},
+        models: {
+          "[1m]": {
+            context_window: 1_000_000,
+            soft_pct: 0.7,
+            hard_pct: 0.8,
+            managed_trigger_pct: 0.8,
+          },
+          fable: {
+            context_window: 1_000_000,
+            soft_pct: 0.7,
+            hard_pct: 0.8,
+            managed_trigger_pct: 0.8,
+          },
+        },
         watchers: [
           {
             session_id: "aaaa1111-live",
@@ -105,6 +118,14 @@ describe("CompactManagerPanel", () => {
             reason: null,
             flags: ["DEAD-LEASE"],
           },
+          {
+            session_id: "dddd4444-done",
+            pid: null,
+            state: "WATCHER_RETIRED",
+            live: false,
+            reason: "deadline",
+            flags: [],
+          },
         ],
         sessions: [
           {
@@ -117,6 +138,16 @@ describe("CompactManagerPanel", () => {
             updated_epoch: 1,
             age_s: 4,
           },
+          {
+            session_id: "dddd4444-done",
+            model: "claude-fable-5",
+            current: 700_000,
+            peak: 710_000,
+            window: 1_000_000,
+            pct: 70,
+            updated_epoch: 1,
+            age_s: 4000,
+          },
           { session_id: "cccc3333-oops", unreadable: true },
         ],
       },
@@ -124,18 +155,64 @@ describe("CompactManagerPanel", () => {
     render(<CompactManagerPanel />);
     await settle();
     expect(screen.getByTestId("compact-manager-panel")).toBeTruthy();
-    // healthy session row: short id, model, pct
+    // healthy session row: short id, model, pct, peak
     const rows = screen.getAllByTestId("compact-manager-row");
-    expect(rows).toHaveLength(1);
+    expect(rows).toHaveLength(2);
     const rowText = rows[0]?.textContent ?? "";
     expect(rowText).toContain("aaaa1111");
     expect(rowText).toContain("claude-fable-5");
     expect(rowText).toContain("12.3%");
+    expect(rowText).toContain("456"); // peak column (fmt-compacted)
+    // retired watcher renders as a muted state, not "unwatched"
+    const retiredRow = rows[1]?.textContent ?? "";
+    expect(retiredRow).toContain("dddd4444");
+    expect(retiredRow).toContain("retired");
     // unreadable row degrades to its id
     expect(screen.getByText("cccc3333")).toBeTruthy();
     // flagged watcher surfaces in the attention strip
     const flagStrip = screen.getByTestId("compact-manager-flags");
     expect(flagStrip.textContent).toContain("bbbb2222");
     expect(flagStrip.textContent).toContain("DEAD-LEASE");
+    // model overrides: collapsed by default, table appears on toggle
+    expect(screen.queryByTestId("compact-manager-overrides")).toBeNull();
+    fireEvent.click(screen.getByTestId("compact-manager-overrides-toggle"));
+    const table = screen.getByTestId("compact-manager-overrides");
+    expect(table.textContent).toContain("[1m]");
+    expect(table.textContent).toContain("fable");
+    fireEvent.click(screen.getByTestId("compact-manager-overrides-toggle"));
+    expect(screen.queryByTestId("compact-manager-overrides")).toBeNull();
+  });
+
+  it("renders every session row (no cap)", async () => {
+    payload = {
+      available: true,
+      fetched_at: Date.now(),
+      overview: {
+        schema: 1,
+        generated_at: Date.now() / 1000,
+        mode: "managed",
+        context_window: 1_000_000,
+        soft_pct: 0.7,
+        hard_pct: 0.8,
+        managed_trigger_pct: 0.8,
+        models: {},
+        watchers: [],
+        sessions: Array.from({ length: 9 }, (_, i) => ({
+          session_id: `sess${i}000-0000-0000-0000-000000000000`,
+          model: "claude-fable-5",
+          current: 10_000,
+          peak: 10_000,
+          window: 1_000_000,
+          pct: 1,
+          updated_epoch: 1,
+          age_s: 10,
+        })),
+      },
+    };
+    render(<CompactManagerPanel />);
+    await settle();
+    expect(screen.getAllByTestId("compact-manager-row")).toHaveLength(9);
+    // no overrides -> no toggle at all
+    expect(screen.queryByTestId("compact-manager-overrides-toggle")).toBeNull();
   });
 });
