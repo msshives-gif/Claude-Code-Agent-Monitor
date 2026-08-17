@@ -33,7 +33,6 @@
     "unwatched": "未监视",
     "unreadable": "无法读取的状态行",
     "noSessions": "最近 24 小时内没有活动会话",
-    "summaryLine": "模式 {{mode}} · 窗口 {{window}} · 软阈值 {{soft}}% · 硬阈值 {{hard}}% · 触发 {{trigger}}%",
     "retired": "已退休",
     "overrides": "模型覆盖 ({{n}})",
     "colSession": "会话",
@@ -42,13 +41,14 @@
     "colPeak": "峰值",
     "colUpdated": "更新",
     "colWatcher": "监视器",
-    "ovrPattern": "模式串",
     "ovrWindow": "窗口",
     "ovrSoft": "软阈值",
     "ovrHard": "硬阈值",
     "ovrTrigger": "触发",
     "colCurrent": "当前",
     "sessionLive": "会话运行中",
-    "sessionGone": "会话已退出 — 状态残留"
+    "sessionGone": "会话已退出 — 状态残留",
+    "modeLabel": "模式 {{mode}}",
+    "globalRow": "全局"
   }
 }

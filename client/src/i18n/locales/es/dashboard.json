@@ -33,7 +33,6 @@
     "unwatched": "sin vigilar",
     "unreadable": "fila de estado ilegible",
     "noSessions": "Ninguna sesión activa en las últimas 24h",
-    "summaryLine": "modo {{mode}} · ventana {{window}} · suave {{soft}}% · duro {{hard}}% · disparo {{trigger}}%",
     "retired": "retirado",
     "overrides": "ajustes por modelo ({{n}})",
     "colSession": "sesión",
@@ -42,13 +41,14 @@
     "colPeak": "pico",
     "colUpdated": "actualizado",
     "colWatcher": "vigilante",
-    "ovrPattern": "patrón",
     "ovrWindow": "ventana",
     "ovrSoft": "suave",
     "ovrHard": "duro",
     "ovrTrigger": "disparo",
     "colCurrent": "actual",
     "sessionLive": "sesión activa",
-    "sessionGone": "sesión finalizada — estado residual"
+    "sessionGone": "sesión finalizada — estado residual",
+    "modeLabel": "modo {{mode}}",
+    "globalRow": "global"
   }
 }

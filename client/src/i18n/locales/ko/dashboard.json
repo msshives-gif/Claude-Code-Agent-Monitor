@@ -33,7 +33,6 @@
     "unwatched": "감시 없음",
     "unreadable": "읽을 수 없는 상태 행",
     "noSessions": "최근 24시간 내 활동한 세션 없음",
-    "summaryLine": "모드 {{mode}} · 윈도우 {{window}} · 소프트 {{soft}}% · 하드 {{hard}}% · 트리거 {{trigger}}%",
     "retired": "종료됨",
     "overrides": "모델별 재정의 ({{n}})",
     "colSession": "세션",
@@ -42,13 +41,14 @@
     "colPeak": "최대",
     "colUpdated": "갱신",
     "colWatcher": "와처",
-    "ovrPattern": "패턴",
     "ovrWindow": "윈도우",
     "ovrSoft": "소프트",
     "ovrHard": "하드",
     "ovrTrigger": "트리거",
     "colCurrent": "현재",
     "sessionLive": "세션 실행 중",
-    "sessionGone": "세션 종료됨 — 상태 파일 잔존"
+    "sessionGone": "세션 종료됨 — 상태 파일 잔존",
+    "modeLabel": "모드 {{mode}}",
+    "globalRow": "전역"
   }
 }
