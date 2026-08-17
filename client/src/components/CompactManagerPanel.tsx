@@ -57,7 +57,10 @@ function SessionRow({
       </div>
     );
   }
-  const pct = typeof session.pct === "number" ? session.pct : 0;
+  const pct = typeof session.pct === "number" && Number.isFinite(session.pct) ? session.pct : 0;
+  // Strings only — the CLI already coerces, but an object here would be
+  // an unrenderable React child and take the page down.
+  const model = typeof session.model === "string" ? session.model : null;
   const { bar, text } = barColors(pct, triggerPct);
   const watched = Boolean(watcher?.live && (watcher?.flags?.length ?? 0) === 0);
   const flags = watcher?.flags ?? [];
@@ -66,8 +69,8 @@ function SessionRow({
       <span className="font-mono text-gray-400 w-20 flex-shrink-0" title={session.session_id}>
         {shortId}
       </span>
-      <span className="text-gray-500 truncate flex-1 min-w-0" title={session.model || undefined}>
-        {session.model || "?"}
+      <span className="text-gray-500 truncate flex-1 min-w-0" title={model || undefined}>
+        {model || "?"}
       </span>
       <span
         className="w-24 h-1.5 rounded-full bg-surface-3/80 overflow-hidden flex-shrink-0"

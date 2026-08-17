@@ -16,7 +16,7 @@ process.env.DASHBOARD_DB_PATH = TEST_DB;
 
 const { createApp, startServer } = require("../index");
 const { db } = require("../db");
-const { fetchOverview } = require("../lib/compact-manager");
+const { fetchOverview, getOverviewCached, clearOverviewCache } = require("../lib/compact-manager");
 
 let app;
 let server;
@@ -113,6 +113,7 @@ describe("GET /api/compact-manager/status", () => {
       os.tmpdir(),
       `no-such-compact-manager-${process.pid}`
     );
+    clearOverviewCache();
     try {
       const res = await httpFetch("/api/compact-manager/status");
       assert.equal(res.status, 200);
@@ -121,6 +122,55 @@ describe("GET /api/compact-manager/status", () => {
     } finally {
       if (prev === undefined) delete process.env.DASHBOARD_COMPACT_MANAGER_BIN;
       else process.env.DASHBOARD_COMPACT_MANAGER_BIN = prev;
+      clearOverviewCache();
+    }
+  });
+
+  it("returns the 500 envelope even when a provider rejects with null", async () => {
+    app.locals.compactManagerProvider = async () => {
+      throw null;
+    };
+    try {
+      const res = await httpFetch("/api/compact-manager/status");
+      assert.equal(res.status, 500);
+      assert.equal(res.body.error.code, "COMPACT_MANAGER_STATUS_FAILED");
+      assert.equal(typeof res.body.error.message, "string");
+    } finally {
+      delete app.locals.compactManagerProvider;
+    }
+  });
+});
+
+describe("getOverviewCached", () => {
+  it("coalesces concurrent calls and serves the TTL window from cache", async () => {
+    const prev = process.env.DASHBOARD_COMPACT_MANAGER_BIN;
+    const fake = path.join(os.tmpdir(), `fake-compact-manager-count-${process.pid}`);
+    const counter = path.join(os.tmpdir(), `fake-compact-manager-count-${process.pid}.n`);
+    fs.writeFileSync(
+      fake,
+      `#!/bin/sh\necho x >> "${counter}"\necho '{"schema":1,"watchers":[],"sessions":[]}'\n`,
+      { mode: 0o755 }
+    );
+    process.env.DASHBOARD_COMPACT_MANAGER_BIN = fake;
+    clearOverviewCache();
+    try {
+      const [a, b] = await Promise.all([getOverviewCached(), getOverviewCached()]);
+      const c = await getOverviewCached();
+      assert.equal(a.available, true);
+      assert.equal(b, a);
+      assert.equal(c, a);
+      const spawns = fs.readFileSync(counter, "utf8").trim().split("\n").length;
+      assert.equal(spawns, 1);
+    } finally {
+      if (prev === undefined) delete process.env.DASHBOARD_COMPACT_MANAGER_BIN;
+      else process.env.DASHBOARD_COMPACT_MANAGER_BIN = prev;
+      clearOverviewCache();
+      try {
+        fs.unlinkSync(fake);
+        fs.unlinkSync(counter);
+      } catch {
+        // ignore
+      }
     }
   });
 });
