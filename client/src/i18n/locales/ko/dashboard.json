@@ -48,7 +48,8 @@
     "colCurrent": "현재",
     "sessionLive": "세션 실행 중",
     "sessionGone": "세션 종료됨 — 상태 파일 잔존",
-    "modeLabel": "모드 {{mode}}",
-    "globalRow": "전역"
+    "modeLabel": "모드: {{mode}}",
+    "globalRow": "전역",
+    "sessionsLabel": "최근 24시간 내 활동 세션 ({{n}})"
   }
 }
