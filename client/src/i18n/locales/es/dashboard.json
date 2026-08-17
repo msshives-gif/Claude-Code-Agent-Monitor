@@ -41,6 +41,7 @@
     "ovrWindow": "ventana",
     "ovrSoft": "suave",
     "ovrHard": "duro",
-    "ovrTrigger": "disparo"
+    "ovrTrigger": "disparo",
+    "colCurrent": "actual"
   }
 }

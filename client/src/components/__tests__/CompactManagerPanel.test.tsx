@@ -1,10 +1,12 @@
 /**
  * @file CompactManagerPanel.test.tsx
  * @description The compact-manager readout must render nothing when the CLI
- * is unavailable (or the endpoint errors), and must render session rows with
- * watcher flags surfaced when an overview is present — so machines without
- * compact-manager see a clean dashboard while machines with it get the
- * persistent readout.
+ * is unavailable (or the endpoint errors), and must render the full overview
+ * when one is present — summary values, session rows with consistent units,
+ * watcher-only rows, watcher-state precedence, and the collapsible model
+ * overrides — while degrading (never throwing) on malformed payload fields,
+ * so machines without compact-manager see a clean dashboard while machines
+ * with it get the persistent readout.
  * @author Son Nguyen <hoangson091104@gmail.com>
  */
 
@@ -42,6 +44,19 @@ async function settle() {
   });
 }
 
+const BASE_OVERVIEW = {
+  schema: 1,
+  generated_at: 1_700_000_000,
+  mode: "managed",
+  context_window: 1_000_000,
+  soft_pct: 0.7,
+  hard_pct: 0.8,
+  managed_trigger_pct: 0.8,
+  models: {},
+  watchers: [],
+  sessions: [],
+};
+
 afterEach(cleanup);
 
 describe("CompactManagerPanel", () => {
@@ -75,18 +90,101 @@ describe("CompactManagerPanel", () => {
     expect(screen.queryAllByTestId("compact-manager-row")).toHaveLength(0);
   });
 
-  it("renders session rows and surfaces watcher flags", async () => {
+  it("survives malformed nested watcher/session fields without crashing", async () => {
+    // Field-level drift the server's array check can't catch: flags as a
+    // non-array, flags containing objects, non-finite numerics. Must render
+    // degraded output, never throw.
     payload = {
       available: true,
       fetched_at: Date.now(),
       overview: {
-        schema: 1,
-        generated_at: Date.now() / 1000,
-        mode: "managed",
-        context_window: 1_000_000,
-        soft_pct: 0.7,
-        hard_pct: 0.8,
-        managed_trigger_pct: 0.8,
+        ...BASE_OVERVIEW,
+        watchers: [
+          {
+            session_id: "aaaa1111-bad-flags",
+            pid: 1,
+            state: "WATCHER_READY",
+            live: true,
+            reason: null,
+            flags: { length: 1 } as never,
+          },
+          {
+            session_id: "bbbb2222-obj-flag",
+            pid: 2,
+            state: "WATCHER_READY",
+            live: true,
+            reason: null,
+            flags: [{} as never, "ATTENTION"],
+          },
+          {
+            session_id: "cccc3333-bad-state",
+            pid: 3,
+            state: 42 as never,
+            live: false,
+            reason: {} as never,
+            flags: [],
+          },
+        ],
+        sessions: [
+          {
+            session_id: "aaaa1111-bad-flags",
+            model: "claude-fable-5",
+            current: NaN,
+            peak: Infinity,
+            window: 1_000_000,
+            pct: NaN,
+            updated_epoch: 1,
+            age_s: NaN,
+          },
+          {
+            session_id: "dddd4444-zero-window",
+            model: "claude-fable-5",
+            current: 500,
+            peak: 1000,
+            window: 0,
+            pct: 50,
+            updated_epoch: 1,
+            age_s: 5,
+          },
+        ],
+      },
+    };
+    render(<CompactManagerPanel />);
+    await settle();
+    const rows = screen.getAllByTestId("compact-manager-row");
+    // 2 session rows + watcher-only rows for bbbb2222 and cccc3333
+    expect(rows).toHaveLength(4);
+    const rowText = rows[0]?.textContent ?? "";
+    // non-finite numerics surface as "?", never NaN/Infinity/fake 0.0%
+    expect(rowText).toContain("?");
+    expect(rowText).not.toContain("NaN");
+    expect(rowText).not.toContain("Infinity");
+    expect(rowText).not.toContain("0.0%");
+    // zero window: peak stays blank, never token units under the % column
+    const zeroWindowRow = rows.find((r) => r.textContent?.includes("dddd4444"));
+    expect(zeroWindowRow?.textContent).not.toContain("1.0K");
+    // the object entry in flags is dropped; the string entry survives
+    expect(screen.getByTestId("compact-manager-flags").textContent).toContain("ATTENTION");
+    // flags win over live in the row's watcher cell (not just the strip)
+    const liveFlagRow = rows.find((r) => r.textContent?.includes("bbbb2222"));
+    expect(liveFlagRow?.textContent).toContain("ATTENTION");
+    expect(liveFlagRow?.textContent).not.toContain("watched");
+    // non-string state/reason degrade to "?" placeholder, no crash, and the
+    // object reason never leaks into a title attribute
+    const badStateRow = rows.find((r) => r.textContent?.includes("cccc3333"));
+    expect(badStateRow?.textContent).toContain("?");
+    expect(badStateRow?.innerHTML ?? "").not.toContain("object Object");
+  });
+
+  it("renders the full overview: summary, overrides, session rows, watcher states", async () => {
+    payload = {
+      available: true,
+      fetched_at: Date.now(),
+      overview: {
+        ...BASE_OVERVIEW,
+        // trigger deliberately differs from hard so the summary assertion
+        // can't pass on a copied value
+        managed_trigger_pct: 0.75,
         models: {
           "[1m]": {
             context_window: 1_000_000,
@@ -95,10 +193,10 @@ describe("CompactManagerPanel", () => {
             managed_trigger_pct: 0.8,
           },
           fable: {
-            context_window: 1_000_000,
-            soft_pct: 0.7,
-            hard_pct: 0.8,
-            managed_trigger_pct: 0.8,
+            context_window: 500_000,
+            soft_pct: 0.6,
+            hard_pct: 0.75,
+            managed_trigger_pct: 0.75,
           },
         },
         watchers: [
@@ -120,6 +218,32 @@ describe("CompactManagerPanel", () => {
           },
           {
             session_id: "dddd4444-done",
+            pid: null,
+            state: "WATCHER_RETIRED",
+            live: false,
+            reason: "deadline",
+            flags: [],
+          },
+          {
+            session_id: "eeee5555-old",
+            pid: null,
+            state: "WATCHER_RETIRED",
+            live: false,
+            reason: "deadline",
+            flags: [],
+          },
+          {
+            // live wins over a (contradictory) retired state
+            session_id: "gggg7777-live-retired",
+            pid: 7,
+            state: "WATCHER_RETIRED",
+            live: true,
+            reason: null,
+            flags: [],
+          },
+          {
+            // watcher on an unreadable session must not disappear
+            session_id: "cccc3333-oops",
             pid: null,
             state: "WATCHER_RETIRED",
             live: false,
@@ -148,38 +272,104 @@ describe("CompactManagerPanel", () => {
             updated_epoch: 1,
             age_s: 4000,
           },
+          {
+            session_id: "ffff6666-future",
+            model: "claude-fable-5",
+            current: 10_000,
+            peak: 10_000,
+            window: 1_000_000,
+            pct: 1,
+            updated_epoch: 1,
+            future_mtime: true,
+          },
+          {
+            session_id: "gggg7777-live-retired",
+            model: "claude-fable-5",
+            current: 20_000,
+            peak: 20_000,
+            window: 1_000_000,
+            pct: 2,
+            updated_epoch: 1,
+            age_s: 9,
+          },
           { session_id: "cccc3333-oops", unreadable: true },
         ],
       },
     };
     render(<CompactManagerPanel />);
     await settle();
-    expect(screen.getByTestId("compact-manager-panel")).toBeTruthy();
-    // healthy session row: short id, model, pct, peak
+    const panel = screen.getByTestId("compact-manager-panel");
+    expect(panel).toBeTruthy();
+
+    // summary line carries all five values — trigger (75%) differs from
+    // hard (80%) so a copied value can't satisfy this
+    const panelText = panel.textContent ?? "";
+    expect(panelText).toContain("managed");
+    expect(panelText).toContain("1.0M");
+    expect(panelText).toContain("70%");
+    expect(panelText).toContain("80%");
+    expect(panelText).toContain("75%");
+
+    // column headers
+    for (const label of ["session", "model", "usage", "current", "peak", "updated", "watcher"]) {
+      expect(panelText.toLowerCase()).toContain(label);
+    }
+
+    // session rows + watcher-only rows (bbbb2222 and eeee5555 have no
+    // session row) — unreadable rows render outside the data-testid
     const rows = screen.getAllByTestId("compact-manager-row");
-    expect(rows).toHaveLength(2);
-    const rowText = rows[0]?.textContent ?? "";
-    expect(rowText).toContain("aaaa1111");
+    expect(rows).toHaveLength(6);
+    const row = (id: string) => rows.find((r) => r.textContent?.includes(id))?.textContent ?? "";
+
+    // healthy row: consistent units — current as tokens · pct, peak as pct
+    const rowText = row("aaaa1111");
     expect(rowText).toContain("claude-fable-5");
-    expect(rowText).toContain("12.3%");
-    expect(rowText).toContain("456"); // peak column (fmt-compacted)
-    // retired watcher renders as a muted state, not "unwatched"
-    const retiredRow = rows[1]?.textContent ?? "";
-    expect(retiredRow).toContain("dddd4444");
-    expect(retiredRow).toContain("retired");
-    // unreadable row degrades to its id
-    expect(screen.getByText("cccc3333")).toBeTruthy();
+    expect(rowText).toContain("123.0K · 12.3%");
+    expect(rowText).toContain("45.6%"); // peak 456K / 1M
+    expect(rowText).toContain("watched");
+
+    // retired watcher renders as retired, not unwatched
+    expect(row("dddd4444")).toContain("retired");
+
+    // future_mtime renders "?" for age
+    expect(row("ffff6666")).toContain("?");
+
+    // live wins over a contradictory retired state
+    expect(row("gggg7777")).toContain("watched");
+
+    // watcher-only rows: id, dashes, state — no fabricated usage. The
+    // flagged sessionless watcher shows its flag; the retired one, "retired".
+    const deadRow = row("bbbb2222");
+    expect(deadRow).toContain("—");
+    expect(deadRow).toContain("DEAD-LEASE");
+    const watcherOnlyRow = row("eeee5555");
+    expect(watcherOnlyRow).toContain("—");
+    expect(watcherOnlyRow).toContain("retired");
+
+    // unreadable row degrades to its id but keeps its watcher's state
+    const unreadableRow = screen.getByText("cccc3333").parentElement;
+    expect(unreadableRow?.textContent).toContain("retired");
+
     // flagged watcher surfaces in the attention strip
     const flagStrip = screen.getByTestId("compact-manager-flags");
     expect(flagStrip.textContent).toContain("bbbb2222");
     expect(flagStrip.textContent).toContain("DEAD-LEASE");
-    // model overrides: collapsed by default, table appears on toggle
+
+    // model overrides: collapsed by default, full values appear on toggle
     expect(screen.queryByTestId("compact-manager-overrides")).toBeNull();
-    fireEvent.click(screen.getByTestId("compact-manager-overrides-toggle"));
+    const toggle = screen.getByTestId("compact-manager-overrides-toggle");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
     const table = screen.getByTestId("compact-manager-overrides");
-    expect(table.textContent).toContain("[1m]");
-    expect(table.textContent).toContain("fable");
-    fireEvent.click(screen.getByTestId("compact-manager-overrides-toggle"));
+    const tableText = table.textContent ?? "";
+    expect(tableText).toContain("[1m]");
+    expect(tableText).toContain("fable");
+    expect(tableText).toContain("1.0M");
+    expect(tableText).toContain("500.0K");
+    expect(tableText).toContain("60%");
+    expect(tableText).toContain("75%");
+    fireEvent.click(toggle);
     expect(screen.queryByTestId("compact-manager-overrides")).toBeNull();
   });
 
@@ -188,15 +378,7 @@ describe("CompactManagerPanel", () => {
       available: true,
       fetched_at: Date.now(),
       overview: {
-        schema: 1,
-        generated_at: Date.now() / 1000,
-        mode: "managed",
-        context_window: 1_000_000,
-        soft_pct: 0.7,
-        hard_pct: 0.8,
-        managed_trigger_pct: 0.8,
-        models: {},
-        watchers: [],
+        ...BASE_OVERVIEW,
         sessions: Array.from({ length: 9 }, (_, i) => ({
           session_id: `sess${i}000-0000-0000-0000-000000000000`,
           model: "claude-fable-5",
