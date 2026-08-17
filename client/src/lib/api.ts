@@ -388,6 +388,7 @@ import type {
   AlertEvent,
   AlertRule,
   Analytics,
+  CompactManagerStatusPayload,
   CostResult,
   DashboardEvent,
   GptModelPricing,
@@ -564,6 +565,22 @@ export const api = {
         method: "POST",
         body: JSON.stringify({}),
       }),
+  },
+
+  // ───────────────────────── Compact-manager API ─────────────────────────
+  /** Readout of the local compact-manager CLI (context auto-compaction:
+   *  mode, thresholds, watcher health, per-session usage). Maps to
+   *  `server/routes/compact-manager.js`. */
+  compactManager: {
+    /**
+     * GET /api/compact-manager/status - run the CLI's `overview --json` and
+     * return it. `{ available: false }` (still HTTP 200) when the CLI is not
+     * installed or fails, so panels can quietly render nothing.
+     *
+     * @returns {@link CompactManagerStatusPayload} with the overview when
+     *   available.
+     */
+    status: () => request<CompactManagerStatusPayload>("/compact-manager/status"),
   },
 
   // ──────────────────────────────── Stats API ────────────────────────────────

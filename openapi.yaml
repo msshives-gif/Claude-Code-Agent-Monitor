@@ -49,6 +49,8 @@ tags:
     description: 'Rules-based alerting: rule CRUD, fired-alert feed, acknowledgement'
   - name: Webhooks
     description: 'Universal webhook delivery for fired alerts: target CRUD (Slack/Discord/Teams/generic), test probe, and delivery log. Secrets are never returned.'
+  - name: Compact Manager
+    description: 'Readout of the local compact-manager CLI: context auto-compaction mode, thresholds, watcher health, and per-session usage. Absent CLI degrades to available:false.'
   - name: Remote Sources
     description: Config for remote SSH machines the dashboard pulls Claude Code history from. No secrets are stored — SSH auth defers to the host's SSH stack (agent, ~/.ssh/config, keys).
   - name: Documentation
@@ -7288,6 +7290,27 @@ paths:
                 error:
                   code: UPDATE_STATUS_FAILED
                   message: 'git: command not found'
+  /api/compact-manager/status:
+    get:
+      tags:
+        - Compact Manager
+      summary: Readout of the local compact-manager CLI (context auto-compaction)
+      operationId: getCompactManagerStatus
+      responses:
+        '200':
+          description: 'Snapshot envelope. available:false (with a reason string) when the CLI is not installed or fails — clients should hide their panel then. When available, `overview` carries the CLI''s `overview --json` output: mode, thresholds, per-model overrides, watcher rows with attention flags, and per-session usage keyed by Claude Code session UUID.'
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                description: 'Fields: available (boolean), fetched_at (epoch ms), reason? (string), overview? (object).'
+        '500':
+          description: Status query failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /api/updates/check:
     post:
       tags:
