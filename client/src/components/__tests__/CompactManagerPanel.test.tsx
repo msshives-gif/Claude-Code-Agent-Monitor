@@ -376,22 +376,24 @@ describe("CompactManagerPanel", () => {
     expect(flagStrip.textContent).toContain("bbbb2222");
     expect(flagStrip.textContent).toContain("DEAD-LEASE");
 
-    // model overrides: collapsed by default, full values appear on toggle
-    expect(screen.queryByTestId("compact-manager-overrides")).toBeNull();
+    // model overrides: collapsed by default; rows join the SAME table as
+    // the always-visible global row on toggle (column-aligned formats)
+    expect(screen.queryAllByTestId("compact-manager-override-row")).toHaveLength(0);
     const toggle = screen.getByTestId("compact-manager-overrides-toggle");
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(toggle);
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    const table = screen.getByTestId("compact-manager-overrides");
-    const tableText = table.textContent ?? "";
-    expect(tableText).toContain("[1m]");
-    expect(tableText).toContain("fable");
-    expect(tableText).toContain("1.0M");
-    expect(tableText).toContain("500.0K");
-    expect(tableText).toContain("60%");
-    expect(tableText).toContain("75%");
+    const overrideRows = screen.getAllByTestId("compact-manager-override-row");
+    expect(overrideRows).toHaveLength(2);
+    const rowsText = overrideRows.map((r) => r.textContent ?? "").join(" ");
+    expect(rowsText).toContain("[1m]");
+    expect(rowsText).toContain("fable");
+    expect(rowsText).toContain("1.0M");
+    expect(rowsText).toContain("500.0K");
+    expect(rowsText).toContain("60%");
+    expect(rowsText).toContain("75%");
     fireEvent.click(toggle);
-    expect(screen.queryByTestId("compact-manager-overrides")).toBeNull();
+    expect(screen.queryAllByTestId("compact-manager-override-row")).toHaveLength(0);
   });
 
   it("renders every session row (no cap)", async () => {
