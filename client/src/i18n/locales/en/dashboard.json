@@ -50,6 +50,9 @@
     "sessionGone": "session exited — state lingering",
     "modeLabel": "mode: {{mode}}",
     "globalRow": "global",
-    "sessionsLabel": "sessions touched in the last 24h ({{n}})"
+    "sessionsLabel": "sessions touched in the last 24h ({{n}})",
+    "colPid": "pid",
+    "colState": "state",
+    "colReason": "reason"
   }
 }
