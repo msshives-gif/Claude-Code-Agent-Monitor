@@ -7,13 +7,13 @@
  */
 
 const { Router } = require("express");
-const { fetchOverview } = require("../lib/compact-manager");
+const { getOverviewCached } = require("../lib/compact-manager");
 
 const router = Router();
 
 function overviewProvider(req) {
   const injected = req.app?.locals?.compactManagerProvider;
-  return typeof injected === "function" ? injected : fetchOverview;
+  return typeof injected === "function" ? injected : getOverviewCached;
 }
 
 router.get("/status", async (req, res) => {
@@ -24,7 +24,7 @@ router.get("/status", async (req, res) => {
     res.status(500).json({
       error: {
         code: "COMPACT_MANAGER_STATUS_FAILED",
-        message: err.message || String(err),
+        message: (err && err.message) || String(err),
       },
     });
   }

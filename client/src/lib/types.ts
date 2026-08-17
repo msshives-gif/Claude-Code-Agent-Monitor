@@ -1439,9 +1439,10 @@ export interface CompactManagerOverview {
   sessions: CompactManagerSession[];
 }
 
-/** Envelope from GET /api/compact-manager/status. Always HTTP 200; a missing
- *  or failing CLI yields `available: false` + `reason` so panels can quietly
- *  render nothing on machines without compact-manager. */
+/** Envelope from GET /api/compact-manager/status. Every real-CLI outcome —
+ *  missing, failing, hung, or garbage-printing — is HTTP 200 with
+ *  `available: false` + `reason` so panels can quietly render nothing; a 500
+ *  error envelope exists only for a throwing injected provider (tests). */
 export interface CompactManagerStatusPayload {
   available: boolean;
   /** Server-side epoch ms when the CLI was run. */

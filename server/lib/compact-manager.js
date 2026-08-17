@@ -10,8 +10,37 @@
 
 const spawn = require("cross-spawn");
 
-const MAX_STDOUT_BYTES = 1_000_000;
-const MAX_STDERR_BYTES = 10_000;
+// Caps are measured in JS string characters, not bytes — the CLI emits
+// ensure_ascii JSON so the two coincide in practice, and a truncated
+// payload just fails JSON.parse into an unavailable snapshot.
+const MAX_STDOUT_CHARS = 1_000_000;
+const MAX_STDERR_CHARS = 10_000;
+// Short server-side TTL + in-flight coalescing so N open dashboard tabs
+// (each polling every 15s) cost one CLI spawn per window, not N.
+const CACHE_TTL_MS = 10_000;
+
+let cachedSnapshot = null;
+let inFlight = null;
+
+function clearOverviewCache() {
+  cachedSnapshot = null;
+  inFlight = null;
+}
+
+/** Cached wrapper around fetchOverview — the route's default provider. */
+function getOverviewCached() {
+  if (cachedSnapshot && Date.now() - cachedSnapshot.fetched_at < CACHE_TTL_MS) {
+    return Promise.resolve(cachedSnapshot);
+  }
+  if (!inFlight) {
+    inFlight = fetchOverview().then((snapshot) => {
+      cachedSnapshot = snapshot;
+      inFlight = null;
+      return snapshot;
+    });
+  }
+  return inFlight;
+}
 
 function resolveBin() {
   return process.env.DASHBOARD_COMPACT_MANAGER_BIN || "compact-manager";
@@ -56,13 +85,13 @@ function fetchOverview({ timeoutMs = 10_000 } = {}) {
     }, timeoutMs);
     if (typeof timer.unref === "function") timer.unref();
     child.stdout.on("data", (chunk) => {
-      if (stdout.length < MAX_STDOUT_BYTES) {
-        stdout = (stdout + chunk).slice(0, MAX_STDOUT_BYTES);
+      if (stdout.length < MAX_STDOUT_CHARS) {
+        stdout = (stdout + chunk).slice(0, MAX_STDOUT_CHARS);
       }
     });
     child.stderr.on("data", (chunk) => {
-      if (stderr.length < MAX_STDERR_BYTES) {
-        stderr = (stderr + chunk).slice(0, MAX_STDERR_BYTES);
+      if (stderr.length < MAX_STDERR_CHARS) {
+        stderr = (stderr + chunk).slice(0, MAX_STDERR_CHARS);
       }
     });
     child.on("error", (err) => {
@@ -105,4 +134,4 @@ function fetchOverview({ timeoutMs = 10_000 } = {}) {
   });
 }
 
-module.exports = { fetchOverview };
+module.exports = { fetchOverview, getOverviewCached, clearOverviewCache };
