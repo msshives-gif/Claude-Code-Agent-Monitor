@@ -55,6 +55,7 @@ function barColors(pct: number, triggerPct: number): { bar: string; text: string
 /** Watcher rows normalized so malformed nested fields can't reach render. */
 interface SafeWatcher {
   session_id: string;
+  pid: number | null;
   state: string;
   live: boolean;
   reason: string | null;
@@ -64,11 +65,38 @@ interface SafeWatcher {
 function normalizeWatcher(w: CompactManagerWatcher): SafeWatcher {
   return {
     session_id: w.session_id,
+    pid: typeof w.pid === "number" && Number.isInteger(w.pid) && w.pid > 0 ? w.pid : null,
     state: typeof w.state === "string" ? w.state : "",
     live: w.live === true,
     reason: typeof w.reason === "string" ? w.reason : null,
     flags: Array.isArray(w.flags) ? w.flags.filter((f): f is string => typeof f === "string") : [],
   };
+}
+
+/** CLI-style short state: WATCHER_READY -> READY. */
+function shortState(state: string): string {
+  return state.startsWith("WATCHER_") ? state.slice("WATCHER_".length) : state;
+}
+
+/** The full-detail watcher columns (pid / state / reason) shared by every
+ *  row shape; blank cells when the session has no watcher at all. */
+function WatcherDetailCells({ watcher }: { watcher: SafeWatcher | undefined }) {
+  return (
+    <>
+      <span className="font-mono text-gray-600 w-12 text-right flex-shrink-0">
+        {watcher?.pid ?? ""}
+      </span>
+      <span className="font-mono text-gray-600 w-16 flex-shrink-0 truncate" title={watcher?.state}>
+        {watcher ? shortState(watcher.state) || "?" : ""}
+      </span>
+      <span
+        className="font-mono text-gray-600 w-24 flex-shrink-0 truncate"
+        title={watcher?.reason || undefined}
+      >
+        {watcher?.reason ?? ""}
+      </span>
+    </>
+  );
 }
 
 /** Watcher-state cell. Precedence: flags > watched > retired > raw state > unwatched. */
@@ -154,6 +182,7 @@ function SessionRow({
         <span className="w-20 flex-shrink-0 text-right">
           <WatcherCell watcher={watcher} />
         </span>
+        <WatcherDetailCells watcher={watcher} />
         <span className="flex-1 min-w-0" />
       </div>
     );
@@ -221,6 +250,7 @@ function SessionRow({
       <span className="w-20 flex-shrink-0 text-right">
         <WatcherCell watcher={watcher} />
       </span>
+      <WatcherDetailCells watcher={watcher} />
       <span className="flex-1 min-w-0" />
     </div>
   );
@@ -244,6 +274,7 @@ function WatcherOnlyRow({ watcher }: { watcher: SafeWatcher }) {
       <span className="w-20 flex-shrink-0 text-right">
         <WatcherCell watcher={watcher} />
       </span>
+      <WatcherDetailCells watcher={watcher} />
       <span className="flex-1 min-w-0" />
     </div>
   );
@@ -263,6 +294,9 @@ function SessionHeaderRow() {
       <span className="w-16 text-right flex-shrink-0">{t("compactManager.colPeak")}</span>
       <span className="w-10 text-right flex-shrink-0">{t("compactManager.colUpdated")}</span>
       <span className="w-20 text-right flex-shrink-0">{t("compactManager.colWatcher")}</span>
+      <span className="w-12 text-right flex-shrink-0">{t("compactManager.colPid")}</span>
+      <span className="w-16 flex-shrink-0">{t("compactManager.colState")}</span>
+      <span className="w-24 flex-shrink-0">{t("compactManager.colReason")}</span>
       <span className="flex-1 min-w-0" />
     </div>
   );
@@ -407,7 +441,7 @@ export function CompactManagerPanel() {
           <span className="text-xs text-gray-600">{t("compactManager.noSessions")}</span>
         ) : (
           <div className="overflow-x-auto">
-            <div className="space-y-2 min-w-[47rem]">
+            <div className="space-y-2 min-w-[62rem]">
               <div className="text-[10px] uppercase tracking-wider text-gray-600">
                 {t("compactManager.sessionsLabel", {
                   n: sessions.length + watcherOnly.length,

@@ -45,6 +45,9 @@
     "sessionGone": "phiên đã thoát — trạng thái còn sót",
     "modeLabel": "chế độ: {{mode}}",
     "globalRow": "toàn cục",
-    "sessionsLabel": "phiên hoạt động trong 24h qua ({{n}})"
+    "sessionsLabel": "phiên hoạt động trong 24h qua ({{n}})",
+    "colPid": "pid",
+    "colState": "trạng thái",
+    "colReason": "lý do"
   }
 }

@@ -335,9 +335,14 @@ describe("CompactManagerPanel", () => {
     expect(rowText).toContain("456.0K");
     expect(rowText).toContain("12.3%");
     expect(rowText).toContain("watched");
+    // full watcher detail columns: pid and short state
+    expect(rowText).toContain("42");
+    expect(rowText).toContain("READY");
 
-    // retired watcher renders as retired, not unwatched
+    // retired watcher renders as retired, not unwatched — with its
+    // retirement reason in the reason column
     expect(row("dddd4444")).toContain("retired");
+    expect(row("dddd4444")).toContain("deadline");
 
     // CLI liveness verdict: live rows carry the dot, dead rows dim and get
     // a gray dot; rows without the field or explicit null show no dot
