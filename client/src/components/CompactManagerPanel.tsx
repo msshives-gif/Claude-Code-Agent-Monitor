@@ -78,65 +78,41 @@ function shortState(state: string): string {
   return state.startsWith("WATCHER_") ? state.slice("WATCHER_".length) : state;
 }
 
-/** The full-detail watcher columns (pid / state / reason) shared by every
- *  row shape; blank cells when the session has no watcher at all. */
+/** The CLI health composite, verbatim: "✗ FLAG,FLAG" or "live" or "",
+ *  plus "reason=…" — one vocabulary for terminal and dashboard. */
+function healthText(watcher: SafeWatcher): string {
+  let status = watcher.flags.length ? "✗ " + watcher.flags.join(",") : watcher.live ? "live" : "";
+  if (watcher.reason) status = (status ? status + "  " : "") + "reason=" + watcher.reason;
+  return status;
+}
+
+/** The CLI watchers-table columns (watcher pid / state / health) merged
+ *  into every row shape; blank when the session has no watcher at all. */
 function WatcherDetailCells({ watcher }: { watcher: SafeWatcher | undefined }) {
+  const health = watcher ? healthText(watcher) : "";
+  const healthColor = watcher?.flags.length
+    ? "text-red-400"
+    : watcher?.live
+      ? "text-emerald-400"
+      : "text-gray-600";
   return (
     <>
       {/* CLI-matching: a watcher with no live process (retired) shows an
           em-dash pid; only sessions with no watcher at all stay blank. */}
-      <span className="font-mono text-gray-600 w-12 text-right flex-shrink-0">
+      <span className="font-mono text-gray-600 w-24 text-right flex-shrink-0 whitespace-nowrap">
         {watcher ? (watcher.pid ?? "—") : ""}
       </span>
       <span className="font-mono text-gray-600 w-16 flex-shrink-0 truncate" title={watcher?.state}>
         {watcher ? shortState(watcher.state) || "?" : ""}
       </span>
       <span
-        className="font-mono text-gray-600 w-24 flex-shrink-0 truncate"
-        title={watcher?.reason || undefined}
+        className={`font-mono w-44 flex-shrink-0 truncate ${healthColor}`}
+        title={health || undefined}
       >
-        {watcher?.reason ?? ""}
+        {health}
       </span>
     </>
   );
-}
-
-/** Watcher-state cell. Precedence: flags > watched > retired > raw state > unwatched. */
-function WatcherCell({ watcher }: { watcher: SafeWatcher | undefined }) {
-  const { t } = useTranslation("dashboard");
-  if (watcher && watcher.flags.length > 0) {
-    return (
-      <span className="text-red-400 font-mono text-[10px]" title={watcher.flags.join(", ")}>
-        {watcher.flags[0]}
-      </span>
-    );
-  }
-  if (watcher?.live) {
-    return <span className="text-emerald-400 text-[10px]">{t("compactManager.watched")}</span>;
-  }
-  if (watcher && watcher.state === "WATCHER_RETIRED") {
-    return (
-      <span
-        className="text-gray-500 text-[10px]"
-        title={watcher.reason ? `${watcher.state}: ${watcher.reason}` : watcher.state}
-      >
-        {t("compactManager.retired")}
-      </span>
-    );
-  }
-  if (watcher) {
-    // Exists but neither live nor retired — an unknown lifecycle state.
-    // Show it raw rather than mislabeling it watched/retired/unwatched.
-    return (
-      <span
-        className="text-gray-500 font-mono text-[10px] truncate inline-block max-w-full"
-        title={watcher.reason ? `${watcher.state}: ${watcher.reason}` : watcher.state}
-      >
-        {watcher.state || "?"}
-      </span>
-    );
-  }
-  return <span className="text-gray-600 text-[10px]">{t("compactManager.unwatched")}</span>;
 }
 
 function SessionRow({
@@ -167,7 +143,7 @@ function SessionRow({
       />
     ) : null;
   if (session.unreadable) {
-    // Same column skeleton so the watcher state stays visible and aligned —
+    // Same column skeleton so the watcher columns stay visible and aligned —
     // an unreadable state row can still have a live/retired watcher.
     return (
       <div className={`flex items-center gap-3 text-xs${gone ? " opacity-50" : ""}`}>
@@ -176,14 +152,11 @@ function SessionRow({
         <span className="text-gray-600 truncate w-40 flex-shrink-0">
           {t("compactManager.unreadable")}
         </span>
-        <span className="w-24 flex-shrink-0" />
+        <span className="font-mono text-gray-600 w-20 text-right flex-shrink-0">—</span>
+        <span className="w-20 flex-shrink-0" />
         <span className="w-12 flex-shrink-0" />
-        <span className="font-mono text-gray-600 w-16 text-right flex-shrink-0">—</span>
-        <span className="w-16 flex-shrink-0" />
+        <span className="w-24 flex-shrink-0" />
         <span className="w-10 flex-shrink-0" />
-        <span className="w-20 flex-shrink-0 text-right">
-          <WatcherCell watcher={watcher} />
-        </span>
         <WatcherDetailCells watcher={watcher} />
         <span className="flex-1 min-w-0" />
       </div>
@@ -220,37 +193,38 @@ function SessionRow({
       >
         {model || "?"}
       </span>
+      {/* CLI column order and formats: current, peak (grouped token
+          counts), pct (the bar drawing it + the colored number),
+          updated — one vocabulary for terminal and dashboard. */}
+      <span className="font-mono text-gray-400 w-20 text-right flex-shrink-0">
+        {current !== null ? current.toLocaleString() : "?"}
+      </span>
+      <span
+        className="font-mono text-gray-500 w-20 text-right flex-shrink-0"
+        title={peakPct !== null ? `${peakPct.toFixed(1)}%` : undefined}
+      >
+        {peak !== null ? peak.toLocaleString() : ""}
+      </span>
+      <span
+        className={`font-mono w-12 text-right flex-shrink-0 ${colors ? colors.text : "text-gray-500"}`}
+      >
+        {pct !== null ? `${pct.toFixed(1)}%` : "?"}
+      </span>
       <span
         className="w-24 h-1.5 rounded-full bg-surface-3/80 overflow-hidden flex-shrink-0"
-        title={current !== null && window !== null ? `${fmt(current)} / ${fmt(window)}` : undefined}
+        title={
+          current !== null && window !== null
+            ? `${current.toLocaleString()} / ${window.toLocaleString()}`
+            : undefined
+        }
       >
         <span
           className={`block h-full rounded-full ${colors ? colors.bar : "bg-gray-600"} opacity-80`}
           style={{ width: `${Math.min(100, Math.max(0, pct ?? 0))}%` }}
         />
       </span>
-      {/* CLI-mirroring units: the severity-colored percentage sits right
-          beside the bar that draws it; current and peak are plain token
-          counts. */}
-      <span
-        className={`font-mono w-12 text-right flex-shrink-0 ${colors ? colors.text : "text-gray-500"}`}
-      >
-        {pct !== null ? `${pct.toFixed(1)}%` : "?"}
-      </span>
-      <span className="font-mono text-gray-400 w-16 text-right flex-shrink-0">
-        {current !== null ? fmt(current) : "?"}
-      </span>
-      <span
-        className="font-mono text-gray-500 w-16 text-right flex-shrink-0"
-        title={peakPct !== null ? `${peakPct.toFixed(1)}%` : undefined}
-      >
-        {peak !== null ? fmt(peak) : ""}
-      </span>
       <span className="font-mono text-gray-600 w-10 text-right flex-shrink-0">
         {session.future_mtime ? "?" : ageS !== null ? ageText(ageS) : ""}
-      </span>
-      <span className="w-20 flex-shrink-0 text-right">
-        <WatcherCell watcher={watcher} />
       </span>
       <WatcherDetailCells watcher={watcher} />
       <span className="flex-1 min-w-0" />
@@ -268,21 +242,20 @@ function WatcherOnlyRow({ watcher }: { watcher: SafeWatcher }) {
         {watcher.session_id.slice(0, 8)}
       </span>
       <span className="font-mono text-gray-600 w-40 flex-shrink-0">—</span>
-      <span className="w-24 flex-shrink-0" />
+      <span className="font-mono text-gray-600 w-20 text-right flex-shrink-0">—</span>
+      <span className="w-20 flex-shrink-0" />
       <span className="w-12 flex-shrink-0" />
-      <span className="font-mono text-gray-600 w-16 text-right flex-shrink-0">—</span>
-      <span className="w-16 flex-shrink-0" />
+      <span className="w-24 flex-shrink-0" />
       <span className="w-10 flex-shrink-0" />
-      <span className="w-20 flex-shrink-0 text-right">
-        <WatcherCell watcher={watcher} />
-      </span>
       <WatcherDetailCells watcher={watcher} />
       <span className="flex-1 min-w-0" />
     </div>
   );
 }
 
-/** Muted column titles aligned to SessionRow's fixed widths. */
+/** Muted column titles aligned to SessionRow's fixed widths — the CLI's
+ *  column vocabulary (current/peak/pct/updated, watcher pid/state/health)
+ *  so the two readouts read the same. */
 function SessionHeaderRow() {
   const { t } = useTranslation("dashboard");
   return (
@@ -290,15 +263,16 @@ function SessionHeaderRow() {
       <span className="w-2 flex-shrink-0" />
       <span className="w-20 flex-shrink-0">{t("compactManager.colSession")}</span>
       <span className="w-40 flex-shrink-0">{t("compactManager.colModel")}</span>
-      <span className="w-24 flex-shrink-0">{t("compactManager.colUsage")}</span>
-      <span className="w-12 text-right flex-shrink-0">%</span>
-      <span className="w-16 text-right flex-shrink-0">{t("compactManager.colCurrent")}</span>
-      <span className="w-16 text-right flex-shrink-0">{t("compactManager.colPeak")}</span>
+      <span className="w-20 text-right flex-shrink-0">{t("compactManager.colCurrent")}</span>
+      <span className="w-20 text-right flex-shrink-0">{t("compactManager.colPeak")}</span>
+      <span className="w-12 text-right flex-shrink-0">pct</span>
+      <span className="w-24 flex-shrink-0" />
       <span className="w-10 text-right flex-shrink-0">{t("compactManager.colUpdated")}</span>
-      <span className="w-20 text-right flex-shrink-0">{t("compactManager.colWatcher")}</span>
-      <span className="w-12 text-right flex-shrink-0">{t("compactManager.colPid")}</span>
+      <span className="w-24 text-right flex-shrink-0 whitespace-nowrap">
+        {t("compactManager.colWatcherPid")}
+      </span>
       <span className="w-16 flex-shrink-0">{t("compactManager.colState")}</span>
-      <span className="w-24 flex-shrink-0">{t("compactManager.colReason")}</span>
+      <span className="w-44 flex-shrink-0">{t("compactManager.colHealth")}</span>
       <span className="flex-1 min-w-0" />
     </div>
   );
@@ -443,7 +417,7 @@ export function CompactManagerPanel() {
           <span className="text-xs text-gray-600">{t("compactManager.noSessions")}</span>
         ) : (
           <div className="overflow-x-auto">
-            <div className="space-y-2 min-w-[62rem]">
+            <div className="space-y-2 min-w-[67rem]">
               <div className="text-[10px] uppercase tracking-wider text-gray-600">
                 {t("compactManager.sessionsLabel", {
                   n: sessions.length + watcherOnly.length,

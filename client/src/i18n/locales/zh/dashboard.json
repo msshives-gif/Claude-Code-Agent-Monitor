@@ -29,18 +29,13 @@
   "toolCallGroup_other": "{{count}} 次工具调用",
   "compactManager": {
     "title": "压缩管理器",
-    "watched": "监视中",
-    "unwatched": "未监视",
     "unreadable": "无法读取的状态行",
     "noSessions": "最近 24 小时内没有活动会话",
-    "retired": "已退休",
     "overrides": "模型覆盖 ({{n}})",
     "colSession": "会话",
     "colModel": "模型",
-    "colUsage": "用量",
     "colPeak": "峰值",
     "colUpdated": "更新",
-    "colWatcher": "监视器",
     "ovrWindow": "窗口",
     "ovrSoft": "软阈值",
     "ovrHard": "硬阈值",
@@ -50,9 +45,9 @@
     "sessionGone": "会话已退出 — 状态残留",
     "modeLabel": "模式: {{mode}}",
     "globalRow": "全局",
-    "sessionsLabel": "过去24小时内活动的会话 ({{n}})",
-    "colPid": "pid",
+    "sessionsLabel": "24小时内的会话 ({{n}})",
     "colState": "状态",
-    "colReason": "原因"
+    "colWatcherPid": "监视器_pid",
+    "colHealth": "健康"
   }
 }

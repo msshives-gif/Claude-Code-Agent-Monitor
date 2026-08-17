@@ -29,18 +29,13 @@
   "toolCallGroup_other": "{{count}} llamadas a herramientas",
   "compactManager": {
     "title": "Gestor de Compactación",
-    "watched": "vigilada",
-    "unwatched": "sin vigilar",
     "unreadable": "fila de estado ilegible",
     "noSessions": "Ninguna sesión activa en las últimas 24h",
-    "retired": "retirado",
     "overrides": "ajustes por modelo ({{n}})",
     "colSession": "sesión",
     "colModel": "modelo",
-    "colUsage": "uso",
     "colPeak": "pico",
     "colUpdated": "actualizado",
-    "colWatcher": "vigilante",
     "ovrWindow": "ventana",
     "ovrSoft": "suave",
     "ovrHard": "duro",
@@ -50,9 +45,9 @@
     "sessionGone": "sesión finalizada — estado residual",
     "modeLabel": "modo: {{mode}}",
     "globalRow": "global",
-    "sessionsLabel": "sesiones activas en las últimas 24 h ({{n}})",
-    "colPid": "pid",
+    "sessionsLabel": "sesiones activas <24 h ({{n}})",
     "colState": "estado",
-    "colReason": "motivo"
+    "colWatcherPid": "pid_vigilante",
+    "colHealth": "salud"
   }
 }

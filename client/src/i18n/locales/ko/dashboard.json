@@ -29,18 +29,13 @@
   "toolCallGroup_other": "도구 호출 {{count}}회",
   "compactManager": {
     "title": "컴팩트 매니저",
-    "watched": "감시 중",
-    "unwatched": "감시 없음",
     "unreadable": "읽을 수 없는 상태 행",
     "noSessions": "최근 24시간 내 활동한 세션 없음",
-    "retired": "종료됨",
     "overrides": "모델별 재정의 ({{n}})",
     "colSession": "세션",
     "colModel": "모델",
-    "colUsage": "사용량",
     "colPeak": "최대",
     "colUpdated": "갱신",
-    "colWatcher": "와처",
     "ovrWindow": "윈도우",
     "ovrSoft": "소프트",
     "ovrHard": "하드",
@@ -50,9 +45,9 @@
     "sessionGone": "세션 종료됨 — 상태 파일 잔존",
     "modeLabel": "모드: {{mode}}",
     "globalRow": "전역",
-    "sessionsLabel": "최근 24시간 내 활동 세션 ({{n}})",
-    "colPid": "pid",
+    "sessionsLabel": "최근 24시간 내 세션 ({{n}})",
     "colState": "상태",
-    "colReason": "사유"
+    "colWatcherPid": "와처_pid",
+    "colHealth": "상태"
   }
 }
