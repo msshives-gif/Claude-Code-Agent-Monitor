@@ -45,6 +45,9 @@
     "sessionGone": "会话已退出 — 状态残留",
     "modeLabel": "模式: {{mode}}",
     "globalRow": "全局",
-    "sessionsLabel": "过去24小时内活动的会话 ({{n}})"
+    "sessionsLabel": "过去24小时内活动的会话 ({{n}})",
+    "colPid": "pid",
+    "colState": "状态",
+    "colReason": "原因"
   }
 }

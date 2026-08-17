@@ -45,6 +45,9 @@
     "sessionGone": "세션 종료됨 — 상태 파일 잔존",
     "modeLabel": "모드: {{mode}}",
     "globalRow": "전역",
-    "sessionsLabel": "최근 24시간 내 활동 세션 ({{n}})"
+    "sessionsLabel": "최근 24시간 내 활동 세션 ({{n}})",
+    "colPid": "pid",
+    "colState": "상태",
+    "colReason": "사유"
   }
 }
