@@ -29,10 +29,23 @@
   "toolCallGroup_other": "{{count}} lượt gọi công cụ",
   "compactManager": {
     "title": "Trình quản lý Compact",
-    "modeLine": "chế độ {{mode}} · ngưỡng {{trigger}}%",
     "watched": "đang theo dõi",
     "unwatched": "không theo dõi",
     "unreadable": "hàng trạng thái không đọc được",
-    "noSessions": "Không có phiên nào hoạt động trong 24h qua"
+    "noSessions": "Không có phiên nào hoạt động trong 24h qua",
+    "summaryLine": "chế độ {{mode}} · cửa sổ {{window}} · mềm {{soft}}% · cứng {{hard}}% · kích hoạt {{trigger}}%",
+    "retired": "đã nghỉ",
+    "overrides": "ghi đè theo mô hình ({{n}})",
+    "colSession": "phiên",
+    "colModel": "mô hình",
+    "colUsage": "sử dụng",
+    "colPeak": "đỉnh",
+    "colUpdated": "cập nhật",
+    "colWatcher": "watcher",
+    "ovrPattern": "mẫu",
+    "ovrWindow": "cửa sổ",
+    "ovrSoft": "mềm",
+    "ovrHard": "cứng",
+    "ovrTrigger": "kích hoạt"
   }
 }
