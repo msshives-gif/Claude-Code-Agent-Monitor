@@ -83,8 +83,10 @@ function shortState(state: string): string {
 function WatcherDetailCells({ watcher }: { watcher: SafeWatcher | undefined }) {
   return (
     <>
+      {/* CLI-matching: a watcher with no live process (retired) shows an
+          em-dash pid; only sessions with no watcher at all stay blank. */}
       <span className="font-mono text-gray-600 w-12 text-right flex-shrink-0">
-        {watcher?.pid ?? ""}
+        {watcher ? (watcher.pid ?? "—") : ""}
       </span>
       <span className="font-mono text-gray-600 w-16 flex-shrink-0 truncate" title={watcher?.state}>
         {watcher ? shortState(watcher.state) || "?" : ""}
