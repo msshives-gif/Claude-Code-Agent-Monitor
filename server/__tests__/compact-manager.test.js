@@ -146,6 +146,25 @@ describe("fetchOverview", () => {
     }
   });
 
+  it("rejects a JSON object missing the structural arrays", async () => {
+    const prev = process.env.DASHBOARD_COMPACT_MANAGER_BIN;
+    const fake = path.join(os.tmpdir(), `fake-compact-manager-shape-${process.pid}`);
+    // Valid JSON, wrong shape (e.g. wrong binary behind the env var):
+    // must degrade to unavailable so the client panel hides instead of
+    // dereferencing missing arrays during render.
+    fs.writeFileSync(fake, "#!/bin/sh\necho '{\"schema\":1}'\n", { mode: 0o755 });
+    process.env.DASHBOARD_COMPACT_MANAGER_BIN = fake;
+    try {
+      const snap = await fetchOverview();
+      assert.equal(snap.available, false);
+      assert.equal(snap.reason, "unexpected output shape");
+    } finally {
+      if (prev === undefined) delete process.env.DASHBOARD_COMPACT_MANAGER_BIN;
+      else process.env.DASHBOARD_COMPACT_MANAGER_BIN = prev;
+      fs.unlinkSync(fake);
+    }
+  });
+
   it("degrades on non-JSON output and non-zero exit", async () => {
     const prev = process.env.DASHBOARD_COMPACT_MANAGER_BIN;
     const fake = path.join(os.tmpdir(), `fake-compact-manager-bad-${process.pid}`);
