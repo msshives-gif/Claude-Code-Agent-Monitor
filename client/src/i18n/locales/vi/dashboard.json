@@ -43,7 +43,8 @@
     "colCurrent": "hiện tại",
     "sessionLive": "phiên đang chạy",
     "sessionGone": "phiên đã thoát — trạng thái còn sót",
-    "modeLabel": "chế độ {{mode}}",
-    "globalRow": "toàn cục"
+    "modeLabel": "chế độ: {{mode}}",
+    "globalRow": "toàn cục",
+    "sessionsLabel": "phiên hoạt động trong 24h qua ({{n}})"
   }
 }

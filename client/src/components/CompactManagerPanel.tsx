@@ -147,8 +147,9 @@ function SessionRow({
           {t("compactManager.unreadable")}
         </span>
         <span className="w-24 flex-shrink-0" />
-        <span className="font-mono text-gray-600 w-28 text-right flex-shrink-0">—</span>
-        <span className="w-14 flex-shrink-0" />
+        <span className="w-12 flex-shrink-0" />
+        <span className="font-mono text-gray-600 w-16 text-right flex-shrink-0">—</span>
+        <span className="w-16 flex-shrink-0" />
         <span className="w-10 flex-shrink-0" />
         <span className="w-20 flex-shrink-0 text-right">
           <WatcherCell watcher={watcher} />
@@ -172,14 +173,6 @@ function SessionRow({
     peak !== null && window !== null && window > 0 ? finite((peak / window) * 100) : null;
   const ageS = finite(session.age_s);
   const colors = pct !== null ? barColors(pct, triggerPct) : null;
-  const currentText =
-    current !== null && pct !== null
-      ? `${fmt(current)} · ${pct.toFixed(1)}%`
-      : current !== null
-        ? fmt(current)
-        : pct !== null
-          ? `${pct.toFixed(1)}%`
-          : "?";
   return (
     <div
       className={`flex items-center gap-3 text-xs${gone ? " opacity-50" : ""}`}
@@ -205,18 +198,22 @@ function SessionRow({
           style={{ width: `${Math.min(100, Math.max(0, pct ?? 0))}%` }}
         />
       </span>
+      {/* CLI-mirroring units: the severity-colored percentage sits right
+          beside the bar that draws it; current and peak are plain token
+          counts. */}
       <span
-        className={`font-mono w-28 text-right flex-shrink-0 ${colors ? colors.text : "text-gray-500"}`}
+        className={`font-mono w-12 text-right flex-shrink-0 ${colors ? colors.text : "text-gray-500"}`}
       >
-        {currentText}
+        {pct !== null ? `${pct.toFixed(1)}%` : "?"}
+      </span>
+      <span className="font-mono text-gray-400 w-16 text-right flex-shrink-0">
+        {current !== null ? fmt(current) : "?"}
       </span>
       <span
-        className="font-mono text-gray-500 w-14 text-right flex-shrink-0"
-        title={peak !== null ? fmt(peak) : undefined}
+        className="font-mono text-gray-500 w-16 text-right flex-shrink-0"
+        title={peakPct !== null ? `${peakPct.toFixed(1)}%` : undefined}
       >
-        {/* Percent only — never token units under a percent-scaled column;
-            the raw count lives in the tooltip. */}
-        {peakPct !== null ? `${peakPct.toFixed(1)}%` : ""}
+        {peak !== null ? fmt(peak) : ""}
       </span>
       <span className="font-mono text-gray-600 w-10 text-right flex-shrink-0">
         {session.future_mtime ? "?" : ageS !== null ? ageText(ageS) : ""}
@@ -240,8 +237,9 @@ function WatcherOnlyRow({ watcher }: { watcher: SafeWatcher }) {
       </span>
       <span className="font-mono text-gray-600 w-40 flex-shrink-0">—</span>
       <span className="w-24 flex-shrink-0" />
-      <span className="font-mono text-gray-600 w-28 text-right flex-shrink-0">—</span>
-      <span className="w-14 flex-shrink-0" />
+      <span className="w-12 flex-shrink-0" />
+      <span className="font-mono text-gray-600 w-16 text-right flex-shrink-0">—</span>
+      <span className="w-16 flex-shrink-0" />
       <span className="w-10 flex-shrink-0" />
       <span className="w-20 flex-shrink-0 text-right">
         <WatcherCell watcher={watcher} />
@@ -260,8 +258,9 @@ function SessionHeaderRow() {
       <span className="w-20 flex-shrink-0">{t("compactManager.colSession")}</span>
       <span className="w-40 flex-shrink-0">{t("compactManager.colModel")}</span>
       <span className="w-24 flex-shrink-0">{t("compactManager.colUsage")}</span>
-      <span className="w-28 text-right flex-shrink-0">{t("compactManager.colCurrent")}</span>
-      <span className="w-14 text-right flex-shrink-0">{t("compactManager.colPeak")}</span>
+      <span className="w-12 text-right flex-shrink-0">%</span>
+      <span className="w-16 text-right flex-shrink-0">{t("compactManager.colCurrent")}</span>
+      <span className="w-16 text-right flex-shrink-0">{t("compactManager.colPeak")}</span>
       <span className="w-10 text-right flex-shrink-0">{t("compactManager.colUpdated")}</span>
       <span className="w-20 text-right flex-shrink-0">{t("compactManager.colWatcher")}</span>
       <span className="flex-1 min-w-0" />
@@ -375,85 +374,99 @@ export function CompactManagerPanel() {
   const contextWindow = finite(overview.context_window);
 
   return (
-    <div className="card p-5 flex flex-col gap-3" data-testid="compact-manager-panel">
-      <div className="flex items-start justify-between flex-wrap gap-x-4 gap-y-1">
+    // Two columns: the sessions flow directly under the title on the left,
+    // the threshold block fills the right — so its height never opens a
+    // whitespace gulf between the title and the session table.
+    <div
+      className="card p-5 flex flex-row flex-wrap gap-x-8 gap-y-3"
+      data-testid="compact-manager-panel"
+    >
+      <div className="flex flex-col gap-3 flex-1 min-w-0">
         <div className="flex items-center gap-3">
           <Archive className="w-4 h-4 text-sky-400" />
           <span className="text-xs text-gray-500 uppercase tracking-wider">
             {t("compactManager.title")}
           </span>
         </div>
-        {/* The overrides are per-model versions of exactly the global
-            numbers, so both live in ONE table: global row always visible,
-            override rows joining the same columns on toggle. */}
-        <div className="flex flex-col items-end gap-1">
-          <span className="text-[11px] font-mono text-gray-300">
-            {t("compactManager.modeLabel", { mode: overview.mode || "?" })}
-          </span>
-          <ThresholdTable
-            globalRow={{
-              window: contextWindow,
-              soft: overview.soft_pct,
-              hard: overview.hard_pct,
-              trigger: triggerPct,
-            }}
-            overrides={overrides}
-            open={overridesOpen}
-          />
-          {overrides.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setOverridesOpen((v) => !v)}
-              className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-gray-500 hover:text-gray-400"
-              data-testid="compact-manager-overrides-toggle"
-              aria-expanded={overridesOpen}
-              aria-controls="compact-manager-thresholds"
-            >
-              {overridesOpen ? (
-                <ChevronDown className="w-3 h-3" />
-              ) : (
-                <ChevronRight className="w-3 h-3" />
-              )}
-              {t("compactManager.overrides", { n: overrides.length })}
-            </button>
-          )}
-        </div>
-      </div>
 
-      {flagged.length > 0 && (
-        <div
-          className="flex items-center gap-2 text-xs text-amber-400 bg-amber-500/10 rounded-md px-3 py-2"
-          data-testid="compact-manager-flags"
-        >
-          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-          <span className="font-mono truncate">
-            {flagged.map((w) => `${w.session_id.slice(0, 8)}: ${w.flags.join(",")}`).join("  ·  ")}
-          </span>
-        </div>
-      )}
+        {flagged.length > 0 && (
+          <div
+            className="flex items-center gap-2 text-xs text-amber-400 bg-amber-500/10 rounded-md px-3 py-2"
+            data-testid="compact-manager-flags"
+          >
+            <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+            <span className="font-mono truncate">
+              {flagged
+                .map((w) => `${w.session_id.slice(0, 8)}: ${w.flags.join(",")}`)
+                .join("  ·  ")}
+            </span>
+          </div>
+        )}
 
-      {sessions.length === 0 && watcherOnly.length === 0 ? (
-        <span className="text-xs text-gray-600">{t("compactManager.noSessions")}</span>
-      ) : (
-        <div className="overflow-x-auto">
-          <div className="space-y-2 min-w-[47rem]">
-            <SessionHeaderRow />
-            <div className="space-y-2 max-h-56 overflow-y-auto">
-              {sessions.map((s) => (
-                <SessionRow
-                  key={s.session_id}
-                  session={s}
-                  watcher={watcherBySession.get(s.session_id)}
-                  triggerPct={triggerPct}
-                />
-              ))}
-              {watcherOnly.map((w) => (
-                <WatcherOnlyRow key={w.session_id} watcher={w} />
-              ))}
+        {sessions.length === 0 && watcherOnly.length === 0 ? (
+          <span className="text-xs text-gray-600">{t("compactManager.noSessions")}</span>
+        ) : (
+          <div className="overflow-x-auto">
+            <div className="space-y-2 min-w-[47rem]">
+              <div className="text-[10px] uppercase tracking-wider text-gray-600">
+                {t("compactManager.sessionsLabel", {
+                  n: sessions.length + watcherOnly.length,
+                })}
+              </div>
+              <SessionHeaderRow />
+              <div className="space-y-2 max-h-56 overflow-y-auto">
+                {sessions.map((s) => (
+                  <SessionRow
+                    key={s.session_id}
+                    session={s}
+                    watcher={watcherBySession.get(s.session_id)}
+                    triggerPct={triggerPct}
+                  />
+                ))}
+                {watcherOnly.map((w) => (
+                  <WatcherOnlyRow key={w.session_id} watcher={w} />
+                ))}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
+
+      {/* The overrides are per-model versions of exactly the global
+          numbers, so both live in ONE table: global row always visible,
+          override rows joining the same columns on toggle. */}
+      <div className="flex flex-col items-end gap-1 flex-shrink-0">
+        <span className="text-[11px] font-mono text-gray-300">
+          {t("compactManager.modeLabel", { mode: overview.mode || "?" })}
+        </span>
+        <ThresholdTable
+          globalRow={{
+            window: contextWindow,
+            soft: overview.soft_pct,
+            hard: overview.hard_pct,
+            trigger: triggerPct,
+          }}
+          overrides={overrides}
+          open={overridesOpen}
+        />
+        {overrides.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setOverridesOpen((v) => !v)}
+            className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-gray-500 hover:text-gray-400"
+            data-testid="compact-manager-overrides-toggle"
+            aria-expanded={overridesOpen}
+            aria-controls="compact-manager-thresholds"
+          >
+            {overridesOpen ? (
+              <ChevronDown className="w-3 h-3" />
+            ) : (
+              <ChevronRight className="w-3 h-3" />
+            )}
+            {t("compactManager.overrides", { n: overrides.length })}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

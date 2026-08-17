@@ -43,7 +43,8 @@
     "colCurrent": "actual",
     "sessionLive": "sesión activa",
     "sessionGone": "sesión finalizada — estado residual",
-    "modeLabel": "modo {{mode}}",
-    "globalRow": "global"
+    "modeLabel": "modo: {{mode}}",
+    "globalRow": "global",
+    "sessionsLabel": "sesiones activas en las últimas 24 h ({{n}})"
   }
 }
