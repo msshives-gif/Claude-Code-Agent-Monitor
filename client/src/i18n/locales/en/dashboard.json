@@ -43,7 +43,8 @@
     "colCurrent": "current",
     "sessionLive": "session running",
     "sessionGone": "session exited — state lingering",
-    "modeLabel": "mode {{mode}}",
-    "globalRow": "global"
+    "modeLabel": "mode: {{mode}}",
+    "globalRow": "global",
+    "sessionsLabel": "sessions touched in the last 24h ({{n}})"
   }
 }

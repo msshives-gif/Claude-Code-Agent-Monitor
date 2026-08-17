@@ -160,9 +160,9 @@ describe("CompactManagerPanel", () => {
     expect(rowText).not.toContain("NaN");
     expect(rowText).not.toContain("Infinity");
     expect(rowText).not.toContain("0.0%");
-    // zero window: peak stays blank, never token units under the % column
+    // zero window: peak tokens still render (the column is token-scaled)
     const zeroWindowRow = rows.find((r) => r.textContent?.includes("dddd4444"));
-    expect(zeroWindowRow?.textContent).not.toContain("1.0K");
+    expect(zeroWindowRow?.textContent).toContain("1.0K");
     // the object entry in flags is dropped; the string entry survives
     expect(screen.getByTestId("compact-manager-flags").textContent).toContain("ATTENTION");
     // flags win over live in the row's watcher cell (not just the strip)
@@ -304,10 +304,13 @@ describe("CompactManagerPanel", () => {
     const panel = screen.getByTestId("compact-manager-panel");
     expect(panel).toBeTruthy();
 
-    // summary line carries all five values — trigger (75%) differs from
+    // summary carries all five values — trigger (75%) differs from
     // hard (80%) so a copied value can't satisfy this
     const panelText = panel.textContent ?? "";
-    expect(panelText).toContain("managed");
+    expect(panelText).toContain("mode: managed");
+    // the session table names its 24h window and row count (5 session
+    // rows incl. the unreadable one + 2 watcher-only rows)
+    expect(panelText).toContain("24h (7)");
     expect(panelText).toContain("1.0M");
     expect(panelText).toContain("70%");
     expect(panelText).toContain("80%");
@@ -324,11 +327,13 @@ describe("CompactManagerPanel", () => {
     expect(rows).toHaveLength(6);
     const row = (id: string) => rows.find((r) => r.textContent?.includes(id))?.textContent ?? "";
 
-    // healthy row: consistent units — current as tokens · pct, peak as pct
+    // healthy row: CLI-mirroring units — current and peak as token
+    // counts, percentage as its own column
     const rowText = row("aaaa1111");
     expect(rowText).toContain("claude-fable-5");
-    expect(rowText).toContain("123.0K · 12.3%");
-    expect(rowText).toContain("45.6%"); // peak 456K / 1M
+    expect(rowText).toContain("123.0K");
+    expect(rowText).toContain("456.0K");
+    expect(rowText).toContain("12.3%");
     expect(rowText).toContain("watched");
 
     // retired watcher renders as retired, not unwatched
