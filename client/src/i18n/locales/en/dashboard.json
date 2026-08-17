@@ -47,6 +47,8 @@
     "ovrSoft": "soft",
     "ovrHard": "hard",
     "ovrTrigger": "trigger",
-    "colCurrent": "current"
+    "colCurrent": "current",
+    "sessionLive": "session running",
+    "sessionGone": "session exited — state lingering"
   }
 }

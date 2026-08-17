@@ -254,6 +254,7 @@ describe("CompactManagerPanel", () => {
         sessions: [
           {
             session_id: "aaaa1111-live",
+            session_live: true,
             model: "claude-fable-5",
             current: 123_000,
             peak: 456_000,
@@ -264,6 +265,7 @@ describe("CompactManagerPanel", () => {
           },
           {
             session_id: "dddd4444-done",
+            session_live: false,
             model: "claude-fable-5",
             current: 700_000,
             peak: 710_000,
@@ -284,6 +286,7 @@ describe("CompactManagerPanel", () => {
           },
           {
             session_id: "gggg7777-live-retired",
+            session_live: null,
             model: "claude-fable-5",
             current: 20_000,
             peak: 20_000,
@@ -330,6 +333,24 @@ describe("CompactManagerPanel", () => {
 
     // retired watcher renders as retired, not unwatched
     expect(row("dddd4444")).toContain("retired");
+
+    // CLI liveness verdict: live rows carry the dot, dead rows dim and get
+    // a gray dot; rows without the field or explicit null show no dot
+    const liveRowEl = rows.find((r) => r.textContent?.includes("aaaa1111"));
+    expect(liveRowEl?.getAttribute("data-live")).toBe("true");
+    expect(liveRowEl?.className).not.toContain("opacity-50");
+    expect(liveRowEl?.querySelector("[title='session running']")).toBeTruthy();
+    const goneRowEl = rows.find((r) => r.textContent?.includes("dddd4444"));
+    expect(goneRowEl?.getAttribute("data-live")).toBe("false");
+    expect(goneRowEl?.className).toContain("opacity-50");
+    expect(goneRowEl?.querySelector("[title='session exited — state lingering']")).toBeTruthy();
+    // absent field (ffff6666) and explicit null (gggg7777) both read unknown
+    for (const id of ["ffff6666", "gggg7777"]) {
+      const el = rows.find((r) => r.textContent?.includes(id));
+      expect(el?.getAttribute("data-live")).toBe("unknown");
+      expect(el?.className).not.toContain("opacity-50");
+      expect(el?.querySelector("[title^='session ']")).toBeNull();
+    }
 
     // future_mtime renders "?" for age
     expect(row("ffff6666")).toContain("?");
