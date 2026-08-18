@@ -135,6 +135,8 @@ describe("CompactManagerPanel", () => {
             pct: NaN,
             updated_epoch: 1,
             age_s: NaN,
+            // non-integer count must render blank, not "2.5"
+            cm_compacts: 2.5,
           },
           {
             session_id: "dddd4444-zero-window",
@@ -145,6 +147,8 @@ describe("CompactManagerPanel", () => {
             pct: 50,
             updated_epoch: 1,
             age_s: 5,
+            // negative count must render blank, not "-1"
+            cm_compacts: -1,
           },
         ],
       },
@@ -160,6 +164,11 @@ describe("CompactManagerPanel", () => {
     expect(rowText).not.toContain("NaN");
     expect(rowText).not.toContain("Infinity");
     expect(rowText).not.toContain("0.0%");
+    // malformed cm counts (2.5, -1) render blank
+    for (const r of rows) {
+      const cmCell = r.querySelector('[data-testid="compact-manager-cm-compacts"]');
+      if (cmCell) expect(cmCell.textContent).toBe("");
+    }
     // zero window: peak tokens still render (the column is token-scaled)
     const zeroWindowRow = rows.find((r) => r.textContent?.includes("dddd4444"));
     expect(zeroWindowRow?.textContent).toContain("1,000");
@@ -262,6 +271,7 @@ describe("CompactManagerPanel", () => {
             pct: 12.3,
             updated_epoch: 1,
             age_s: 4,
+            cm_compacts: 3,
           },
           {
             session_id: "dddd4444-done",
@@ -271,6 +281,8 @@ describe("CompactManagerPanel", () => {
             peak: 710_000,
             window: 1_000_000,
             pct: 70,
+            // watched but nothing fired yet: 0 renders, unlike null (blank)
+            cm_compacts: 0,
             // per-row stamped override: 70% >= 60% must color red even
             // though the global trigger is 75%
             trigger_pct: 0.6,
@@ -297,6 +309,8 @@ describe("CompactManagerPanel", () => {
             pct: 2,
             updated_epoch: 1,
             age_s: 9,
+            // explicit null = never watched: blank, distinct from 0
+            cm_compacts: null,
           },
           { session_id: "cccc3333-oops", unreadable: true },
         ],
@@ -365,6 +379,19 @@ describe("CompactManagerPanel", () => {
     expect(redPct?.textContent).toBe("70.0%");
     // rows without a stamp fall back to the global trigger in trig
     expect(row("aaaa1111")).toContain("75%");
+
+    // cm column (CLI vocabulary): fired-count renders, 0 renders as "0"
+    // (watched, none fired), null renders blank (never watched)
+    expect(panelText).toContain("cm");
+    const cmCell = (id: string) =>
+      rows
+        .find((r) => r.textContent?.includes(id))
+        ?.querySelector('[data-testid="compact-manager-cm-compacts"]')?.textContent;
+    expect(cmCell("aaaa1111")).toBe("3");
+    expect(cmCell("dddd4444")).toBe("0");
+    expect(cmCell("gggg7777")).toBe("");
+    // absent field (older CLI) also blank
+    expect(cmCell("ffff6666")).toBe("");
 
     // CLI liveness verdict: live rows carry the dot, dead rows dim and get
     // a gray dot; rows without the field or explicit null show no dot

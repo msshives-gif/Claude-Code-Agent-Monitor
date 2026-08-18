@@ -1428,6 +1428,11 @@ export interface CompactManagerSession {
   peak?: number;
   window?: number;
   pct?: number;
+  /** Compactions the manager itself fired for this session (watcher-journal
+   *  attempts with own-packet proof). null/absent = count unavailable: no
+   *  watcher journal (unmanaged), an unreadable one, or an older CLI —
+   *  distinct from 0. */
+  cm_compacts?: number | null;
   updated_epoch?: number;
   age_s?: number;
   future_mtime?: boolean;

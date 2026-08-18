@@ -157,6 +157,7 @@ function SessionRow({
         <span className="w-12 flex-shrink-0" />
         <span className="w-24 flex-shrink-0" />
         <span className="w-10 flex-shrink-0" />
+        <span className="w-8 flex-shrink-0" />
         <span className="w-10 flex-shrink-0" />
         <WatcherDetailCells watcher={watcher} />
         <span className="flex-1 min-w-0" />
@@ -177,6 +178,11 @@ function SessionRow({
   const peakPct =
     peak !== null && window !== null && window > 0 ? finite((peak / window) * 100) : null;
   const ageS = finite(session.age_s);
+  // Fired-compacts counter: render only a non-negative integer; null/absent
+  // (unwatched session, older CLI) and malformed values stay blank — the
+  // CLI's own blank-vs-0 distinction (never watched vs watched, none fired).
+  const cmRaw = finite(session.cm_compacts);
+  const cmCompacts = cmRaw !== null && Number.isInteger(cmRaw) && cmRaw >= 0 ? cmRaw : null;
   // Per-row effective trigger (advisor-stamped for env/per-model
   // overrides); global trigger only as fallback for older payloads.
   const rowTrig = finite(session.trigger_pct);
@@ -231,6 +237,13 @@ function SessionRow({
       <span className="font-mono text-gray-600 w-10 text-right flex-shrink-0">
         {`${Math.round(effTrig * 100)}%`}
       </span>
+      <span
+        className="font-mono text-gray-500 w-8 text-right flex-shrink-0"
+        title={cmCompacts !== null ? t("compactManager.cmCompactsTitle") : undefined}
+        data-testid="compact-manager-cm-compacts"
+      >
+        {cmCompacts !== null ? cmCompacts : ""}
+      </span>
       <span className="font-mono text-gray-600 w-10 text-right flex-shrink-0">
         {session.future_mtime ? "?" : ageS !== null ? ageText(ageS) : ""}
       </span>
@@ -255,6 +268,7 @@ function WatcherOnlyRow({ watcher }: { watcher: SafeWatcher }) {
       <span className="w-12 flex-shrink-0" />
       <span className="w-24 flex-shrink-0" />
       <span className="w-10 flex-shrink-0" />
+      <span className="w-8 flex-shrink-0" />
       <span className="w-10 flex-shrink-0" />
       <WatcherDetailCells watcher={watcher} />
       <span className="flex-1 min-w-0" />
@@ -277,6 +291,9 @@ function SessionHeaderRow() {
       <span className="w-12 text-right flex-shrink-0">pct</span>
       <span className="w-24 flex-shrink-0" />
       <span className="w-10 text-right flex-shrink-0">trig</span>
+      <span className="w-8 text-right flex-shrink-0" title={t("compactManager.cmCompactsTitle")}>
+        cm
+      </span>
       <span className="w-10 text-right flex-shrink-0">{t("compactManager.colUpdated")}</span>
       <span className="w-24 text-right flex-shrink-0 whitespace-nowrap">
         {t("compactManager.colWatcherPid")}
@@ -427,7 +444,7 @@ export function CompactManagerPanel() {
           <span className="text-xs text-gray-600">{t("compactManager.noSessions")}</span>
         ) : (
           <div className="overflow-x-auto">
-            <div className="space-y-2 min-w-[68rem]">
+            <div className="space-y-2 min-w-[71rem]">
               <div className="text-[10px] uppercase tracking-wider text-gray-600">
                 {t("compactManager.sessionsLabel", {
                   n: sessions.length + watcherOnly.length,

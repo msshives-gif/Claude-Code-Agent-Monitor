@@ -48,6 +48,7 @@
     "sessionsLabel": "sessions touched <24h ({{n}})",
     "colState": "state",
     "colWatcherPid": "watcher_pid",
-    "colHealth": "health"
+    "colHealth": "health",
+    "cmCompactsTitle": "compactions fired by compact-manager for this session"
   }
 }
