@@ -43,6 +43,7 @@
     "sessionsLabel": "24小时内的会话 ({{n}})",
     "colState": "状态",
     "colWatcherPid": "监视器_pid",
-    "colHealth": "健康"
+    "colHealth": "健康",
+    "cmCompactsTitle": "压缩管理器为此会话触发的压缩次数"
   }
 }

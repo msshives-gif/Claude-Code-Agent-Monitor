@@ -43,6 +43,7 @@
     "sessionsLabel": "sesiones activas <24 h ({{n}})",
     "colState": "estado",
     "colWatcherPid": "pid_vigilante",
-    "colHealth": "salud"
+    "colHealth": "salud",
+    "cmCompactsTitle": "compactaciones disparadas por el gestor para esta sesión"
   }
 }
