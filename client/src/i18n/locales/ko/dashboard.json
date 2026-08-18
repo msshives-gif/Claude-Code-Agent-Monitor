@@ -43,6 +43,7 @@
     "sessionsLabel": "최근 24시간 내 세션 ({{n}})",
     "colState": "상태",
     "colWatcherPid": "와처_pid",
-    "colHealth": "상태"
+    "colHealth": "상태",
+    "cmCompactsTitle": "이 세션에 대해 컴팩트 매니저가 실행한 압축 횟수"
   }
 }

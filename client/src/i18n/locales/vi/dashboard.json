@@ -43,6 +43,7 @@
     "sessionsLabel": "phiên trong 24h qua ({{n}})",
     "colState": "trạng thái",
     "colWatcherPid": "pid_watcher",
-    "colHealth": "sức khỏe"
+    "colHealth": "sức khỏe",
+    "cmCompactsTitle": "số lần compact do trình quản lý kích hoạt cho phiên này"
   }
 }
