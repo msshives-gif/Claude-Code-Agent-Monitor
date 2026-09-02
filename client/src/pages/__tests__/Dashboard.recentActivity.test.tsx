@@ -118,9 +118,22 @@ describe("Dashboard - Recent Activity status badges", () => {
   });
 
   it("agrees with the other surfaces on Claude events too", async () => {
+    // Fork note: consecutive tool-call events from ONE session roll up into a
+    // single row (a complete Pre/Post pair renders as its newest event), so the
+    // two tool events live in different sessions here to keep every row visible.
     mockEvents = [
-      makeEvent({ id: 4, event_type: "PreToolUse", summary: "Running Bash" }),
-      makeEvent({ id: 5, event_type: "PostToolUse", summary: "Bash finished" }),
+      makeEvent({
+        id: 4,
+        event_type: "PreToolUse",
+        summary: "Running Bash",
+        session_id: "sess-claude-a",
+      }),
+      makeEvent({
+        id: 5,
+        event_type: "PostToolUse",
+        summary: "Bash finished",
+        session_id: "sess-claude-b",
+      }),
       makeEvent({ id: 6, event_type: "SubagentStop", summary: "Subagent handed back" }),
     ];
     render(
