@@ -62,10 +62,12 @@ class FakeAudioContext {
 }
 
 /** Re-imports the module so each test starts from a clean module-level state. */
-async function freshModule(seed?: unknown) {
+// This fork ships cues OFF; most cases opt in the way a user would in
+// Settings. Pass `null` to start from empty storage (the shipped default).
+async function freshModule(seed: unknown = { enabled: true }) {
   vi.resetModules();
   localStorage.clear();
-  if (seed !== undefined) localStorage.setItem("agent-monitor-sound", JSON.stringify(seed));
+  if (seed !== null) localStorage.setItem("agent-monitor-sound", JSON.stringify(seed));
   startedOscillators = 0;
   return import("../sound");
 }
@@ -83,7 +85,7 @@ afterEach(() => {
 
 describe("sound preferences", () => {
   it("defaults to disabled on this fork; the per-cue flags keep upstream's shape", async () => {
-    const { getSoundPrefs, DEFAULT_SOUND_PREFS } = await freshModule();
+    const { getSoundPrefs, DEFAULT_SOUND_PREFS } = await freshModule(null);
     expect(getSoundPrefs().enabled).toBe(false);
     expect(getSoundPrefs()).toEqual(DEFAULT_SOUND_PREFS);
   });
@@ -166,6 +168,7 @@ describe("playCue", () => {
 
   it("caps a burst of distinct cues", async () => {
     const { playCue, unlockSound } = await freshModule({
+      enabled: true,
       onConnection: true,
       onSubagentSpawn: true,
     });
@@ -195,7 +198,7 @@ describe("playCue", () => {
   });
 
   it("force bypasses the per-cue flag, the throttle, and the gesture gate", async () => {
-    const { playCue } = await freshModule({ onSubagentSpawn: false });
+    const { playCue } = await freshModule({ enabled: true, onSubagentSpawn: false });
     expect(playCue("subagentSpawn", { force: true })).toBe(true);
     expect(playCue("subagentSpawn", { force: true })).toBe(true);
   });
