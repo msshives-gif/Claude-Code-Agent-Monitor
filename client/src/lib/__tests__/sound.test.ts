@@ -82,9 +82,9 @@ afterEach(() => {
 });
 
 describe("sound preferences", () => {
-  it("defaults to enabled so cues work out of the box", async () => {
+  it("defaults to disabled on this fork; the per-cue flags keep upstream's shape", async () => {
     const { getSoundPrefs, DEFAULT_SOUND_PREFS } = await freshModule();
-    expect(getSoundPrefs().enabled).toBe(true);
+    expect(getSoundPrefs().enabled).toBe(false);
     expect(getSoundPrefs()).toEqual(DEFAULT_SOUND_PREFS);
   });
 
@@ -92,7 +92,7 @@ describe("sound preferences", () => {
     const { getSoundPrefs } = await freshModule({ volume: 0.2 });
     const prefs = getSoundPrefs();
     expect(prefs.volume).toBe(0.2);
-    expect(prefs.enabled).toBe(true);
+    expect(prefs.enabled).toBe(false);
     expect(prefs.onSessionComplete).toBe(true);
   });
 
@@ -101,7 +101,7 @@ describe("sound preferences", () => {
     localStorage.clear();
     localStorage.setItem("agent-monitor-sound", "{not json");
     const { getSoundPrefs } = await import("../sound");
-    expect(getSoundPrefs().enabled).toBe(true);
+    expect(getSoundPrefs().enabled).toBe(false);
   });
 
   it("persists updates and clamps the volume into 0-1", async () => {
