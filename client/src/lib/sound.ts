@@ -52,9 +52,10 @@ export interface SoundPrefs {
   onInteraction: boolean;
 }
 
-/** Shipping defaults: sound on, at a deliberately conservative volume. */
+/** Shipping defaults: sound off on this fork (upstream ships it on), at a
+ *  deliberately conservative volume once a user turns it on in Settings. */
 export const DEFAULT_SOUND_PREFS: SoundPrefs = {
-  enabled: true,
+  enabled: false,
   volume: 0.5,
   onSessionStart: true,
   onSessionComplete: true,
