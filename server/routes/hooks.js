@@ -1,8 +1,8 @@
 /**
- * @file Express router for Claude Code hook events plus a fail-safe Codex
- * rollout hook endpoint. It updates sessions and agents, extracts usage and
+ * @file Express router for Claude Code and Cursor hook events plus a fail-safe
+ * Codex rollout endpoint. It updates sessions and agents, extracts usage and
  * compact human-turn card context, and broadcasts real-time changes without
- * blocking either CLI.
+ * blocking any agent host.
  * @author Son Nguyen <hoangson091104@gmail.com>
  */
 
@@ -27,6 +27,7 @@ const {
   contextWindowForModel,
 } = require("../lib/token-usage");
 const { trimHookPayload } = require("../lib/event-payload");
+const { isCursorTranscriptPath } = require("../lib/cursor-home");
 
 const router = Router();
 
@@ -51,6 +52,38 @@ const WAITING_INPUT_PATTERN =
 function isWaitingForUserMessage(msg) {
   if (!msg || typeof msg !== "string") return false;
   return WAITING_INPUT_PATTERN.test(msg);
+}
+
+// Claude Code's structured Notification `notification_type` (hooks reference).
+// When present it is authoritative: the idle reminder ("Claude is waiting for
+// your input", type `idle_prompt`) matches WAITING_INPUT_PATTERN textually but
+// only means the turn ended and the user has not typed yet -- it does not block
+// anything, so it must not raise a Waiting badge. Unknown future types and
+// older Claude Code versions without the field fall back to the text pattern.
+const BLOCKING_NOTIFICATION_TYPES = new Set([
+  "permission_prompt",
+  "elicitation_dialog",
+  "elicitation_url_dialog",
+  "agent_needs_input",
+  // Auto-resume found the usage limit still in effect and waits for Enter
+  // instead of continuing (hooks reference) -- the user must act.
+  "quota_auto_resume_stale",
+]);
+const NON_BLOCKING_NOTIFICATION_TYPES = new Set([
+  "idle_prompt",
+  "auth_success",
+  "elicitation_complete",
+  "elicitation_response",
+  "agent_completed",
+  "quota_auto_resume_fired",
+  "quota_auto_resume_disabled",
+]);
+
+function isBlockingNotification(data, msg) {
+  const type = data && typeof data.notification_type === "string" ? data.notification_type : null;
+  if (type && BLOCKING_NOTIFICATION_TYPES.has(type)) return true;
+  if (type && NON_BLOCKING_NOTIFICATION_TYPES.has(type)) return false;
+  return isWaitingForUserMessage(msg);
 }
 
 /**
@@ -184,9 +217,12 @@ function recoverInterruptedSession(sessionId, fullSess, mainAgentId, reasonSuffi
  * @param {Record<string, unknown>} data Sanitized hook payload.
  * @returns {object|null} Current session row, or null after a failed insert.
  */
-function ensureSession(sessionId, data) {
+function ensureSession(sessionId, data, origin = null) {
   let session = stmts.getSession.get(sessionId);
   const repoRemoteUrl = sanitizeRepoRemoteUrl(data.repo_remote_url);
+  const cursorSession =
+    data.provider === "cursor" ||
+    (typeof data.transcript_path === "string" && isCursorTranscriptPath(data.transcript_path));
   if (!session) {
     stmts.insertSession.run(
       sessionId,
@@ -196,6 +232,18 @@ function ensureSession(sessionId, data) {
       data.model || null,
       null
     );
+    if (cursorSession) setSessionProviderStmt.run("cursor", sessionId);
+    // A hook that proved REMOTE_PUSH_TOKEN (see POST /event) comes from
+    // another machine: birth the row as remote-push owned so the same
+    // collector's POST /ingest-batch can enrich it with tokens/tool events.
+    // Decided once, at creation only -- an existing row is never relabelled,
+    // so a remote caller still cannot take over a locally-managed session.
+    if (origin && origin.remotePush) {
+      stmts.setSessionSource.run(REMOTE_PUSH_SOURCE, sessionId);
+      if (REMOTE_PROVIDERS.includes(data.provider) && data.provider !== "claude") {
+        setSessionProviderStmt.run(data.provider, sessionId);
+      }
+    }
     session = stmts.getSession.get(sessionId);
     if (!session) {
       console.error(`[HOOKS] Failed to create session ${sessionId} — insert returned no row`);
@@ -235,6 +283,14 @@ function ensureSession(sessionId, data) {
   // make better-sqlite3 throw inside the surrounding processEvent transaction.
   if (typeof data.transcript_path === "string" && data.transcript_path) {
     stmts.setSessionTranscriptPath.run(data.transcript_path, sessionId);
+  }
+  // Cursor currently emits the Claude-compatible hook envelope but stores its
+  // transcript under ~/.cursor. Provider identity must therefore come from the
+  // durable transcript path, not from the event names. Repair pre-v2.2.2 rows
+  // on their very next hook as well as classifying newly created rows.
+  if (cursorSession && session.provider !== "cursor") {
+    setSessionProviderStmt.run("cursor", sessionId);
+    session = stmts.getSession.get(sessionId);
   }
   // The local hook is authenticated before it reaches this route. Persist the
   // first collector-observed Git remote as opaque metadata; presentation
@@ -401,7 +457,7 @@ function syncCardPromptPreview(sessionId, result) {
  * @param {Record<string, unknown>} data Hook payload.
  * @returns {object|null} Broadcast-ready event, or null without a session id.
  */
-const processEvent = db.transaction((hookType, data) => {
+const processEvent = db.transaction((hookType, data, origin = null) => {
   // `events.data` stores the entire hook envelope. Normalize the field before
   // ANY downstream work so its original userinfo cannot bypass the sanitized
   // session column through this separate durable persistence path.
@@ -414,7 +470,7 @@ const processEvent = db.transaction((hookType, data) => {
   const sessionId = data.session_id;
   if (!sessionId) return null;
 
-  const session = ensureSession(sessionId, data);
+  const session = ensureSession(sessionId, data, origin);
 
   // Remote household hooks (aideck-hook.js on other machines) cannot rely on
   // the transcript being readable on THIS host (the JSONL lives on the remote
@@ -820,11 +876,21 @@ const processEvent = db.transaction((hookType, data) => {
 
     case "Notification": {
       const msg = data.message || "Notification received";
-      // Tag compaction-related notifications so they show as Compaction events
-      if (/compact|compress|context.*(reduc|truncat|summar)/i.test(msg)) {
+      // Tag compaction-related notifications so they show as Compaction events.
+      // The label is independent of blocking state: a RECOGNIZED blocking type
+      // (e.g. a permission_prompt whose tool name happens to contain
+      // "compress") must still raise Waiting. Everything else -- no type, an
+      // unknown future type, an empty string -- keeps the legacy precedence:
+      // a compaction-looking message is never blocking.
+      const isCompaction = /compact|compress|context.*(reduc|truncat|summar)/i.test(msg);
+      const recognizedBlockingType =
+        typeof data.notification_type === "string" &&
+        BLOCKING_NOTIFICATION_TYPES.has(data.notification_type);
+      if (isCompaction) {
         eventType = "Compaction";
-        summary = msg;
-      } else if (isWaitingForUserMessage(msg)) {
+      }
+      summary = msg;
+      if ((!isCompaction || recognizedBlockingType) && isBlockingNotification(data, msg)) {
         // Claude Code is blocked waiting for the user (permission prompt or
         // explicit "waiting for input" notice). Stamp session + main agent
         // so the dashboard can surface a yellow "Waiting" badge until the
@@ -837,9 +903,6 @@ const processEvent = db.transaction((hookType, data) => {
           stmts.setAgentAwaitingInput.run(ts, "notification", mainAgentId);
           broadcast("agent_updated", stmts.getAgent.get(mainAgentId));
         }
-        summary = msg;
-      } else {
-        summary = msg;
       }
       break;
     }
@@ -1369,7 +1432,16 @@ router.post("/event", (req, res) => {
     });
   }
 
-  const result = processEvent(hook_type, data);
+  // Optional remote-origin proof. A hook forwarded from another machine may
+  // present REMOTE_PUSH_TOKEN (Bearer / X-Dashboard-Token, header only); a
+  // matching token only changes who OWNS a newly created session (see
+  // ensureSession). Anything else -- no token, a wrong token, or a
+  // DASHBOARD_HOOK_TOKEN in the same header -- keeps today's local behaviour,
+  // so this never rejects a hook that is accepted now.
+  const expectedRemoteToken = getRemotePushToken();
+  const remotePush =
+    !!expectedRemoteToken && tokensMatch(extractHeaderOnlyToken(req), expectedRemoteToken);
+  const result = processEvent(hook_type, data, remotePush ? { remotePush: true } : null);
   if (!result) {
     return res.status(400).json({
       error: { code: "MISSING_SESSION", message: "session_id is required in data" },
@@ -1387,6 +1459,29 @@ router.post("/event", (req, res) => {
     evaluateEvent(result);
   } catch {
     /* non-fatal */
+  }
+
+  // Cursor's compatible hooks provide real-time lifecycle/tool events, while
+  // its native meta.json + prompt_history.json carry the title, cwd, turn
+  // history, and card context that the hook envelope omits. Enrich and snapshot
+  // off the response path so Cursor never waits on local history I/O.
+  if (data.session_id && isCursorTranscriptPath(data.transcript_path)) {
+    setImmediate(() => {
+      try {
+        const { enrichCursorSession } = require("../lib/cursor-ingest");
+        const enriched = enrichCursorSession(dbModule, data.transcript_path, {
+          sessionId: data.session_id,
+          model: data.model,
+        });
+        if (!enriched.changed || !enriched.session) return;
+        broadcast("session_updated", enriched.session);
+        for (const agent of stmts.listAgentsBySession.all(data.session_id)) {
+          broadcast("agent_updated", agent);
+        }
+      } catch {
+        // Fail-safe by design: the continuous Cursor sync retries later.
+      }
+    });
   }
 
   // After SubagentStop, scan the session's subagent JSONL files and ingest any
@@ -1934,6 +2029,7 @@ function livenessReap({ ignoreIdleGate = false, provider = "claude" } = {}) {
 // carries no `src_` prefix, so it can never collide with a real configured
 // SSH source id, now or in the future (the id format is fixed at creation).
 const REMOTE_PUSH_SOURCE = "remote_push";
+const setSessionProviderStmt = db.prepare("UPDATE sessions SET provider = ? WHERE id = ?");
 
 // Bump only on a real wire-format break. A mismatch is a whole-request 409 —
 // per-item soft-fail doesn't make sense when the client and server disagree

@@ -45,6 +45,8 @@ const EXPECTED_API_PATHS = [
   "/api/hooks/event",
   "/api/hooks/codex",
   "/api/pricing",
+  "/api/pricing/cursor",
+  "/api/pricing/cursor/{pattern}",
   "/api/pricing/gpt",
   "/api/pricing/gpt/{pattern}",
   "/api/pricing/{pattern}",
@@ -204,6 +206,9 @@ describe("OpenAPI / Swagger", () => {
     for (const pathName of EXPECTED_API_PATHS) {
       assert.ok(res.body.paths[pathName], `Expected path ${pathName} to be documented`);
     }
+    const importResponse = res.body.components.schemas.ImportResponse;
+    assert.ok(importResponse.required.includes("cursor_model_pricing"));
+    assert.equal(importResponse.properties.cursor_model_pricing.type, "integer");
   });
 
   it("should serve Swagger UI", async () => {
@@ -666,9 +671,9 @@ describe("Stats API", () => {
 });
 
 // ============================================================
-// Settings and GPT pricing API
+// Settings, Cursor, and GPT pricing API
 // ============================================================
-describe("Settings and GPT pricing API", () => {
+describe("Settings, Cursor, and GPT pricing API", () => {
   it("returns the active Codex home without exposing a raw environment override", async () => {
     const res = await fetch("/api/settings/codex-home");
     assert.equal(res.status, 200);
@@ -735,10 +740,54 @@ describe("Settings and GPT pricing API", () => {
     await put("/api/pricing/gpt", rule);
   });
 
+  it("seeds and validates the independent Cursor pricing card", async () => {
+    const seeded = await fetch("/api/pricing/cursor");
+    assert.equal(seeded.status, 200);
+    const grok = seeded.body.pricing.find((rule) => rule.model_pattern === "grok-4.6%");
+    assert.deepEqual(
+      [
+        grok.input_per_mtok,
+        grok.cache_write_per_mtok,
+        grok.cache_read_per_mtok,
+        grok.output_per_mtok,
+      ],
+      [2, 0, 0.5, 6]
+    );
+
+    const pattern = "cursor-test-model%";
+    const created = await put("/api/pricing/cursor", {
+      model_pattern: pattern,
+      display_name: "Cursor Test Model",
+      input_per_mtok: 1,
+      cache_write_per_mtok: 2,
+      cache_read_per_mtok: 0.25,
+      output_per_mtok: 4,
+    });
+    assert.equal(created.status, 200);
+    assert.equal(created.body.pricing.output_per_mtok, 4);
+
+    const invalid = await put("/api/pricing/cursor", {
+      model_pattern: pattern,
+      display_name: "Cursor Test Model",
+      input_per_mtok: -1,
+      output_per_mtok: 999,
+    });
+    assert.equal(invalid.status, 400);
+    assert.equal(stmts.getCursorPricing.get(pattern).output_per_mtok, 4);
+
+    const removed = await fetch(`/api/pricing/cursor/${encodeURIComponent(pattern)}`, {
+      method: "DELETE",
+    });
+    assert.equal(removed.status, 200);
+    assert.equal(stmts.getCursorPricing.get(pattern), undefined);
+  });
+
   it("resets one provider without overwriting the other provider's custom rules", async () => {
     const claudePattern = "test-claude-custom%";
+    const cursorPattern = "test-cursor-custom%";
     const gptPattern = "test-gpt-custom%";
     stmts.upsertPricing.run(claudePattern, "Custom Claude", 1, 2, 0.1, 1.25, 2, 0, 0);
+    stmts.upsertCursorPricing.run(cursorPattern, "Custom Cursor", 1, 1.25, 0.1, 2);
     stmts.upsertGptPricing.run(
       gptPattern,
       "Custom GPT",
@@ -760,6 +809,10 @@ describe("Settings and GPT pricing API", () => {
     assert.equal(codexReset.status, 200);
     assert.equal(codexReset.body.provider, "codex");
     assert.ok(stmts.getPricing.get(claudePattern), "Claude custom rule must survive a GPT reset");
+    assert.ok(
+      stmts.getCursorPricing.get(cursorPattern),
+      "Cursor custom rule must survive a GPT reset"
+    );
     assert.equal(stmts.getGptPricing.get(gptPattern), undefined);
 
     stmts.upsertGptPricing.run(
@@ -782,7 +835,17 @@ describe("Settings and GPT pricing API", () => {
     assert.equal(claudeReset.status, 200);
     assert.equal(claudeReset.body.provider, "claude");
     assert.equal(stmts.getPricing.get(claudePattern), undefined);
+    assert.ok(
+      stmts.getCursorPricing.get(cursorPattern),
+      "Cursor custom rule must survive a Claude reset"
+    );
     assert.ok(stmts.getGptPricing.get(gptPattern), "GPT custom rule must survive a Claude reset");
+
+    const cursorReset = await post("/api/settings/reset-pricing", { provider: "cursor" });
+    assert.equal(cursorReset.status, 200);
+    assert.equal(cursorReset.body.provider, "cursor");
+    assert.equal(stmts.getCursorPricing.get(cursorPattern), undefined);
+    assert.ok(stmts.getGptPricing.get(gptPattern), "GPT custom rule must survive a Cursor reset");
 
     const invalid = await post("/api/settings/reset-pricing", { provider: "other" });
     assert.equal(invalid.status, 400);
@@ -1117,6 +1180,98 @@ describe("Hook Event Processing", () => {
     const main = agentsRes.body.agents.find((a) => a.type === "main");
     assert.ok(main.awaiting_input_since, "main agent should be flagged as awaiting input");
     assert.equal(main.awaiting_reason, "notification");
+  });
+
+  it("should NOT flag waiting for an idle_prompt notification, even though its text says 'waiting for your input'", async () => {
+    // No SessionStart first: it stamps its own awaiting reason ('session_start').
+    await post("/api/hooks/event", {
+      hook_type: "Notification",
+      data: {
+        session_id: "hook-sess-idle-prompt",
+        notification_type: "idle_prompt",
+        message: "Claude is waiting for your input",
+      },
+    });
+    const sessRes = await fetch("/api/sessions/hook-sess-idle-prompt");
+    assert.notEqual(sessRes.body.session.awaiting_reason, "notification");
+    assert.equal(sessRes.body.session.awaiting_input_since, null);
+  });
+
+  it("should flag waiting for a permission_prompt notification regardless of its text", async () => {
+    await post("/api/hooks/event", {
+      hook_type: "SessionStart",
+      data: { session_id: "hook-sess-perm-prompt" },
+    });
+    await post("/api/hooks/event", {
+      hook_type: "Notification",
+      data: {
+        session_id: "hook-sess-perm-prompt",
+        notification_type: "permission_prompt",
+        message: "Bash",
+      },
+    });
+    const sessRes = await fetch("/api/sessions/hook-sess-perm-prompt");
+    assert.ok(sessRes.body.session.awaiting_input_since);
+    assert.equal(sessRes.body.session.awaiting_reason, "notification");
+  });
+
+  it("should flag waiting for a permission_prompt even when its text looks like compaction", async () => {
+    await post("/api/hooks/event", {
+      hook_type: "Notification",
+      data: {
+        session_id: "hook-sess-perm-compress",
+        notification_type: "permission_prompt",
+        message: "Claude needs your permission to use compress_logs",
+      },
+    });
+    const sessRes = await fetch("/api/sessions/hook-sess-perm-compress");
+    assert.ok(sessRes.body.session.awaiting_input_since);
+    assert.equal(sessRes.body.session.awaiting_reason, "notification");
+  });
+
+  it("should flag waiting for quota_auto_resume_stale (it waits for Enter)", async () => {
+    await post("/api/hooks/event", {
+      hook_type: "Notification",
+      data: {
+        session_id: "hook-sess-quota-stale",
+        notification_type: "quota_auto_resume_stale",
+        message: "Claude is waiting for your input. Press Enter to resume.",
+      },
+    });
+    const sessRes = await fetch("/api/sessions/hook-sess-quota-stale");
+    assert.ok(sessRes.body.session.awaiting_input_since);
+    assert.equal(sessRes.body.session.awaiting_reason, "notification");
+  });
+
+  it("should keep the compaction exclusion for an unknown or empty notification_type", async () => {
+    for (const [sid, type] of [
+      ["hook-sess-compact-future", "future_type"],
+      ["hook-sess-compact-empty", ""],
+      ["hook-sess-compact-none", undefined],
+    ]) {
+      const data = { session_id: sid, message: "Context compression is waiting for your input" };
+      if (type !== undefined) data.notification_type = type;
+      await post("/api/hooks/event", { hook_type: "Notification", data });
+      const sessRes = await fetch(`/api/sessions/${sid}`);
+      assert.notEqual(sessRes.body.session.awaiting_reason, "notification", `type=${type}`);
+    }
+  });
+
+  it("should fall back to the message text for an unknown notification_type", async () => {
+    await post("/api/hooks/event", {
+      hook_type: "SessionStart",
+      data: { session_id: "hook-sess-unknown-type" },
+    });
+    await post("/api/hooks/event", {
+      hook_type: "Notification",
+      data: {
+        session_id: "hook-sess-unknown-type",
+        notification_type: "some_future_type",
+        message: "Claude needs your permission to use Bash",
+      },
+    });
+    const sessRes = await fetch("/api/sessions/hook-sess-unknown-type");
+    assert.ok(sessRes.body.session.awaiting_input_since);
   });
 
   it("should clear awaiting_input_since when the user resumes (next PreToolUse)", async () => {
