@@ -28,3 +28,5 @@ monitoring/.bin/
 
 # Git worktrees hold full checkouts, including vendored files
 .worktrees/
+# Remember-plugin session state written by Claude Code sessions run in this repo
+.remember/
