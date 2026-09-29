@@ -37,7 +37,7 @@ process.env.DASHBOARD_CURSOR_SYNC_MS = "0";
 
 const { createApp, startCursorSessionSync, startServer } = require("../index");
 const { db, stmts } = require("../db");
-const { syncCursorSessions } = require("../lib/cursor-ingest");
+const { healCursorOrphanAgents, syncCursorSessions } = require("../lib/cursor-ingest");
 
 let server;
 let base;
@@ -401,5 +401,192 @@ describe("Cursor local history", () => {
     const codexScope = await request("/api/sessions?providers=codex&limit=100");
     assert.equal(codexScope.status, 200);
     assert.ok(!codexScope.body.sessions.some((session) => session.id === SESSION_ID));
+  });
+});
+
+describe("Cursor session lifecycle", () => {
+  function writeCursorChat(sessionId, prompts, activityMs) {
+    const chatDir = path.join(CURSOR_HOME, "chats", "workspace-b", sessionId);
+    fs.mkdirSync(chatDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(chatDir, "meta.json"),
+      JSON.stringify({
+        createdAtMs: activityMs - 60_000,
+        updatedAtMs: activityMs,
+        hasConversation: true,
+        title: `Lifecycle ${sessionId.slice(0, 8)}`,
+        cwd: "/Users/example/lifecycle",
+      })
+    );
+    fs.writeFileSync(path.join(chatDir, "prompt_history.json"), JSON.stringify(prompts));
+    const at = new Date(activityMs);
+    fs.utimesSync(path.join(chatDir, "meta.json"), at, at);
+    fs.utimesSync(path.join(chatDir, "prompt_history.json"), at, at);
+    fs.utimesSync(chatDir, at, at);
+    return chatDir;
+  }
+
+  function cursorTranscriptPath(sessionId) {
+    return path.join(
+      CURSOR_HOME,
+      "projects",
+      "Users-example-lifecycle",
+      "agent-transcripts",
+      sessionId,
+      `${sessionId}.jsonl`
+    );
+  }
+
+  it("does not revive the main agent when a prompt is imported for an ended session", async () => {
+    const sessionId = "4aa0f943-0b42-4aa0-92d0-dd56e28bca01";
+    const endedMs = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    writeCursorChat(sessionId, ["Build the backend"], endedMs);
+    await syncCursorSessions(require("../db"));
+    assert.equal(stmts.getSession.get(sessionId).status, "completed");
+    assert.equal(stmts.getAgent.get(`${sessionId}-main`).status, "completed");
+
+    // A later prompt that the dashboard only discovers after the recency
+    // window (it was down, or Cursor rewrote history) must not flip the main
+    // agent back to "working" on a session that stays completed.
+    writeCursorChat(sessionId, ["Build the backend", "/usage"], endedMs + 3 * 60 * 60 * 1000);
+    await syncCursorSessions(require("../db"));
+    const session = stmts.getSession.get(sessionId);
+    const main = stmts.getAgent.get(`${sessionId}-main`);
+    assert.equal(session.status, "completed");
+    assert.equal(main.status, "completed");
+    assert.ok(main.ended_at, "completed main agent keeps an end time");
+  });
+
+  it("heals working agents already stranded on ended Cursor sessions", () => {
+    const sessionId = "5bb0f943-0b42-4aa0-92d0-dd56e28bca02";
+    const endedAt = "2026-09-20T04:03:38.474Z";
+    stmts.insertSession.run(sessionId, "Stranded", "completed", null, null, null);
+    db.prepare("UPDATE sessions SET provider = 'cursor', ended_at = ? WHERE id = ?").run(
+      endedAt,
+      sessionId
+    );
+    stmts.insertAgent.run(
+      `${sessionId}-main`,
+      sessionId,
+      "Cursor · Stranded",
+      "main",
+      null,
+      "working",
+      null,
+      null,
+      null
+    );
+    // Claude sessions are owned by the hook lifecycle and must be left alone.
+    const claudeId = "6cc0f943-0b42-4aa0-92d0-dd56e28bca03";
+    stmts.insertSession.run(claudeId, "Claude", "completed", null, null, null);
+    stmts.insertAgent.run(
+      `${claudeId}-main`,
+      claudeId,
+      "Main",
+      "main",
+      null,
+      "working",
+      null,
+      null,
+      null
+    );
+
+    assert.deepEqual(healCursorOrphanAgents(require("../db")), [sessionId]);
+    const main = stmts.getAgent.get(`${sessionId}-main`);
+    assert.equal(main.status, "completed");
+    assert.equal(main.ended_at, endedAt);
+    assert.equal(stmts.getAgent.get(`${claudeId}-main`).status, "working");
+    assert.deepEqual(healCursorOrphanAgents(require("../db")), [], "heal is idempotent");
+  });
+
+  it("does not heal an agent whose session is reactivated mid-heal", () => {
+    const sessionId = "8ee0f943-0b42-4aa0-92d0-dd56e28bca05";
+    stmts.insertSession.run(sessionId, "Reactivated", "completed", null, null, null);
+    db.prepare("UPDATE sessions SET provider = 'cursor' WHERE id = ?").run(sessionId);
+    stmts.insertAgent.run(
+      `${sessionId}-main`,
+      sessionId,
+      "Cursor · Reactivated",
+      "main",
+      null,
+      "working",
+      null,
+      null,
+      null
+    );
+    // Simulate a hook reactivating the session after the heal's SELECT ran.
+    const racingDb = Object.create(db);
+    racingDb.prepare = (sql) => {
+      const statement = db.prepare(sql);
+      if (!/^\s*SELECT a\.id/.test(sql)) return statement;
+      return {
+        all: (...args) => {
+          const rows = statement.all(...args);
+          db.prepare("UPDATE sessions SET status = 'active' WHERE id = ?").run(sessionId);
+          return rows;
+        },
+      };
+    };
+    racingDb.transaction = (fn) => db.transaction(fn);
+
+    assert.deepEqual(healCursorOrphanAgents({ db: racingDb, stmts }), []);
+    assert.equal(stmts.getAgent.get(`${sessionId}-main`).status, "working");
+  });
+
+  it("moves a live Cursor session from working to waiting once the turn goes idle", async () => {
+    const sessionId = "7dd0f943-0b42-4aa0-92d0-dd56e28bca04";
+    const transcript = cursorTranscriptPath(sessionId);
+    fs.mkdirSync(path.dirname(transcript), { recursive: true });
+    fs.writeFileSync(
+      transcript,
+      jsonl([
+        { role: "user", message: { content: [{ type: "text", text: "Refactor it" }] } },
+        { role: "assistant", message: { content: [{ type: "text", text: "Working on it" }] } },
+      ])
+    );
+    const chatDir = writeCursorChat(sessionId, ["Refactor it"], Date.now());
+    await syncCursorSessions(require("../db"));
+    assert.equal(stmts.getSession.get(sessionId).status, "active");
+    assert.equal(stmts.getAgent.get(`${sessionId}-main`).status, "working");
+
+    // The turn ends: nothing under ~/.cursor changes and no hook arrives, but
+    // the session is still inside Cursor's 10-minute recency window.
+    const idle = new Date(Date.now() - 3 * 60 * 1000);
+    for (const file of [
+      transcript,
+      path.join(chatDir, "meta.json"),
+      path.join(chatDir, "prompt_history.json"),
+      chatDir,
+    ]) {
+      fs.utimesSync(file, idle, idle);
+    }
+    const setUpdatedAt = db.prepare("UPDATE sessions SET updated_at = ? WHERE id = ?");
+    setUpdatedAt.run(new Date().toISOString(), sessionId);
+    await syncCursorSessions(require("../db"));
+    assert.equal(
+      stmts.getAgent.get(`${sessionId}-main`).status,
+      "working",
+      "a fresh hook write keeps the turn working"
+    );
+
+    setUpdatedAt.run(idle.toISOString(), sessionId);
+    db.prepare("UPDATE agents SET current_tool = 'Shell' WHERE id = ?").run(`${sessionId}-main`);
+    await syncCursorSessions(require("../db"));
+    assert.equal(
+      stmts.getAgent.get(`${sessionId}-main`).status,
+      "working",
+      "a hook-reported tool in flight keeps the turn working"
+    );
+
+    // Unchanged fingerprint: the idle transition must not depend on new file
+    // activity, since an ended turn is exactly the absence of it.
+    db.prepare("UPDATE agents SET current_tool = NULL WHERE id = ?").run(`${sessionId}-main`);
+    await syncCursorSessions(require("../db"));
+    assert.equal(stmts.getSession.get(sessionId).status, "active");
+    assert.equal(stmts.getAgent.get(`${sessionId}-main`).status, "waiting");
+
+    const settled = await syncCursorSessions(require("../db"));
+    assert.equal(stmts.getAgent.get(`${sessionId}-main`).status, "waiting");
+    assert.equal(settled.backfilled, 0, "a waiting session is not re-enriched every poll");
   });
 });

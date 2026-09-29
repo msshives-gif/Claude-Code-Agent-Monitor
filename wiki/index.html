@@ -126,7 +126,7 @@
             "applicationCategory": "DeveloperApplication",
             "applicationSubCategory": "Monitoring and observability",
             "operatingSystem": "macOS, Windows, Linux",
-            "softwareVersion": "2.2.3",
+            "softwareVersion": "2.2.4",
             "license": "https://opensource.org/licenses/MIT",
             "isAccessibleForFree": true,
             "image": "https://hoangsonww.github.io/Claude-Code-Agent-Monitor/og-image.png",
@@ -2114,7 +2114,8 @@ npm run mcp:start:repl         # interactive CLI with tab completion</code></pre
                   <td><code>DASHBOARD_WORKING_IDLE_SECONDS</code></td>
                   <td><code>120</code></td>
                   <td>
-                    Idle-working timeout the watchdog uses to recover an <code>Esc</code> cancel that left no transcript marker
+                    Idle-working timeout the watchdog uses to recover an <code>Esc</code> cancel that left no transcript marker;
+                    Cursor turns idle this long also move to Waiting
                   </td>
                 </tr>
                 <tr>
@@ -7234,7 +7235,7 @@ npm run install-hooks</code></pre>
     <!-- Body-content translations — must load before script.js so the
          i18n engine sees window.__WIKI_CONTENT_I18N. Both are deferred, so they
          run in document order. -->
-    <script src="i18n-content.js?v=102" defer></script>
+    <script src="i18n-content.js?v=104" defer></script>
     <script src="script.js?v=59" defer></script>
     <script>
       (function () {

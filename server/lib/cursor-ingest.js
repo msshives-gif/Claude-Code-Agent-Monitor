@@ -19,7 +19,21 @@ const {
 } = require("./cursor-home");
 
 const RECENT_SESSION_MS = 10 * 60 * 1000;
+// How often the orphan-agent heal below may rescan (it always runs on the
+// first sync after boot). The ingest path itself no longer creates orphans;
+// this only repairs rows written by older versions or by paths outside it.
+const ORPHAN_HEAL_INTERVAL_MS = 5 * 60 * 1000;
+const TERMINAL_SESSION_STATUSES = new Set(["completed", "abandoned"]);
+// A Cursor turn that neither advances its transcript/chat files nor receives a
+// hook for this long is over (Cursor wrote its final message, or was stopped or
+// killed mid-turn), so the main agent moves from "working" to "waiting". Shares
+// DASHBOARD_WORKING_IDLE_SECONDS with the Claude hook watchdog's equivalent.
+const WORKING_IDLE_MS = (() => {
+  const raw = parseInt(process.env.DASHBOARD_WORKING_IDLE_SECONDS, 10);
+  return Number.isFinite(raw) && raw > 0 ? raw * 1000 : 120_000;
+})();
 const syncFingerprints = new Map();
+let lastOrphanHealMs = 0;
 
 function statFingerprint(filePath) {
   try {
@@ -138,6 +152,56 @@ function cursorChatMtimeMs(chatDir) {
       }
     )
   );
+}
+
+/**
+ * True when a main agent marked "working" has had no Cursor file activity and
+ * no hook write for WORKING_IDLE_MS. A tool in flight or an explicit waiting
+ * flag (both set by Cursor's hooks) keeps the hook-driven state authoritative.
+ * The poll's skip check and enrichment pass identical inputs (file mtimes and
+ * session updated_at), so they never disagree and re-enrich on every poll.
+ */
+function isCursorWorkingIdle(main, activityMs, sessionUpdatedAt) {
+  if (!main || main.current_tool || main.awaiting_input_since) return false;
+  const lastActivityMs = Math.max(Number(activityMs) || 0, Date.parse(sessionUpdatedAt) || 0);
+  return lastActivityMs > 0 && Date.now() - lastActivityMs >= WORKING_IDLE_MS;
+}
+
+/**
+ * Complete live-status agents left on terminal Cursor sessions. Older builds
+ * could flip the main agent back to `working` when a prompt was imported for a
+ * session that had already ended, and the stale sweep only examines `active`
+ * sessions — so those cards showed "Working" forever. Returns healed session ids.
+ */
+function healCursorOrphanAgents(dbModule) {
+  const { db } = dbModule;
+  const select = db.prepare(
+    `SELECT a.id, a.session_id, s.ended_at AS session_ended_at, s.updated_at AS session_updated_at
+     FROM agents a JOIN sessions s ON s.id = a.session_id
+     WHERE s.provider = 'cursor' AND s.status IN ('completed', 'abandoned')
+       AND a.status NOT IN ('completed', 'error')`
+  );
+  // Re-check the session state observed by the SELECT: a hook or another
+  // dashboard on the same database may reactivate the session in between, and
+  // its now-live agent must not be completed.
+  const complete = db.prepare(
+    `UPDATE agents SET status = 'completed', current_tool = NULL, awaiting_input_since = NULL,
+       ended_at = COALESCE(ended_at, ?), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+     WHERE id = ? AND session_id = ? AND status NOT IN ('completed', 'error')
+       AND EXISTS (
+         SELECT 1 FROM sessions s
+         WHERE s.id = agents.session_id AND s.provider = 'cursor'
+           AND s.status IN ('completed', 'abandoned')
+       )`
+  );
+  const healed = new Set();
+  db.transaction(() => {
+    for (const row of select.all()) {
+      const endedAt = row.session_ended_at || row.session_updated_at || new Date().toISOString();
+      if (complete.run(endedAt, row.id, row.session_id).changes > 0) healed.add(row.session_id);
+    }
+  })();
+  return [...healed];
 }
 
 /** Parse stored metadata without letting an old malformed row stop discovery. */
@@ -434,7 +498,11 @@ function enrichCursorSession(dbModule, transcriptPath, options = {}) {
       `Cursor · ${name}`,
       "main",
       null,
-      recent ? (prompts.length > 0 ? "working" : "waiting") : "completed",
+      recent
+        ? prompts.length > 0 && Date.now() - activityMs < WORKING_IDLE_MS
+          ? "working"
+          : "waiting"
+        : "completed",
       firstPrompt,
       null,
       JSON.stringify({ cursor: true })
@@ -557,20 +625,33 @@ function enrichCursorSession(dbModule, transcriptPath, options = {}) {
       const desiredTask = main.task || firstPrompt;
       const currentAgentMeta = parseMetadata(main.metadata);
       const nextAgentMeta = JSON.stringify({ ...currentAgentMeta, cursor: true });
-      const desiredMainStatus = shouldComplete
-        ? main.status === "error"
+      // A prompt imported for a session that stays ended (e.g. discovered at
+      // boot, long after the turn) must not revive the agent: the session row
+      // is terminal and no sweep re-examines it, so "working" would stick.
+      const sessionTerminal = TERMINAL_SESSION_STATUSES.has(desiredStatus);
+      const workingIdle =
+        !sessionTerminal &&
+        (promptAdded || main.status === "working") &&
+        isCursorWorkingIdle(main, Math.max(chatMtimeMs, transcriptMtimeMs), existing.updated_at);
+      const desiredMainStatus =
+        main.status === "error"
           ? "error"
-          : "completed"
-        : promptAdded && main.status !== "error"
-          ? "working"
-          : shouldReactivate && main.status !== "error"
-            ? "waiting"
-            : main.status;
+          : shouldComplete || sessionTerminal
+            ? "completed"
+            : workingIdle
+              ? "waiting"
+              : promptAdded
+                ? "working"
+                : shouldReactivate
+                  ? "waiting"
+                  : main.status;
       const desiredMainEndedAt = shouldComplete
         ? updatedAt
-        : shouldReactivate
-          ? null
-          : main.ended_at;
+        : sessionTerminal
+          ? main.ended_at || desiredEndedAt || updatedAt
+          : shouldReactivate
+            ? null
+            : main.ended_at;
       const mainUpdate = db
         .prepare(
           `UPDATE agents SET name = ?, status = ?, task = ?, metadata = ?, ended_at = ?, updated_at = ?
@@ -642,6 +723,16 @@ async function syncCursorSessions(dbModule, options = {}) {
     backfilled: 0,
     skipped: 0,
   };
+  if (Date.now() - lastOrphanHealMs >= ORPHAN_HEAL_INTERVAL_MS) {
+    lastOrphanHealMs = Date.now();
+    for (const sessionId of healCursorOrphanAgents(dbModule)) {
+      counters.backfilled++;
+      const session = dbModule.stmts.getSession.get(sessionId);
+      if (session && typeof options.onSession === "function") {
+        options.onSession({ changed: true, created: false, session, subagents: 0, events: [] });
+      }
+    }
+  }
   for (let index = 0; index < sessionIds.length; index++) {
     const sessionId = sessionIds[index];
     const transcriptPath = transcriptsBySession.get(sessionId) || null;
@@ -649,18 +740,25 @@ async function syncCursorSessions(dbModule, options = {}) {
     const fingerprint = cursorSessionFingerprint(transcriptPath, chatDir);
     const existing = dbModule.stmts.getSession.get(sessionId);
     let recencyExpired = false;
+    let workingIdleExpired = false;
     if (existing?.status === "active") {
       const activityMs = Math.max(
         cursorChatMtimeMs(chatDir),
         transcriptPath ? Number(statFingerprint(transcriptPath).split(":")[1]) || 0 : 0
       );
       recencyExpired = activityMs > 0 && Date.now() - activityMs >= RECENT_SESSION_MS;
+      // Unchanged files are exactly how an ended turn looks, so the idle
+      // transition must re-run enrichment without a fingerprint change.
+      const main = dbModule.stmts.getAgent.get(`${sessionId}-main`);
+      workingIdleExpired =
+        main?.status === "working" && isCursorWorkingIdle(main, activityMs, existing.updated_at);
     }
     if (
       syncFingerprints.get(sessionId) === fingerprint &&
       existing?.provider === "cursor" &&
       (!transcriptPath || existing.transcript_path === transcriptPath) &&
-      !recencyExpired
+      !recencyExpired &&
+      !workingIdleExpired
     ) {
       counters.skipped++;
       continue;
@@ -681,6 +779,7 @@ async function syncCursorSessions(dbModule, options = {}) {
 module.exports = {
   discoverCursorTranscripts,
   enrichCursorSession,
+  healCursorOrphanAgents,
   importCursorSubagents,
   snapshotCursorTranscript,
   syncCursorSessions,

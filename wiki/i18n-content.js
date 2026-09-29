@@ -499,8 +499,8 @@ window.__WIKI_CONTENT_I18N = {
       "设为 <code>0</code> 可禁用死亡会话的存活性回收——看门狗仅在匹配的本地 <code>claude</code> 或 <code>codex</code> 进程已退出时，才会完成活动会话；在 Windows 和容器内自动禁用。从其他机器转发而来的会话（household hooks）会报告非 POSIX 的 <code>cwd</code>，因此会被自动跳过，所以本地 + 转发混合部署不再需要关闭此项。",
     "Idle gate for watchdog-tick liveness reaps — the transcript must not have been written for at least this long (last hook write is the fallback clock); startup passes skip the gate":
       "看门狗节拍存活性回收的空闲门槛——transcript 必须至少有这么长时间未被写入（无 transcript 时以最后一次 hook 写入为后备时钟）；启动时的回收会跳过该门槛",
-    "Idle-working timeout the watchdog uses to recover an <code>Esc</code> cancel that left no transcript marker":
-      "看门狗用于恢复未在会话记录中留下标记的 <code>Esc</code> 取消的空闲工作超时",
+    "Idle-working timeout the watchdog uses to recover an <code>Esc</code> cancel that left no transcript marker; Cursor turns idle this long also move to Waiting":
+      "看门狗用于恢复未在会话记录中留下标记的 <code>Esc</code> 取消的空闲工作超时；空闲达到此时长的 Cursor 回合也会转入等待中",
     "Poll interval for the background sync of <code>~/.claude/projects</code>; <code>0</code> disables the poll but keeps the filesystem watcher":
       "对 <code>~/.claude/projects</code> 进行后台同步的轮询间隔；<code>0</code> 会禁用轮询但保留文件系统监听器",
     "Set to <code>production</code> to serve built client from <code>client/dist/</code>":
@@ -1997,8 +1997,8 @@ window.__WIKI_CONTENT_I18N = {
       "Đặt <code>0</code> để tắt cơ chế thu dọn phiên đã chết — watchdog chỉ hoàn tất các phiên cục bộ đang hoạt động khi tiến trình <code>claude</code> hoặc <code>codex</code> tương ứng đã kết thúc; tự động tắt trên Windows và trong container. Các phiên được chuyển tiếp từ máy khác (household hooks) báo cáo <code>cwd</code> không theo chuẩn POSIX nên được tự động bỏ qua, vì vậy triển khai hỗn hợp cục bộ + chuyển tiếp không còn cần tắt tùy chọn này.",
     "Idle gate for watchdog-tick liveness reaps — the transcript must not have been written for at least this long (last hook write is the fallback clock); startup passes skip the gate":
       "Ngưỡng nhàn rỗi cho thu dọn ở nhịp watchdog — transcript phải không được ghi trong ít nhất khoảng này (lấy lần ghi hook cuối làm đồng hồ dự phòng); các lượt thu dọn lúc khởi động bỏ qua ngưỡng này",
-    "Idle-working timeout the watchdog uses to recover an <code>Esc</code> cancel that left no transcript marker":
-      "Thời gian chờ làm-việc-rảnh-rỗi mà watchdog dùng để khôi phục một lần hủy <code>Esc</code> không để lại dấu hiệu trong bản ghi",
+    "Idle-working timeout the watchdog uses to recover an <code>Esc</code> cancel that left no transcript marker; Cursor turns idle this long also move to Waiting":
+      "Thời gian chờ làm-việc-rảnh-rỗi mà watchdog dùng để khôi phục một lần hủy <code>Esc</code> không để lại dấu hiệu trong bản ghi; các lượt Cursor rảnh trong khoảng thời gian này cũng chuyển sang Đang chờ",
     "Poll interval for the background sync of <code>~/.claude/projects</code>; <code>0</code> disables the poll but keeps the filesystem watcher":
       "Khoảng thời gian thăm dò cho việc đồng bộ nền của <code>~/.claude/projects</code>; <code>0</code> tắt thăm dò nhưng vẫn giữ trình theo dõi hệ thống tệp",
     "Set to <code>production</code> to serve built client from <code>client/dist/</code>":
@@ -3488,8 +3488,8 @@ window.__WIKI_CONTENT_I18N = {
       "<code>0</code>으로 설정하면 죽은 세션에 대한 생존 확인 정리(reap) 기능이 비활성화됩니다 — 워치독은 일치하는 로컬 <code>claude</code> 또는 <code>codex</code> 프로세스가 종료된 경우에만 활성 세션을 완료 처리합니다. Windows와 컨테이너에서는 자동으로 비활성화됩니다. 다른 머신에서 전달된 세션(household hooks)은 POSIX가 아닌 <code>cwd</code>를 보고하므로 자동으로 건너뛰며, 따라서 로컬 + 전달 혼합 배포에서는 더 이상 이 기능을 끌 필요가 없습니다.",
     "Idle gate for watchdog-tick liveness reaps — the transcript must not have been written for at least this long (last hook write is the fallback clock); startup passes skip the gate":
       "워치독 틱의 생존 확인 정리를 위한 유휴 게이트 — 트랜스크립트가 최소 이 시간 동안 기록되지 않아야 합니다(마지막 훅 기록 시각이 대체 기준이 됩니다). 시작 시점의 패스는 이 게이트를 건너뜁니다",
-    "Idle-working timeout the watchdog uses to recover an <code>Esc</code> cancel that left no transcript marker":
-      "트랜스크립트에 마커를 남기지 않은 <code>Esc</code> 취소를 복구하기 위해 워치독이 사용하는 유휴 작업 타임아웃",
+    "Idle-working timeout the watchdog uses to recover an <code>Esc</code> cancel that left no transcript marker; Cursor turns idle this long also move to Waiting":
+      "트랜스크립트에 마커를 남기지 않은 <code>Esc</code> 취소를 복구하기 위해 워치독이 사용하는 유휴 작업 타임아웃. 이 시간 동안 유휴 상태인 Cursor 턴도 대기 중으로 이동합니다",
     "Poll interval for the background sync of <code>~/.claude/projects</code>; <code>0</code> disables the poll but keeps the filesystem watcher":
       "<code>~/.claude/projects</code> 백그라운드 동기화의 폴링 간격입니다. <code>0</code>으로 설정하면 폴링은 비활성화되지만 파일 시스템 워처는 계속 유지됩니다",
     "Set to <code>production</code> to serve built client from <code>client/dist/</code>":
@@ -4977,8 +4977,8 @@ window.__WIKI_CONTENT_I18N = {
       "Configura <code>0</code> para desactivar la recolección de actividad de sesiones inactivas: el vigilante solo completa sesiones locales activas cuando el proceso <code>claude</code> o <code>codex</code> correspondiente ya terminó; se desactiva automáticamente en Windows y contenedores. Las sesiones enviadas desde otra máquina (ganchos domésticos) informan de un <code>cwd</code> no POSIX y se omiten automáticamente, por lo que una implementación mixta local + reenviada ya no necesita desactivar esta opción.",
     "Idle gate for watchdog-tick liveness reaps — the transcript must not have been written for at least this long (last hook write is the fallback clock); startup passes skip the gate":
       "La puerta inactiva para la vigilia de la vida del reloj de pulso cosecha - la transcripción no debe haber sido escrita durante al menos tanto tiempo (la última escritura del gancho es el reloj de respaldo); las transiciones de arranque saltan la puerta",
-    "Idle-working timeout the watchdog uses to recover an <code>Esc</code> cancel that left no transcript marker":
-      "El tiempo de espera de trabajo inactivo que utiliza el rastreador para recuperar un <code>Esc</code> Cancelar eso no dejó ningún marcador de transcripción",
+    "Idle-working timeout the watchdog uses to recover an <code>Esc</code> cancel that left no transcript marker; Cursor turns idle this long also move to Waiting":
+      "El tiempo de espera de trabajo inactivo que utiliza el rastreador para recuperar un <code>Esc</code> Cancelar eso no dejó ningún marcador de transcripción; los turnos de Cursor inactivos durante este tiempo también pasan a En espera",
     "Poll interval for the background sync of <code>~/.claude/projects</code>; <code>0</code> disables the poll but keeps the filesystem watcher":
       "Intervalo de encuesta para la sincronización de fondo de <code>~/.claude/projects</code>; <code>0</code> Desactiva la encuesta pero mantiene el observador del sistema de archivos",
     "Set to <code>production</code> to serve built client from <code>client/dist/</code>":
