@@ -684,6 +684,12 @@ const DEFAULT_PRICING = [
   // numbers; once it lapsed, usage fell back to the old $3/$15 standard and
   // over-reported by 50%. The promo row is now a no-op and is kept only so
   // existing DBs that already stamped intro_until keep their history.
+  // claude-sonnet-5-5: $2/$10 input/output, $0.20 cache read, $2.50 5m cache
+  // write, $4 1h cache write; no Fast mode. Same numbers as Sonnet 5 today, but
+  // it gets its own row: `claude-sonnet-5%` also LIKE-matches
+  // "claude-sonnet-5-5", so without one Sonnet 5.5 usage is labelled as Sonnet 5
+  // and silently follows every Sonnet 5 edit, intro stamp and rate correction.
+  ["claude-sonnet-5-5%", "Claude Sonnet 5.5", 2, 10, 0.2, 2.5, 4, 0, 0],
   ["claude-sonnet-5%", "Claude Sonnet 5", 2, 10, 0.2, 2.5, 4, 0, 0],
   ["claude-sonnet-4-6%", "Claude Sonnet 4.6", 3, 15, 0.3, 3.75, 6, 0, 0],
   ["claude-sonnet-4-5%", "Claude Sonnet 4.5", 3, 15, 0.3, 3.75, 6, 0, 0],
@@ -698,8 +704,9 @@ const DEFAULT_PRICING = [
   ["claude-3-opus%", "Claude Opus 3", 15, 75, 1.5, 18.75, 30, 0, 0],
 ];
 
-// OpenAI rates: https://developers.openai.com/api/docs/pricing (2026-09-15).
-// Sol uses the currently published promotional rates; do not guess a future cutoff.
+// OpenAI rates: https://developers.openai.com/api/docs/pricing (2026-09-15;
+// GPT-6 Sol and Luna added 2026-09-29).
+// GPT-5.6 Sol uses the currently published promotional rates; do not guess a future cutoff.
 // OpenAI pricing supplied for Codex support. Only models for which the supplied
 // rate card publishes a long-context column receive long rates; unsupported
 // combinations remain zero and surface as explicitly unpriced rather than
@@ -716,6 +723,14 @@ const DEFAULT_GPT_PRICING = [
   // gpt-5 patterns so Codex rollout records are priced rather than reported
   // as unpriced usage.
   gptRate("gpt-6-astra%", "GPT-6 Astra", [10, 1, 12.5, 50], [20, 2, 25, 100], [20, 2, 25, 75]),
+  gptRate("gpt-6-sol%", "GPT-6 Sol", [2, 0.2, 2.5, 10], [4, 0.4, 5, 20], [4, 0.4, 5, 15]),
+  gptRate(
+    "gpt-6-luna%",
+    "GPT-6 Luna",
+    [0.1, 0.01, 0.125, 0.5],
+    [0.2, 0.02, 0.25, 1],
+    [0.2, 0.02, 0.25, 0.75]
+  ),
   gptRate("gpt-5.6-sol%", "GPT-5.6 Sol", [4, 0.4, 5, 20], [8, 0.8, 10, 40], [8, 0.8, 10, 30]),
   gptRate("gpt-5.6-terra%", "GPT-5.6 Terra", [2, 0.2, 2.5, 12], [4, 0.4, 5, 24], [4, 0.4, 5, 18]),
   gptRate(
@@ -841,6 +856,8 @@ seedCursorPricing();
 // values avoid applying a guessed multiplier to unsupported model/tier pairs.
 const GPT_FAST_LONG_RATES = {
   "gpt-6-astra%": [40, 4, 50, 150],
+  "gpt-6-sol%": [8, 0.8, 10, 30],
+  "gpt-6-luna%": [0.4, 0.04, 0.5, 1.5],
   "gpt-5.6-sol%": [16, 1.6, 20, 60],
   "gpt-5.6-terra%": [8, 0.8, 10, 36],
   "gpt-5.6-luna%": [0.8, 0.08, 1, 3.6],

@@ -299,3 +299,43 @@ describe("ccam stop — missing discovery file", () => {
     assert.match(out + err, /could not determine|PID/i);
   });
 });
+
+describe("ccam stop — ambiguous discovery", () => {
+  let target;
+
+  beforeEach(async () => {
+    fs.rmSync(TMP, { recursive: true, force: true });
+    fs.mkdirSync(CLAUDE_HOME, { recursive: true });
+    target = await spawnDashboardTarget();
+    // Two registered dashboards, neither on the port this CLI targets. Both
+    // point at the disposable target so a regression can only kill it.
+    const entry = (port) => ({
+      port,
+      pid: target.child.pid,
+      startedAt: new Date().toISOString(),
+      dataDir: TMP,
+    });
+    fs.writeFileSync(
+      path.join(CLAUDE_HOME, ".agent-dashboard.json"),
+      JSON.stringify({ servers: [entry(1111), entry(2222)] }, null, 2)
+    );
+  });
+
+  afterEach(() => {
+    if (target && isAlive(target.child.pid)) {
+      try {
+        process.kill(target.child.pid, "SIGKILL");
+      } catch {
+        /* ignore */
+      }
+    }
+    fs.rmSync(TMP, { recursive: true, force: true });
+  });
+
+  it("refuses to guess instead of signalling an unrelated server", async () => {
+    const { code, out, err } = await ccamStop({ DASHBOARD_PORT: String(target.port) });
+    assert.equal(code, 1);
+    assert.match(out + err, /No registered dashboard on port/);
+    assert.equal(isAlive(target.child.pid), true, "no process may be signalled");
+  });
+});

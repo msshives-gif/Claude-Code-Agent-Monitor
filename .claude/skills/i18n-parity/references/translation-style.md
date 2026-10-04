@@ -84,9 +84,8 @@ namespaces and a 7,000-line wiki bundle coherent.
   survive verbatim; only their surrounding words are translated. Reordering
   around a token is fine and often necessary.
 - **Plurals use the i18next v4 JSON suffixes `_one` / `_other`** (the client is
-  on i18next 26). A handful of legacy `_plural` keys survive in `kanban.json`
-  and `sessions.json`; v4 no longer resolves them — do not copy that pattern
-  into new keys. Because the parity test requires an **identical key set in
+  on i18next 26). Never use the legacy `_plural` suffix: v4 does not resolve
+  it, so the count silently falls back to the singular text. Because the parity test requires an **identical key set in
   every locale**, `zh`, `vi`, and `ko` must still carry both `_one` and
   `_other` even though they have no plural inflection: give both the same
   string. `es` gets genuinely different forms, as English does.

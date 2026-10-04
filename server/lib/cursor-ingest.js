@@ -3,7 +3,8 @@
  * @description Discovers, enriches, snapshots, and backfills Cursor agent
  * sessions from ~/.cursor. Chat metadata is ingested before Cursor creates a
  * transcript, so new sessions and submitted prompts reach the dashboard live;
- * later transcript data adds durable conversation and subagent detail.
+ * later transcript data adds durable conversation and subagent detail. Titles
+ * come from chat metadata, then Cursor's state.vscdb, then the first prompt.
  * @author Son Nguyen <hoangson091104@gmail.com>
  */
 
@@ -17,6 +18,9 @@ const {
   indexCursorChatDirs,
   readCursorChatMetadata,
 } = require("./cursor-home");
+const { writeSnapshot } = require("./snapshot-store");
+const { getSnapshotPolicy } = require("./snapshot-retention");
+const { createCursorTitleLookup } = require("./cursor-state-db");
 
 const RECENT_SESSION_MS = 10 * 60 * 1000;
 // How often the orphan-agent heal below may rescan (it always runs on the
@@ -214,42 +218,20 @@ function parseMetadata(value) {
   }
 }
 
-function copyIfNewer(source, destination) {
-  let sourceStat;
-  try {
-    sourceStat = fs.statSync(source);
-  } catch {
-    return false;
-  }
-  let destinationStat = null;
-  try {
-    destinationStat = fs.statSync(destination);
-  } catch {
-    // Missing snapshot is the normal first-import case.
-  }
-  if (
-    destinationStat &&
-    destinationStat.size === sourceStat.size &&
-    destinationStat.mtimeMs >= sourceStat.mtimeMs
-  ) {
-    return false;
-  }
-  fs.mkdirSync(path.dirname(destination), { recursive: true });
-  fs.copyFileSync(source, destination);
-  try {
-    fs.utimesSync(destination, sourceStat.atime, sourceStat.mtime);
-  } catch {
-    // Snapshot content is already durable; timestamp preservation is optional.
-  }
-  return true;
-}
-
+/**
+ * Snapshot a Cursor transcript (and its subagent transcripts) into the
+ * dashboard's data dir before Cursor's own cleanup removes them. Goes through
+ * the shared snapshot store: atomic, copy-on-write where supported, and it
+ * never shrinks an existing snapshot — a truncated original cannot overwrite
+ * the fuller copy. Returns whether anything was written.
+ */
 function snapshotCursorTranscript(transcriptPath, sessionId) {
   if (!transcriptPath) return false;
-  let changed = copyIfNewer(
-    transcriptPath,
-    path.join(getCursorSnapshotDir(), `${sessionId}.jsonl`)
-  );
+  const root = getCursorSnapshotDir();
+  const { max_age_days: maxAgeDays } = getSnapshotPolicy();
+  const write = (source, relPath) =>
+    writeSnapshot({ root, sessionId, source, relPath, maxAgeDays }).written;
+  let changed = write(transcriptPath, `${sessionId}.jsonl`);
   const subagentsDir = path.join(path.dirname(transcriptPath), "subagents");
   let entries = [];
   try {
@@ -260,10 +242,8 @@ function snapshotCursorTranscript(transcriptPath, sessionId) {
   for (const entry of entries) {
     if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
     changed =
-      copyIfNewer(
-        path.join(subagentsDir, entry.name),
-        path.join(getCursorSnapshotDir(), sessionId, "subagents", entry.name)
-      ) || changed;
+      write(path.join(subagentsDir, entry.name), path.join(sessionId, "subagents", entry.name)) ||
+      changed;
   }
   return changed;
 }
@@ -470,7 +450,9 @@ function enrichCursorSession(dbModule, transcriptPath, options = {}) {
     new Date(Math.max(chatMtimeMs, transcriptMtimeMs)).toISOString()
   );
   const firstPrompt = prompts[0] || null;
-  const nativeTitle = trimPrompt(meta?.title);
+  const nativeTitle =
+    trimPrompt(meta?.title) ||
+    (typeof options.cursorTitle === "function" ? trimPrompt(options.cursorTitle(sessionId)) : "");
   const name = nativeTitle || promptLabel(firstPrompt) || `Cursor session ${sessionId.slice(0, 8)}`;
   const cwd = typeof meta?.cwd === "string" && meta.cwd.trim() ? meta.cwd.trim() : null;
   const model = typeof options.model === "string" && options.model ? options.model : null;
@@ -708,6 +690,16 @@ function enrichCursorSession(dbModule, transcriptPath, options = {}) {
 }
 
 async function syncCursorSessions(dbModule, options = {}) {
+  // One read-only state.vscdb handle per pass, opened only if a title is needed.
+  const titles = createCursorTitleLookup();
+  try {
+    return await syncCursorSessionsWithTitles(dbModule, options, titles.title);
+  } finally {
+    titles.close();
+  }
+}
+
+async function syncCursorSessionsWithTitles(dbModule, options, cursorTitle) {
   const transcripts = discoverCursorTranscripts(options.root);
   const chatDirs = indexCursorChatDirs();
   const transcriptsBySession = new Map();
@@ -763,7 +755,11 @@ async function syncCursorSessions(dbModule, options = {}) {
       counters.skipped++;
       continue;
     }
-    const result = enrichCursorSession(dbModule, transcriptPath, { sessionId, chatDir });
+    const result = enrichCursorSession(dbModule, transcriptPath, {
+      sessionId,
+      chatDir,
+      cursorTitle,
+    });
     if (result.session) {
       syncFingerprints.set(sessionId, cursorSessionFingerprint(transcriptPath, chatDir));
     }

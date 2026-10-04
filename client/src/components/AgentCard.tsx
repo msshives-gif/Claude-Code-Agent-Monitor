@@ -1,9 +1,12 @@
 /**
  * @file AgentCard.tsx
  * @description Defines the AgentCard component that displays a summary of an
- * agent's name, status, task, current tool, timestamps, and consistent native
- * Claude Code/Cursor/Codex titles plus latest-two-human-turn context. Cards reuse session task-progress
- * donuts beside status when available. Durable cards navigate to session
+ * agent's name, status, task, current tool, timestamps, and latest-two-human-turn
+ * context. Provider-owned main cards show the session's own title (clamped to
+ * three lines) with the tool name leading the subtitle, so Claude Code, Cursor,
+ * and Codex cards read the same. Cards reuse session task-progress donuts
+ * beside status when available, and can render status as a dot where the
+ * layout already names it (Kanban columns). Durable cards navigate to session
  * details while the brief pre-identity Codex process card stays non-navigable.
  * @author Son Nguyen <hoangson091104@gmail.com>
  */
@@ -93,6 +96,10 @@ interface AgentCardProps {
   session?: Session;
   label?: string;
   onClick?: () => void;
+  /** `dot` shrinks the status badge to its colored dot (tooltip + screen-reader
+   *  label kept) for surfaces where the layout already shows the status, such
+   *  as a Kanban column. Defaults to the full badge. */
+  statusDisplay?: "badge" | "dot";
 }
 
 function isTransientProcessCard(metadata: string | null | undefined): boolean {
@@ -104,7 +111,13 @@ function isTransientProcessCard(metadata: string | null | undefined): boolean {
   }
 }
 
-export function AgentCard({ agent, session, label, onClick }: AgentCardProps) {
+export function AgentCard({
+  agent,
+  session,
+  label,
+  onClick,
+  statusDisplay = "badge",
+}: AgentCardProps) {
   const navigate = useNavigate();
   const { t } = useTranslation("kanban");
   const isWaiting = agent.status === "waiting" || isAgentAwaitingInput(agent);
@@ -145,13 +158,18 @@ export function AgentCard({ agent, session, label, onClick }: AgentCardProps) {
     session?.provider !== "cursor" &&
     session?.provider !== "codex" &&
     /^Main Agent(?:\s*-|$)/i.test(agent.name.trim());
-  const displayName = isCodexMain
-    ? `Codex · ${realSessionName || agent.session_id.slice(0, 8)}`
+  // Provider-owned main cards title themselves with the session's own title;
+  // the tool name moves to the start of the subtitle instead of eating the
+  // title row. Custom (non-placeholder) agent names and subagents keep their
+  // agent name.
+  const providerLabel = isCodexMain
+    ? "Codex"
     : isCursorMain
-      ? `Cursor · ${realSessionName || agent.session_id.slice(0, 8)}`
+      ? "Cursor"
       : isClaudeMain
-        ? `Claude Code · ${realSessionName || agent.session_id.slice(0, 8)}`
-        : agent.name;
+        ? "Claude Code"
+        : null;
+  const displayName = providerLabel ? realSessionName || t("session.anonymous") : agent.name;
   // Session titles and requests are intentionally independent: Claude,
   // Cursor, and Codex persist two recent real human turns on the session, while a
   // main-agent task remains the truthful fallback for pre-preview history.
@@ -200,7 +218,7 @@ export function AgentCard({ agent, session, label, onClick }: AgentCardProps) {
   }
   const subtitle = isMain
     ? [
-        isCursorMain ? "Cursor" : null,
+        providerLabel,
         cwdBase,
         subagentCount > 0 ? t("kanban:session.subagentSummary", { count: subagentCount }) : null,
         sessionTurns > 0 ? t("kanban:session.turnSummary", { count: sessionTurns }) : null,
@@ -231,7 +249,7 @@ export function AgentCard({ agent, session, label, onClick }: AgentCardProps) {
       }`}
     >
       <div className="flex items-start justify-between gap-2 mb-3 min-w-0">
-        <div className="flex items-center gap-2.5 min-w-0 overflow-hidden">
+        <div className="flex items-start gap-2.5 min-w-0 overflow-hidden">
           <div
             className={`w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0 ${
               isMain ? "bg-accent/15 text-accent" : "bg-violet-500/15 text-violet-400"
@@ -240,13 +258,22 @@ export function AgentCard({ agent, session, label, onClick }: AgentCardProps) {
             {isMain ? <Bot className="w-3.5 h-3.5" /> : <GitBranch className="w-3.5 h-3.5" />}
           </div>
           <div className="min-w-0 overflow-hidden">
-            <p className="text-sm font-medium text-gray-200 truncate">
-              {/* Provider-owned main cards use one consistent title shape:
-                  "Claude Code/Cursor/Codex · <native title or short ID>".
-                  Custom non-placeholder agent names remain untouched. */}
+            {/* Wraps to at most three lines (long unbroken tokens such as
+                paths break anywhere) so a long title never blows up the
+                card; the full title stays available on hover. */}
+            <p
+              className="text-sm font-medium leading-snug text-gray-200 line-clamp-3 [overflow-wrap:anywhere]"
+              title={displayName}
+            >
               {displayName}
             </p>
-            {subtitle && <p className="text-[11px] text-gray-500 truncate">{subtitle}</p>}
+            {/* Single line; the full subtitle (tool · project · counts) stays
+                available on hover when the column is too narrow for it. */}
+            {subtitle && (
+              <p className="text-[11px] text-gray-500 truncate" title={subtitle}>
+                {subtitle}
+              </p>
+            )}
           </div>
         </div>
         {/* compact: cards are narrow — inline reason chip would squeeze the
@@ -260,6 +287,7 @@ export function AgentCard({ agent, session, label, onClick }: AgentCardProps) {
             reason={agentAwaitingReason(agent)}
             provider={session?.provider}
             compact
+            variant={statusDisplay}
           />
         </div>
       </div>
@@ -326,9 +354,14 @@ export function AgentCard({ agent, session, label, onClick }: AgentCardProps) {
             {timeAgo(agent.last_activity || agent.updated_at || agent.started_at)}
           </span>
         )}
+        {/* Main cards already carry the session title as their own title, so
+            the footer keeps only the short ID; a subagent card's title is the
+            subagent, so its session name stays here as context. */}
         <span className="ml-auto flex items-center gap-1 min-w-0 opacity-50">
-          {realSessionName && !isCodexMain && !isCursorMain && (
-            <span className="truncate max-w-[10rem]">{realSessionName} ·</span>
+          {realSessionName && !providerLabel && (
+            <span className="truncate max-w-[10rem]" title={realSessionName}>
+              {realSessionName} ·
+            </span>
           )}
           <span className="font-mono flex-shrink-0">{agent.session_id.slice(0, 8)}</span>
         </span>

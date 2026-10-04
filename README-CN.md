@@ -18,6 +18,7 @@
 ![multer](https://img.shields.io/badge/multer-multipart_upload-FF6B6B?style=flat-square&logo=express&logoColor=white)
 ![adm-zip](https://img.shields.io/badge/adm--zip-archive_extract-FBBF24?style=flat-square&logo=files&logoColor=white)
 ![tar](https://img.shields.io/badge/tar-tgz_extract-A78BFA?style=flat-square&logo=gnu&logoColor=white)
+![Commander CLI](https://img.shields.io/badge/Commander_CLI-14-F05032?style=flat-square&logo=gnubash&logoColor=white)
 ![React](https://img.shields.io/badge/React-19.2-61DAFB?style=flat-square&logo=react&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?style=flat-square&logo=typescript&logoColor=white)
 ![Javascript](https://img.shields.io/badge/JavaScript-ES6-F7DF1E?style=flat-square&logo=javascript&logoColor=white)
@@ -127,12 +128,6 @@ graph LR
     style C fill:#1a1a28,stroke:#2a2a3d,color:#e4e4ed
     style D fill:#10b981,stroke:#34d399,color:#fff
 ```
-
-### Cursor 支持
-
-Cursor 无需单独设置：启动页选择 **Claude Code** 时会开箱即用地启用 Cursor 监控。文件系统监听器会在 `agent` 启动时立即发现 `~/.cursor/chats/*/<session>/meta.json`，无需等待 Transcript；提交 Prompt 后，`prompt_history.json` 的变化会立即更新会话卡片、工作状态与 Conversation。随后 `~/.cursor/projects/*/agent-transcripts` 出现时，Dashboard 会无重复地合并待处理的用户消息，补充原生标题、项目、轮次与子 Agent，并保存主会话及子 Agent JSONL 快照。
-
-Cursor 卡片显示 `Cursor · <标题>` 以及项目、轮次和子 Agent 副标题。设置页提供独立可编辑的 **Cursor 定价**，覆盖 Cursor Grok、Composer 与已公布的第三方模型，不会误用 Claude 或 Codex 费率。可用 `DASHBOARD_CURSOR_HOME` 覆盖来源目录，并用 `DASHBOARD_CURSOR_SYNC_MS` 调整轮询兜底；设为 `0` 只会禁用周期扫描，实时文件系统监听仍保持启用。
 
 ### 多语言支持（i18n）
 
@@ -315,13 +310,11 @@ flowchart LR
 
 Dashboard 提供全面的功能来监控和分析你的 Claude Code 会话和 Agent：
 
-> **内置 Cursor 支持：** CCAM 会从 `~/.cursor/projects/*/agent-transcripts` 发现 Cursor 原生历史，使用 `~/.cursor/chats` 元数据补全信息，以独立的 `cursor` 提供商保存，并在 Cursor 清理文件前创建会话快照。选择 Claude Code 仪表板范围时会自动包含 Cursor。目前远程 SSH 数据源只镜像 Claude Code 和 Codex 主目录；若要导入远程 Cursor，请将其主目录挂载或暴露到本机，并通过 `DASHBOARD_CURSOR_HOME` 指定。
-
 | 功能 | 描述 |
 |------|------|
 | **任务进度** | 根据 Provider 实际暴露的状态按 Agent 归属跟踪任务：当前 Claude 的 `TaskCreate` / `TaskGet` / `TaskUpdate` / `TaskList` 与任务生命周期事件、旧版 `TodoWrite`，以及直接调用或统一 `exec` 包装的 Codex `update_plan`。有任务状态的会话会在 Sessions 表格和 Dashboard 的每张 Agent 卡片中，于状态徽标旁显示相同的小型环形进度图及悬停/聚焦 Tooltip；会话详情则显示完整进度面板，包括状态分段、当前任务、Agent 归属统计，以及每页 10 行的任务列表。进度只属于最新的顶层工作：新的 Claude 用户回合或 Codex 任务没有暴露 tracker 时会清除旧状态；回合/任务结束却没有最终更新时，也会丢弃未完成状态。已完全完成的历史仍会保留。 |
 | **Dashboard** | 两个标签页（存储于 `localStorage`）：**Monitor** — 概览统计（6 张统计卡片，其中费用卡片标注为 **API-Equiv. Cost** — 按提供方 API 标价计算的总额（Claude 会话按 Anthropic 价目、Codex 按 OpenAI 价目），而非订阅实际支出）、可折叠子 Agent 层级并带有**上下文占用量表**（最新请求的上下文占用相对模型窗口，70%/90% 处呈绿/琥珀/红色）的活跃 Agent 卡片、近期活动流（连续的 `PreToolUse`/`PostToolUse` 折叠为可展开的“*N* tool calls · Read ×3, Bash ×2”行，提示词、停止、错误和通知仍保留在顶层），项目数量通过 `ResizeObserver` 动态填满视口高度。**Health** — 综合系统健康评分环（加权：0.4 × 成功率 + 0.25 × 缓存命中率 + 0.25 × (100 − 错误率) + 0.1 × (100 − 堆内存 %)）、存储引擎甜甜圈图（记录分布）、缓存性能 / 错误率 / 成功率仪表，以及用量限制 **Limits** 指示（`rate_limit` 限流通知在此单独报告并从错误率中排除 — 被限流不是故障）、Top 8 工具调用水平条形图、子 Agent 效能条、模型 Token 分布、压缩影响统计。所有健康指标每 30 秒从 `/api/settings/info` 和 `/api/workflows` 自动刷新。所有图表均有跟随光标的工具提示并自动避免视口边缘溢出 |
-| **看板** | 顶部带视图切换（在 `localStorage` 中持久化）：**Agent 视图** — 4 列（工作中 / 等待中 / 已完成 / 错误），以及**会话视图** — 5 列（活跃 / 等待中 / 已完成 / 错误 / 已废弃）。**等待中**列直接映射 Agent 的持久化 `waiting` 状态 — 当 Claude Code 停在提示符前(新会话、回合之间或被权限 Notification 阻塞)时设置,在用户继续操作(UserPromptSubmit / PreToolUse)时转换为 `working`。每个列标题都有 `?` 图标的工具提示解释生命周期。每列按状态从服务端独立获取(每列实际无上限),随后客户端按每列 10 张卡片分页,附「显示更多」按钮。WebSocket 订阅范围跟随当前视图(`agent_*` 与 `session_*` 帧),切换视图后另一类的更新不会触发重新加载。“等待中”徽标以悬停工具提示的形式展示该行的 `awaiting_reason` — **需要输入** (`notification`)、**回合结束** (`stop`)、**等待提示** (`session_start`)、**已中断** (`interrupted`) — 在紧凑卡片上仅保留悬停提示,以便卡片标题保有空间;更宽的界面(会话表格、会话详情页头)还会以嵌套小徽章(chip)的形式内联显示原因,紧急原因(权限请求、中断)会以更醒目的琥珀色显示 |
+| **看板** | 顶部带视图切换（在 `localStorage` 中持久化）：**Agent 视图** — 4 列（工作中 / 等待中 / 已完成 / 错误），以及**会话视图** — 5 列（活跃 / 等待中 / 已完成 / 错误 / 已废弃）。**等待中**列直接映射 Agent 的持久化 `waiting` 状态 — 当 Claude Code 停在提示符前(新会话、回合之间或被权限 Notification 阻塞)时设置,在用户继续操作(UserPromptSubmit / PreToolUse)时转换为 `working`。每个列标题都有 `?` 图标的工具提示解释生命周期。每列按状态从服务端独立获取(每列实际无上限),随后客户端按每列 10 张卡片分页,附「显示更多」按钮。WebSocket 订阅范围跟随当前视图(`agent_*` 与 `session_*` 帧),切换视图后另一类的更新不会触发重新加载。“等待中”徽标以悬停工具提示的形式展示该行的 `awaiting_reason` — **需要输入** (`notification`)、**回合结束** (`stop`)、**等待提示** (`session_start`)、**已中断** (`interrupted`) — 在紧凑卡片上仅保留悬停提示,以便卡片标题保有空间;更宽的界面(会话表格、会话详情页头)还会以嵌套小徽章(chip)的形式内联显示原因,紧急原因(权限请求、中断)会以更醒目的琥珀色显示 卡片显示会话自身的标题（最多三行，悬停显示完整标题），副标题以工具名开头（`Claude Code · repo · 12 轮`）；在看板上，由于列本身已表明状态，状态徽标缩小为彩色圆点，而仪表盘和会话详情页仍保留完整徽标。 |
 | **会话** | 可搜索、可筛选、**服务端分页**的全量会话表。每次翻页请求 `/api/sessions?status=&q=&limit=10&offset=…`，因此费用计算只针对当前可见页运行——与数据库中会话总量无关。第一页还会显示与 Dashboard 和 Kanban 相同的本机内存 Codex 启动行；在持久会话 ID 替换它之前，该行立即可见但不可跳转，并且不会改变持久 `total` 或分页。搜索框（`q=`）在服务端对 `id` / `name` / `cwd` 做不区分大小写匹配，附 300 毫秒防抖；响应包含 `total` 计数供分页器使用。状态筛选、搜索与翻页可组合。每个会话的可读**名称**从 Transcript 实时读取并保持同步——显式标题（`/rename`、`claude -n`、选择器 Ctrl+R 写入的 JSONL `custom-title` 行）优先，否则回退到自动生成的 `ai-title`；若两者都没有，则用会话的**首条用户 prompt**（截断，并跳过 tool-result / 斜杠命令噪音）填充占位名称以及 main agent 的占位名称/任务——因此从未获得标题的会话（包括导入的会话）也能一目了然它在做什么；用户自定义的名称绝不会被自动标题覆盖。该名称（无名称时回退到短 ID）显示在 Agent 卡片、Dashboard、活动流以及 Run 恢复选择器上 |
 | **会话详情** | 单会话实时概览面板，包含活跃 Agent 横幅（当前工具 + 任务）、六个统计卡片（事件数及事件/分钟速率、工具调用数、子 Agent 数、压缩次数、错误数、滚动计时的运行时长）、Top 工具使用条形图、子 Agent 类型分布、堆叠 Token 流图，以及事件类型胶囊云——所有内容均根据 Hook 事件实时刷新。下方：Agent 层级树（父/子）、完整事件时间线（多维筛选：状态、事件类型、工具、Agent、文本搜索、日期范围）、按 `tool_use_id` 进行 Pre/Post 分组、人类可读摘要块、工具感知的输入/响应渲染器（Bash 用终端、Edit 用统一 diff、Read/Write 用带行号代码、Grep 用匹配列表、MCP 工具用键值卡片），以及对话标签页：使用 markdown（标题、列表、引用块、表格、任务列表）、带行号和复制按钮的语法高亮代码块（js/ts、python、json、bash、html、css、sql、yaml、diff），以及按工具样式化的工具调用块（Bash → 终端、Edit → 旧/新并排、Write → 文件标签、Read → 路径胶囊、Grep → pattern 卡片）渲染对话记录。对话记录也包含回合进行中输入的消息（Claude 仍在工作时排队），显示在 Claude 实际接收它们的位置，来自框架的通知则归属为 System。当会话被用户阻塞时，页头下方会显示黄色的**等待输入横幅**，标明 `awaiting_reason`、其解释说明，以及会话已等待多久（脉冲圆点 + 相对时间）；页头的“等待中”徽标也会以嵌套小徽章(chip)的形式显示同一原因 |
 | **活动流** | 实时流式事件日志，支持暂停/恢复和分页；点击任意事件行可就地展开其完整 hook 载荷（内联 EventDetail 面板）；每行右侧的专属「会话 →」按钮可直接跳转至会话详情页，不影响当前展开状态；每行的状态徽章来自与 Dashboard、会话详情共用的同一套映射（同时覆盖 Claude 与 Codex 事件类型） |
@@ -336,11 +329,12 @@ Dashboard 提供全面的功能来监控和分析你的 Claude Code 会话和 Ag
 | **子 Agent 工具归属** | 子 Agent 内部的工具调用(Read、Bash、Edit、Grep 等)只存在于每个子 Agent 自己的 JSONL 文件中 — Claude Code 不会为其触发任何 Hook。每次 `SubagentStop` 后,dashboard 触发 fire-and-forget 的 `scanAndImportSubagents`:解析每个 `subagents/agent-*.jsonl`,根据 `tool_use_id` 配对 `tool_use` 与 `tool_result` 块,并在子 Agent 自己的 `agent_id` 下发出 `PreToolUse` + `PostToolUse` 事件。具备幂等性(通过 `data LIKE '%"tool_use_id":"X"%'` 去重),并在按类型 + 启动时间在 30 秒内匹配到 hook 创建的 live 行时合并进去,因此不会创建并行的 `<sid>-jsonl-*` 行。同一路径在 `npm run setup` 启动导入时也会运行,实现完整的历史回填 — 早于 dashboard 安装的会话也能获得完整的每子 Agent 工具时间线。Activity Feed 和会话详情页将父链以 `main › coder › explorer` 形式渲染嵌套子 Agent。该父链由 `reconcileSubagentParents` 权威重建:子 Agent 行最初被平铺插入到 main agent 之下(单个 hook 事件或 JSONL 文件不携带 spawn 方身份),随后从每个子 Agent transcript 的 Task 工具结果(`toolUseResult.agentId`,以 `spawnedChildren` 形式采集)恢复其 spawn 方,因此自己再 spawn 子 Agent 的子 Agent 会嵌套到其**真正的** spawn 方之下,而不会塌陷为 main 之下的单一层级。该过程幂等且仅追加 — 只重新指向 `parent_agent_id`,不插入或删除行 — 并在同一次 `SubagentStop` 扫描中运行,该扫描返回 `reparented` 计数,因此即使仅是 reparent 改变了树形结构,dashboard 也会重新拉取 |
 | **成本追踪** | 按模型估算成本，支持可配置定价规则和按会话明细。支持**限时介绍性价格**（定价规则中的 `intro_*` + `intro_until`）：截止日期当天及之前的用量采用介绍性价格，之后的用量采用标准价格，因此限时优惠对历史**和**未来用量都能准确计价——成本端点按每天生效的费率计算当天用量。Claude Sonnet 5 的标准费率仍为每百万输入 Token $2、每百万输出 Token $10。压缩感知的 Token 核算在上下文压缩过程中保留总量。Transcript 读取通过增量字节偏移更新缓存，实现高效 Token 提取。介绍性价格可在 Settings 中完全编辑——Model Pricing 编辑器提供一个促销截止日期以及按类别的介绍性价格（input / output / cache-read / cache-write 5m & 1h），因此未来模型发布的促销无需改动代码，只需编辑即可。子代理卡片显示每个子代理各自的成本（依据该子代理 transcript 的 Token 用量推算，并按当前价格计价），而非整个会话的总额——主代理卡片代表整个会话并显示会话总成本，而子代理卡片仅显示该子代理花费的部分，因此子代理卡片不再误导性地显示为好像它花费了整个会话的成本 |
 | **Transcript 缓存** | 从 JSONL Transcript 实时提取：Token、压缩、API 错误（`isApiErrorMessage` 条目存储为 `APIError` 事件）、回合耗时（存储为 `TurnDuration` 事件）、思考块计数和用量附加信息（service_tier、speed、inference_geo）。每条回合耗时都有稳定的 Transcript 标识；完整解析会修复旧版本产生的重复行和膨胀 metadata 总计，受限的尾部解析则保持仅追加。会话元数据实时丰富这些字段 |
+| **对话记录快照保留** | Claude Code、Codex 和 Cursor 会在 TTL 到期后删除自身的对话记录，因此仪表板在其数据目录中保留持久快照，Conversation 标签页始终提供更完整的那份副本。在不削弱这一保障的前提下限制增长：原始文件已不存在的 Claude Code 和 Cursor 快照在校验往返后进行 gzip 压缩（默认开启，`DASHBOARD_SNAPSHOT_COMPRESS=0` 可关闭）；清理会话时一并删除其快照；可选上限（`DASHBOARD_SNAPSHOT_MAX_AGE_DAYS` / `DASHBOARD_SNAPSHOT_MAX_BYTES`，默认不设置）按会话整体清理旧的已结束会话。**设置 → 对话记录快照** 显示各提供方的占用空间，并且只有在试运行预览之后才会执行清理。 上限是"绝不丢失对话记录"的唯一可选例外：它们可能删除旧对话仅存的副本。 |
 | **通知** | 基于 Web Push (VAPID) 的持久化浏览器通知。即使 Dashboard 标签页未聚焦或浏览器已关闭也能送达。特别针对 macOS 音效支持进行了配置。支持按事件配置开关及订阅管理 |
 | **更新提醒** | 服务端定期以非阻塞方式执行 `git fetch`，将本地检出与所选规范远程的默认分支对比。**支持分支与 fork：** 若同时存在 `upstream` 和 `origin`，优先使用 `upstream`（fork 的常规约定）；命令也会根据用户处境调整——只有在本地分支真正跟踪规范引用时才建议 `git pull --ff-only`，否则给出 `git fetch`（fork 场景下加上 fast-forward 合并），让命令永不撒谎。侧边栏还有常驻的"检查更新"按钮及状态徽标。Dashboard **不会**自行拉取或重启——用户在终端中手动执行命令——因此该机制不会破坏开发会话、pm2/systemd/Docker 进程管理，也不会留下孤立进程 |
-| **设置** | 系统信息、Hook 状态、模型定价管理、通知偏好、数据导出**与恢复**（Import History 面板的 **Restore backup** 模式接受一个不超过 25 MiB 的导出 `.json`，并以幂等、非覆盖方式重新导入，因此可将多台机器的历史合并到一个仪表盘）、会话清理。Model Pricing 将 **Anthropic Claude Model Pricing** 与 **OpenAI GPT Model Pricing** 分开显示，两者使用相同的标题布局，提供按提供方生效的 **Reset Defaults** 和 **Add Model** 控件。标题旁的信息浮层说明首条匹配规则、SQL 风格 `%` 通配符、手动价格更新与 API 费率注意事项；GPT 浮层还说明每百万 Token 的美元单位、标准和 Fast 费率共同采用的 272K Short/Long 分界，以及未公布的费率为何保持未定价而不是被估算。**Dashboard Data** 控件会立即重新获取 Claude Code、Codex 或两者的会话、Agent、事件、Token、工作流、分析和成本。独立的 Claude Code 和 Codex 主目录输入框完整支持 i18n，并可在运行时保存；保存 Codex 主目录后会重新启用实时 rollout 监控并扫描新目录树。 |
+| **设置** | 系统信息、Hook 状态、模型定价管理、通知偏好、数据导出**与恢复**（Import History 面板的 **Restore backup** 模式接受一个不超过 25 MiB 的导出 `.json`，并以幂等、非覆盖方式重新导入，因此可将多台机器的历史合并到一个仪表盘）、会话清理。Model Pricing 将 **Anthropic Claude Model Pricing** 与 **OpenAI GPT Model Pricing** 分开显示，两者使用相同的标题布局，提供按提供方生效的 **Reset Defaults** 和 **Add Model** 控件。标题旁的信息浮层说明首条匹配规则、SQL 风格 `%` 通配符、手动价格更新与 API 费率注意事项；GPT 浮层还说明每百万 Token 的美元单位、标准和 Fast 费率共同采用的 272K Short/Long 分界，以及未公布的费率为何保持未定价而不是被估算。 第三个 **Cursor 模型定价** 表覆盖 Cursor 原生模型（Grok、Composer）及其第三方模型目录，因此 Cursor 成本不会借用 Claude 或 GPT 费率。**Dashboard Data** 控件会立即重新获取 Claude Code、Codex 或两者的会话、Agent、事件、Token、工作流、分析和成本。独立的 Claude Code 和 Codex 主目录输入框完整支持 i18n，并可在运行时保存；保存 Codex 主目录后会重新启用实时 rollout 监控并扫描新目录树。 |
 | **Codex Agent 配置** | Agent Config 的 Codex 一侧会读取完整的本地账户模型目录，不受通用预览限制影响，因此 Models 标签不会错误显示为 0，并始终包含基础/配置文件覆盖。可直接在应用中创建标准 Codex `<name>.config.toml` 覆盖层；每张卡均可一键复制其准确的 `codex --profile <name>` 命令并打开受保护的编辑器。预览路径会先规范化再做包含检查。编辑器拒绝受信任根目录下的符号链接路径组件，验证规范化父目录仍位于允许范围内，并拒绝保存含 `[redacted]` 的预览内容。配置文件、Hook、规则、技能和指令共用 Claude 风格的 **View source / Copy path / Edit / Delete** 操作。每次允许的删除都需确认并先创建备份（技能保留完整目录）；`config.toml` 永远只能编辑。 |
-| **MCP 服务器（本地）** | 位于 `mcp/` 的完整本地 MCP 服务器，支持三种传输模式，16 个领域模块共 97 个类型化工具。覆盖应用支持的全部操作：带作用域的数据读取、Transcript 与图片、Claude/Cursor/GPT 定价、工作流、告警、Webhook、导入与恢复、Claude/Codex 配置、Run Agent、远程数据源、Hook/Home/更新、推送与维护。所有传输共享同一套已验证目录，并支持分层变更/破坏性门控。直接回环 HTTP 可携带 Bearer Token，带 Token 的容器主机别名必须使用 HTTPS。请求拒绝重定向；历史上传限制为单文件 50 MiB、每次调用合计 100 MiB，二进制响应限制为 10 MiB，备份恢复限制为 25 MiB |
+| **MCP 服务器（本地）** | 位于 `mcp/` 的完整本地 MCP 服务器，支持三种传输模式，16 个领域模块共 103 个类型化工具。覆盖应用支持的全部操作：带作用域的数据读取、Transcript 与图片、Claude/Cursor/GPT 定价、工作流、告警、Webhook、导入与恢复、Claude/Codex 配置、Run Agent、远程数据源、Hook/Home/更新、推送与维护。所有传输共享同一套已验证目录，并支持分层变更/破坏性门控。直接回环 HTTP 可携带 Bearer Token，带 Token 的容器主机别名必须使用 HTTPS。请求拒绝重定向；历史上传限制为单文件 50 MiB、每次调用合计 100 MiB，二进制响应限制为 10 MiB，备份恢复限制为 25 MiB |
 | **工作流** | 基于 D3.js 的可视化页面，包含 11 个交互式模块：Agent 编排 DAG、工具执行 Sankey 图、协作网络、子 Agent 有效性（按周 sparkline 通过 portal 渲染——可越过卡片的 `overflow:hidden`，并自动夹在视口内不再被裁切）、检测到的流程模式、模型委派流、错误传播图（带比率徽章的水平条形图、Agent 类型分解、API/会话错误卡片）、并发时间线、会话复杂度散点图、压缩影响分析和按会话下钻。**全方位、多语言的丰富 tooltip：** 每个图表标题旁都有一个 `i` 图标，可弹出结构化的「此图展示了什么 / 如何阅读 / 为何重要」浮层；悬停节点、边、条、气泡都会显示带有确定性、值相关解读的多段 tooltip（例如占源/占目标比例、成功率健康分级、Opus / Sonnet / Haiku 模型系列说明，以及前段/中段/后段等时间模式）。六张总览统计卡片各自在右下角带一个信息浮层，用自然语言解释指标的计算方式与当前数值含义。Tooltip 通过每张图唯一的 DOM ref 直接更新，并附带容器级 `mouseleave` 兜底，绝不会落后于光标或在重新渲染后残留。点击 **检测到的工作流模式** 中的任意一行会就地展开详情面板，包含完整步骤序列、统计网格、确定性叙述（循环检测、频率分级）和一条务实的建议。状态筛选标签（仅活跃 / 已完成 / 全部）可筛选全部 11 个模块。支持交叉筛选、JSON 导出和 3 秒防抖的实时 WebSocket 自动刷新。**工作流运行**面板呈现「动态工作流」——由 `Workflow` 工具（及自定节奏的 `/loop`）派生的 sub-agent 群组——它们不触发任何 hook，因此改为依据磁盘上的运行日志（`workflows/wf_<runId>.json`）重建：每次运行展示其阶段以及按 Agent 的 token / 工具调用 / 时长分解，并在日志写入前实时检测 `running` 状态，同时在每个会话详情页提供一个关联子区块 |
 | **压缩追踪** | 从 JSONL Transcript 检测 `/compact` 事件,创建压缩 Agent 和事件。启动时回填历史压缩。周期性扫描器(频率从 `DASHBOARD_STALE_MINUTES` 派生)在无 Hook 触发时也能捕获压缩。共享 Transcript 缓存,避免重复文件读取 |
 | **子会话/恢复会话** | 新事件到达时自动重新激活会话,正确处理 `/resume` 和孤立会话。周期性清理(每 ¼ 个 `DASHBOARD_STALE_MINUTES`,夹在 60 秒–5 分钟之间)标记遗漏事件检测的废弃会话 |
@@ -404,6 +398,8 @@ Codex 的 `/rename` 标题会从原生会话索引读取，并实时更新会话
 Claude Code 和 Codex 卡片都会在各自提供方原生标题下显示最近不同用户提示的紧凑两行历史，因此简短友好的名称或简短跟进都不会隐藏当前任务。Claude 会在实时 Hook、导入和 watchdog 扫描期间从本地 transcript 缓存刷新该上下文；Codex 会从 rollout 记录刷新，并为旧导入回退到持久化的 `user_message` 事件。Transcript 会在可用时渲染 Claude Code 和 Codex 已持久化的 PNG/JPEG/GIF/WebP 附件，并将 Codex 重复的 response/event 副本合并为一条用户回合。
 
 Codex 的 `response_item` 工具调用会通过独立 rollout cursor 仅索引一次，因此 Workflows 工具流、会话 drill-in、模型/Token 总计和 `context_compacted` 次数都忠实反映已记录的 Codex 数据，而不会重放生命周期或 Token 计数器。当仪表板范围仅为 Codex 时，仅适用于 Claude Code journal 的 Dynamic Workflows 面板会隐藏，而不会显示空的 Codex 数据。
+
+Cursor 无需 Hook，也无需单独的设置选项：选择 **Claude Code** 即同时监控 Cursor。文件系统监听器监视 `~/.cursor/chats` 与 `~/.cursor/projects/*/agent-transcripts`，在 `agent` 启动时立即创建会话，每次提交提示时更新其卡片与 Conversation，并在 Cursor 清理自身历史之前为主 Agent 和子 Agent 的 JSONL 生成快照。可通过 `DASHBOARD_CURSOR_HOME` 覆盖来源目录；远程 SSH 数据源目前仅镜像 Claude Code 与 Codex 目录。
 
 ### 3. 启动
 
@@ -662,6 +658,9 @@ flowchart LR
 | `DASHBOARD_EVENT_STRING_CAP` | `2048` | Hook 负载在写入 `events.data` **之前会被裁剪**：原生工具的整文件副本（Edit/Write 的 `originalFile`，Read 的 `file.content` / `file.base64`）被移除；每个 hook 的顶层 `background_tasks` 字段都会被移除，其 JSON 字节数记录在 `data._trimmed.dropped.background_tasks`；负载中任意位置的每个字符串都会被截断到此字符数（外加一条简短的裁剪说明）。每处改动记录在 `data._trimmed`（事件详情中显示为 **存储时已裁剪**）。启用裁剪时，存储的是预览：终端视图和字段上限以内编辑的 diff 照常可用，"original file" 面板不再对已存储事件显示，摘要统计的是预览行数，文本搜索只能看到保留的内容——完整文本仍在磁盘上的转录中。设为 `0` 则禁用全部裁剪，包括字段移除 |
 | `DASHBOARD_EVENT_FIELD_CAP` | `16384` | 字符串裁剪后仍然很大的 `tool_input` / `tool_response`（例如覆盖整个文件的 `structuredPatch`）的字节预算：超出时只保留能放下的短标量值。`npm run trim-events` 对裁剪功能引入前保存、或从旧导出恢复的行应用同样的规则（默认只读模拟；停止仪表板后用 `--yes --backup` 重写并 VACUUM） |
 | `DASHBOARD_COMPACT_MANAGER_BIN` | `compact-manager`（PATH 查找） | 可选的 **compact-manager 读数**面板（上下文自动压缩：模式、阈值、看守进程健康状况、每会话用量，经 `GET /api/compact-manager/status`）所用的可执行文件。面板仅在 CLI 有响应时出现——未安装 compact-manager 的机器不会显示它，无需任何配置 |
+| `DASHBOARD_SNAPSHOT_COMPRESS` | `1`（开启） | 设为 `0` / `false` / `off` 可停止后台无损压缩——对象是原始文件已被 Claude Code 或 Cursor 删除（且闲置 24 小时）的对话记录快照。每个 `.jsonl.gz` 都会先解压并比对（SHA-256 + 长度）后才删除未压缩文件；源目录缺失或不可读的提供方会被整体跳过。Codex 快照从不压缩 |
+| `DASHBOARD_SNAPSHOT_MAX_AGE_DAYS` | _（未设置——不限）_ | 可选保留上限：每 6 小时删除闲置超过该天数的已结束（completed/error/abandoned）会话的快照，并且不再为这么旧的源文件创建快照。被清理的会话会留下墓碑标记，重新导入不会让它们重新出现；之后恢复的会话会重新受到保护。请先用 `ccam snapshots prune --days N` 预览——被清理的快照可能是某段对话仅存的副本 |
+| `DASHBOARD_SNAPSHOT_MAX_BYTES` | _（未设置——不限）_ | 三个快照目录的可选总容量上限（字节数，或如 `5GB` 的大小）。每 6 小时从最旧的已结束会话开始删除快照，直到总量低于上限；活跃会话和最近 24 小时内有活动的会话永远不会被清理，因此总量可能仍高于上限 |
 | `DASHBOARD_REMOTE_SYNC_MS` | `15000` | **远程数据源**后台同步的间隔（毫秒），会独立拉取每个已启用远程的 `~/.claude/projects` 和 `~/.codex/sessions`（另含 Codex 的轻量 `session_index.jsonl` 标题索引），再分别通过本地导入器重新导入。新增或重新启用数据源时也会立即同步一次。设为 `0` 可禁用远程源轮询 |
 | `DASHBOARD_REMOTE_ACTIVE_WINDOW_MS` | `600000`（10 分钟） | **远程数据源**会话实时状态的新鲜度窗口。每次同步时，若远程 Claude Code 或 Codex 会话对应镜像 transcript 的 **JSONL 最后事件**在此窗口内，仍视为运行中（`active`）；镜像停止推进超过该时长后，会话会被协调为 `completed`。远程会话不接收实时 Hook，因此按 provider 的镜像协调取代本地 liveness；失败、缺失或卡住的 provider 镜像会回退到常规 stale 扫描。链路较慢或空闲回合很长时可调大 |
 | `DASHBOARD_REMOTE_SYNC_TIMEOUT_MS` | `600000` | 每个远程源 `scp` 的超时时间 |
@@ -672,68 +671,66 @@ flowchart LR
 
 ## `ccam` CLI
 
-仪表盘的完整功能面同样可以在终端中使用——零依赖的 **`ccam`** CLI（`bin/ccam.js`），由 `npm run setup` 自动链接（失败即降级的 `npm link`）。CLI 通过 `~/.claude/.agent-dashboard.json`（与 hook 处理器相同的注册表）自动发现正在运行的服务器，可用 `CLAUDE_DASHBOARD_PORT`/`DASHBOARD_PORT` 覆盖，默认 `http://127.0.0.1:4820`。
+仪表盘的完整功能面同样可以在任意终端中通过 **`ccam`** CLI（`bin/ccam.js` → `cli/`）使用。它基于 [Commander.js](https://github.com/tj/commander.js)——Node 版的 Go Cobra：嵌套命令树、每一层自动生成的分组帮助、继承的全局选项、带可选值校验的选项、“你是不是想输入”建议，以及 Cobra 风格的 shell 补全。`npm run setup` 会自动链接它（通过 `npm link`），之后 `ccam <command>` 可在任意目录运行。目标服务器依次取 `--server <url>` / `CCAM_URL`、`CLAUDE_DASHBOARD_PORT` / `DASHBOARD_PORT`、实时服务器注册表 `~/.claude/.agent-dashboard.json`（与 hook 处理器相同），最后回退到 `http://127.0.0.1:4820`。
 
 ```bash
 # 服务器
-ccam status                       # ● 运行中 / ○ 未运行 指示器
-ccam start [--port N]             # 在后台启动服务器（分离进程）
-ccam stop                         # 优雅地停止后台服务器
-ccam repl                         # 交互式 shell（也可用 shell、i）
+ccam status | health                  # ● 运行中 / ○ 未运行；版本 + 时间戳
+ccam start [--port N] | stop | restart  # 后台生产服务器
+ccam logs [-n N] [-f]                 # 查看 data/ccam-server.log
+ccam open [page] [--session id]       # 打开仪表盘、某个页面或某个会话
+ccam repl                             # 交互式 shell（也可用 shell、i）
 
 # 监控
-ccam health                       # 仪表盘是否在运行？
-ccam stats                        # 总量、今日事件、状态分布
-ccam kanban                       # 会话 + agent 按状态列分组
-ccam tail [--session <id>]        # 终端里的实时事件流（Ctrl+C 停止）
+ccam overview [--watch]               # 单屏实时概览（别名：top）
+ccam stats | kanban                   # 总量 + 状态分布 / 状态泳道
+ccam tail [--session id] [--type T] [--tool N]   # 实时事件流
+ccam stream [--type new_event,…]      # 原始实时 WebSocket 推送
+ccam watch -n 5 <command …>           # 按间隔重复运行任意命令
 
 # 数据
-ccam sessions [--status s] [--q text] [--limit n]
-ccam session <id>                 # 详情：agent 树、成本、最近事件
-ccam agents   [--status s] [--session id]
-ccam events   [--session id] [--limit n]
+ccam sessions [--status s] [--q text] [--cwd dir] [--sort price] [--limit n]
+ccam sessions get|stats|cost|agents|events|transcripts <id>
+ccam sessions transcript <id>         # 以可读聊天记录形式查看对话
+ccam sessions rename <id> <name…> | update <id> | create | facets
+ccam agents [list|get|update|create]  # agent；ccam session <id> = sessions get
+ccam events [--type T] [--tool N] [--q text] [--from iso] | events facets
 
 # 洞察
-ccam analytics                    # token 总量、常用工具、agent 类型
-ccam workflows [--session id]     # 工作流智能统计与模式
-ccam runs [--session id]          # 动态 Workflow 工具运行
-ccam cost [--session <id>]        # 按模型细分的总预估成本
-                                  # （--session 限定为单个会话；显示服务器工具附加费用；
-                                  #  对有用量但无定价规则的模型发出警告）
+ccam analytics                        # token、成本、热门工具、每日迷你走势图
+ccam workflows [session <id>]         # 工作流智能 + 模式
+ccam runs [list|get <run-id>]         # Workflow 工具运行
+ccam run list|history|start|follow|send|stop …   # 仪表盘启动的 agent
+ccam cost [--session id] [--daily]    # 按模型成本、附加费、未定价模型
 
-# 告警 & webhook
-ccam alerts [--unacked]           # 触发告警流
-ccam alerts ack <id> | ack-all    # 确认告警
-ccam rules                        # 告警规则列表
-ccam webhooks                     # webhook 目标列表
-ccam webhooks test <id>           # 发送合成测试告警
+# 告警与 Webhook
+ccam alerts [--unacked] | ack <id> | ack-all
+ccam alert-rules list|types|create|update|enable|disable|delete
+ccam webhooks list|get|providers|deliveries|create|update|enable|disable|delete|test
 
-# 价格
-ccam pricing                      # 定价规则列表（含 fast-mode 与 intro 列）
-ccam pricing set <pattern> --input N --output N [--cache-read N --cache-write N]
-                 [--cache-write-1h N] [--fast-input N --fast-output N]
-                 [--intro-input N --intro-output N … --intro-until YYYY-MM-DD]
-ccam pricing delete <pattern>
-ccam pricing reset
+# 定价
+ccam pricing [list] | set <pattern> --input N --output N [--fast-* …] [--intro-* …] | delete | reset
+ccam pricing gpt|cursor [list|set|delete]   # OpenAI/Codex 与 Cursor 价目表
 
-# 导入
-ccam import rescan                # 重新扫描 ~/.claude/projects
-ccam import path <dir>            # 导入目录下所有 .jsonl
+# 导入与远程数据源
+ccam import guide|rescan|path <dir>|upload <files…>|reimport
+ccam import-data <file.json>          # 恢复导出（幂等）
+ccam remote-sources list|get|add|update|enable|disable|test|sync|rm
 
 # 管理
-ccam doctor                       # 连接、hook 与数据库诊断
-ccam info                         # 原始系统信息 JSON
-ccam export [file.json]           # 导出全部数据为 JSON
-ccam import-data <file.json>      # 恢复导出（幂等、非破坏性）
-ccam cleanup --hours N --days M   # 放弃滞留会话 / 清理旧会话
-ccam reinstall-hooks              # 重新安装 Claude Code hook
-ccam update-check                 # 检出是否落后于 upstream？（打印更新命令）
-ccam clear-data --yes             # 删除全部数据（必须 --yes）
-ccam open                         # 在浏览器中打开仪表盘
-ccam version                      # 打印 CLI 版本（也可用 --version / -v）
+ccam doctor | info | export [file|-] | cleanup --hours N --days M
+ccam snapshots [status|compress] | snapshots prune --days N   # 对话记录快照；prune 默认试运行，需 --apply --confirm PRUNE_SNAPSHOTS 才删除
+ccam hooks [status|install] | reinstall-hooks | config claude|codex …
+ccam updates [status|check] | update-check | metrics [--grep re]
+ccam home [set claude|codex <path>] | push key|send|subscribe|unsubscribe
+ccam api [METHOD] /api/path [--data JSON]   # 任意端点；写入需 --yes
+ccam mcp [stdio|http|repl] | clear-data --yes
+
+# CLI
+ccam help [command…] | commands [--json] | completion bash|zsh|fish | version
 ```
 
-基于 API 的命令需要服务器在运行——未运行时，**只读命令会自动回退为直接读取 `data/dashboard.db`**（显示明确的 `⚠ Offline mode` 横幅，且数据库中已死亡的 `active` 会话会用服务器看门狗所用的同一进程存活性探测在显示层校正），而无法在无服务器时正确运行的命令（实时 `tail`、分析/成本计算、写操作）会打印 `○ Dashboard server is NOT running` 指示、具体原因和启动命令；`ccam start` 可在后台拉起生产服务器。读取类命令始终安全；唯一的破坏性命令（`clear-data`）没有显式 `--yes` 时拒绝执行。输出是完整的终端 UI——带右对齐数字列的框线表格、状态图标（`● active`、`○ waiting`、`✔ completed`、`✖ error`）、stats/analytics/cost 的内联条形图，以及真正的 `├─`/`└─` 代理树——ANSI 颜色在 TTY 上自动启用、管道输出时自动关闭，并可通过 `--no-color` / `NO_COLOR` / `FORCE_COLOR` 控制。若需持续监控，**`ccam repl`**（别名 `shell` / `i`）会打开一个交互式 shell，你可以在其中输入命令而无需 `ccam` 前缀——带有 CCAM 欢迎横幅、Tab 补全、可持久化的方向键历史、实时服务器状态提示符（`● host` 在线 / `○ offline` 离线）、分组的 `help` / `help <cmd>` 菜单，以及可自动刷新任意命令的 `watch [秒] <命令>` 内置命令（例如 `watch 5 kanban`）；每一行都作为独立子进程运行，因此离线拒绝或阻塞的 `tail` 都不会拖垮 shell。若 `ccam` 不在 PATH 上，在仓库根目录运行一次 `npm link`。完整参考——标志、服务器发现顺序、REPL、安全模型、退出码——见 [docs/CLI.md](./docs/CLI.md)。
+每个命令组默认列出资源（`ccam alerts` ≡ `ccam alerts list`），每个命令都支持 `--help`，`ccam commands` 打印完整命令树。输出同时面向人类**和**机器：在 TTY 上是完整的终端 UI（框线表格、状态图标、条形图、迷你走势图、`├─`/`└─` agent 树、聊天记录式对话视图、彩色帮助）；管道输出为纯文本；任意命令加 **`--json`**（或 `CCAM_OUTPUT=json`）输出稳定 JSON——`tail` / `stream` / `run follow` 输出 NDJSON——错误以 `{"error":{"code":"…","message":"…"}}` 写到 stderr，退出码为 `0`/`1`。`ccam commands --json` 为 agent 输出每个命令、参数和选项的结构描述。写入操作需确认：`--yes`，或在终端中交互式 `y/N`（非交互 shell 必须传 `--yes`）；`clear-data` 始终需要字面量 `--yes`。服务器未运行时，**只读命令会直接读取 `data/dashboard.db`**（显示 `⚠ Offline mode` 横幅，并用服务器的进程存活探测在显示层修正已结束的 `active` 会话），仅限服务器的命令则打印 `○ Dashboard server is NOT running` 指示器及原因。**`ccam repl`** 是交互式 shell：CCAM 横幅、由真实命令树驱动的 Tab 补全、持久化历史、实时状态提示符、`help <cmd>`、`json` 与 `watch [secs] <cmd>` 内置命令；每一行都在独立子进程中运行。Shell 补全：`source <(ccam completion zsh)`。若 `ccam` 不在 PATH 中，请在仓库根目录运行一次 `npm link`。完整参考见 [docs/CLI.md](./docs/CLI.md)。
 
 ## npm 脚本
 
@@ -1239,7 +1236,10 @@ npm run monitoring:docker:up
 | `POST` | `/api/settings/reset-pricing` | 将 Claude、Codex 或两者的定价重置为默认值 |
 | `GET` | `/api/settings/export` | 以 JSON 下载方式导出所有数据 |
 | `POST` | `/api/settings/import` | 从 `/export` 恢复一个不超过 25 MiB 的导出包（multipart `file` 或 JSON `{ path }`）。幂等且非破坏性——已存在的会话会被整体跳过 |
-| `POST` | `/api/settings/cleanup` | 废弃过期会话、清除旧数据 |
+| `POST` | `/api/settings/cleanup` | 废弃过期会话、清除旧数据（及被清除会话的快照） |
+| `GET`  | `/api/settings/snapshots`      | 各提供方的对话记录快照占用 + 保留策略 |
+| `POST` | `/api/settings/snapshots/compress` | 无损压缩原始对话记录已不存在的快照 |
+| `POST` | `/api/settings/snapshots/prune` | 规划（默认试运行）或执行快照清理；执行需要 `confirm: "PRUNE_SNAPSHOTS"` |
 
 ### 远程数据源
 
@@ -2242,7 +2242,7 @@ agent-dashboard/
 |   |   |-- config/              # 环境/CLI 配置解析
 |   |   |-- core/                # 日志器、工具注册、结果辅助
 |   |   |-- policy/              # 变更/破坏性守卫
-|   |   |-- tools/               # 16 个领域模块注册 97 个工具
+|   |   |-- tools/               # 16 个领域模块注册 103 个工具
 |   |   |-- transports/          # HTTP+SSE 服务器、REPL、工具收集器
 |   |   |-- ui/                  # ANSI 横幅、颜色、格式化器、表格
 |   |   +-- types/               # 共享 MCP 类型定义

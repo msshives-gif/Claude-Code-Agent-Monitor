@@ -76,6 +76,7 @@ describe("model_pricing seed — models that had no rule or a stale rate", () =>
     ["claude-opus-5-5%", 4, 20, 0.2, 5, 8],
     ["claude-opus-5%", 5, 25, 0.5, 6.25, 10],
     ["claude-opus-4-5%", 5, 25, 0.5, 6.25, 10],
+    ["claude-sonnet-5-5%", 2, 10, 0.2, 2.5, 4],
     ["claude-sonnet-5%", 2, 10, 0.2, 2.5, 4],
   ];
 
@@ -140,6 +141,9 @@ describe("model_pricing seed — models that had no rule or a stale rate", () =>
       ["claude-opus-5[1m]", "claude-opus-5%", 0.5],
       ["claude-opus-5-5", "claude-opus-5-5%", 0.2],
       ["claude-opus-5-5[1m]", "claude-opus-5-5%", 0.2],
+      ["claude-sonnet-5-5", "claude-sonnet-5-5%", 0.2],
+      ["claude-sonnet-5-5[1m]", "claude-sonnet-5-5%", 0.2],
+      ["claude-sonnet-5", "claude-sonnet-5%", 0.2],
     ]) {
       const row = stmts.matchPricing.get(model);
       assert.ok(row, `${model} must match a pricing rule`);
@@ -162,6 +166,7 @@ describe("model_pricing seed — models that had no rule or a stale rate", () =>
       "claude-opus-4-7",
       "claude-opus-4-6",
       "claude-opus-4-5",
+      "claude-sonnet-5-5",
       "claude-sonnet-5",
       "claude-haiku-4-5",
     ].filter(
@@ -203,6 +208,59 @@ describe("gpt_model_pricing seed — GPT-6 Astra", () => {
     );
     assert.equal(priced.total_cost, 73.5, "10 + 50 + 1 + 12.5 per million tokens");
     assert.deepEqual(priced.unpriced_models ?? [], []);
+  });
+});
+
+describe("gpt_model_pricing seed — GPT-6 Sol and Luna", () => {
+  // https://developers.openai.com/api/docs/pricing (2026-09-29), per 1M tokens:
+  // [input, cached input, cache writes, output] for each band.
+  const expected = {
+    "gpt-6-sol%": {
+      short: [2, 0.2, 2.5, 10],
+      long: [4, 0.4, 5, 15],
+      fast: [4, 0.4, 5, 20],
+      fast_long: [8, 0.8, 10, 30],
+    },
+    "gpt-6-luna%": {
+      short: [0.1, 0.01, 0.125, 0.5],
+      long: [0.2, 0.02, 0.25, 0.75],
+      fast: [0.2, 0.02, 0.25, 1],
+      fast_long: [0.4, 0.04, 0.5, 1.5],
+    },
+  };
+  const kinds = ["input", "cached_input", "cache_write", "output"];
+
+  for (const [pattern, bands] of Object.entries(expected)) {
+    it(`${pattern} is seeded with every published band`, () => {
+      const row = db
+        .prepare("SELECT * FROM gpt_model_pricing WHERE model_pattern = ?")
+        .get(pattern);
+      assert.ok(row, `${pattern} must have a pricing rule — otherwise recorded usage is unpriced`);
+      for (const [band, rates] of Object.entries(bands)) {
+        kinds.forEach((kind, index) => {
+          assert.equal(row[`${band}_${kind}_per_mtok`], rates[index], `${pattern} ${band}_${kind}`);
+        });
+      }
+    });
+  }
+
+  it("prices gpt-6-sol and gpt-6-luna usage against the full rate card", () => {
+    const rules = db.prepare("SELECT * FROM gpt_model_pricing").all();
+    const usage = (model) => ({
+      model,
+      speed: "standard",
+      context_size: "short",
+      input_tokens: 1_000_000,
+      output_tokens: 1_000_000,
+      cache_read_tokens: 1_000_000,
+      cache_write_tokens: 1_000_000,
+    });
+    const sol = calculateGptCost([usage("gpt-6-sol")], rules);
+    assert.ok(Math.abs(sol.total_cost - 14.7) < 1e-9, "2 + 10 + 0.2 + 2.5 per million tokens");
+    assert.deepEqual(sol.unpriced_models ?? [], []);
+    const luna = calculateGptCost([usage("gpt-6-luna")], rules);
+    assert.ok(Math.abs(luna.total_cost - 0.735) < 1e-9, "0.1 + 0.5 + 0.01 + 0.125 per million");
+    assert.deepEqual(luna.unpriced_models ?? [], []);
   });
 });
 
@@ -319,5 +377,54 @@ describe("Sonnet 5 rate correction on pre-existing databases", () => {
     setSonnet5([3, 15, 0.3, 3.75, 6]);
     assert.equal(correctSonnet5StandardRate(db).changes, 1, "first run corrects the row");
     assert.equal(correctSonnet5StandardRate(db).changes, 0, "second run is a no-op");
+  });
+
+  it("keeps Sonnet 5.5 on its own row: no intro stamp, and Sonnet 5 edits do not reach it", () => {
+    // claude-sonnet-5-5 also LIKE-matches claude-sonnet-5%. The dedicated row
+    // must win, carry no Sonnet 5 launch promo, and stay at the published
+    // $2/$10 while the Sonnet 5 row is changed underneath it.
+    const sonnet55 = db
+      .prepare("SELECT * FROM model_pricing WHERE model_pattern = 'claude-sonnet-5-5%'")
+      .get();
+    assert.ok(sonnet55, "claude-sonnet-5-5% must have its own pricing rule");
+    assert.equal(sonnet55.display_name, "Claude Sonnet 5.5");
+    assert.equal(
+      sonnet55.intro_until,
+      null,
+      "the Sonnet 5 launch promo must not be stamped on 5.5"
+    );
+    assert.equal(sonnet55.fast_input_per_mtok, 0, "Sonnet 5.5 has no Fast mode pricing");
+    assert.equal(sonnet55.fast_output_per_mtok, 0, "Sonnet 5.5 has no Fast mode pricing");
+
+    setSonnet5([7, 21, 0.7, 8.75, 14]);
+    try {
+      const rules = db.prepare("SELECT * FROM model_pricing").all();
+      const MTOK = 1_000_000;
+      const result = calculateCost(
+        [
+          {
+            model: "claude-sonnet-5-5",
+            speed: "standard",
+            inference_geo: "global",
+            service_tier: "standard",
+            context_size: "short",
+            input_tokens: MTOK,
+            output_tokens: MTOK,
+            cache_read_tokens: MTOK,
+            cache_write_tokens: 0,
+            cache_write_1h_tokens: 0,
+          },
+        ],
+        rules,
+        null
+      );
+      assert.deepEqual(result.unpriced_models ?? [], []);
+      const row = result.breakdown.find((b) => b.model === "claude-sonnet-5-5");
+      assert.equal(row.matched_rule, "claude-sonnet-5-5%");
+      // sonnet-5.5: 2 + 10 + 0.20 = 12.20 (would be 28.70 via the edited Sonnet 5 rule)
+      assert.equal(row.cost, 12.2);
+    } finally {
+      setSonnet5([2, 10, 0.2, 2.5, 4]);
+    }
   });
 });

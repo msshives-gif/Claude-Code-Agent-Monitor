@@ -10,6 +10,7 @@
 - `client/`: React + Vite UI.
 - `scripts/`: hook installer/handler, import, seed, cleanup utilities. (Update detection lives server-side in `server/lib/update-check.js`; the dashboard never restarts itself — users run the printed command, surfaced in the UI and by `ccam update-check`.)
 - `mcp/`: local MCP server exposing dashboard operations as tools.
+- `cli/`: the `ccam` CLI (Commander.js command tree; `bin/ccam.js` is the entry). Conventions in `cli/lib/framework.js`, one module per area in `cli/commands/`, REPL in `cli/repl.js`. No subcommand option may reuse a global option name (`--json`, `--format`, `--server`, `--token`, `--no-color`) — the root would swallow it; `server/__tests__/ccam-cli-framework.test.js` enforces this.
 
 ## Non-negotiable engineering rules
 - Preserve existing behavior unless explicitly asked to change it.
@@ -32,7 +33,8 @@
 - MCP install/build/start: `npm run mcp:install`, `npm run mcp:build`, `npm run mcp:start`
 - MCP typecheck: `npm run mcp:typecheck`
 - Token repair: `npm run repair-tokens` — one-time re-derivation of token totals inflated before usage was reconciled per `message.id` (the dashboard also runs this automatically once per database; `DASHBOARD_TOKEN_REPAIR=0` opts out)
-- CLI (after setup): `ccam <command>` — terminal access to the full dashboard surface (`bin/ccam.js`; `ccam help` lists commands)
+- Transcript snapshot retention: `ccam snapshots` (storage + policy), `ccam snapshots prune --days N` (dry run unless `--apply --confirm PRUNE_SNAPSHOTS`); `npm run test:snapshots` runs the cross-OS snapshot store tests (CI runs them on Linux, macOS, and Windows)
+- CLI (after setup): `ccam <command>` — terminal access to the full dashboard surface (`bin/ccam.js` → `cli/`; `ccam help` lists commands, `--json` on any command for machine output, reference in `docs/CLI.md`)
 
 ## Testing and verification policy
 - `npm run verify` runs the whole local gate in one command (header audit, format check, client typecheck, server tests, client tests) and is the fastest way to confirm a change-set before opening a PR. It includes `tsc -b` because Vitest transpiles without typechecking — a test file can pass locally and still break the production build.

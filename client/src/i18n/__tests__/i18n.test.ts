@@ -148,6 +148,22 @@ describe("i18n resources", () => {
     expect(i18n.t("kanban:session.subagentSummary", { count: 3 })).toBe("3 subagents");
   });
 
+  it("pluralizes the Kanban and Sessions header counts", async () => {
+    // KanbanBoard and Sessions render these keys with a count. i18next v4 only
+    // resolves _one/_other suffixes; the legacy _plural suffix is ignored, which
+    // made every count fall back to the singular text ("2 agent tracked").
+    await i18n.changeLanguage("en");
+    expect(i18n.t("kanban:agentCount", { count: 1 })).toBe("1 agent tracked");
+    expect(i18n.t("kanban:agentCount", { count: 2 })).toBe("2 agents tracked");
+    expect(i18n.t("kanban:sessionCount", { count: 2 })).toBe("2 sessions tracked");
+    expect(i18n.t("sessions:sessionCount", { count: 1 })).toBe("1 session recorded");
+    expect(i18n.t("sessions:sessionCount", { count: 2 })).toBe("2 sessions recorded");
+
+    await i18n.changeLanguage("es");
+    expect(i18n.t("kanban:agentCount", { count: 2 })).toBe("2 agentes rastreados");
+    expect(i18n.t("sessions:sessionCount", { count: 2 })).toBe("2 sesiones registradas");
+  });
+
   it("pluralizes task-progress counts in English and Spanish", async () => {
     await i18n.changeLanguage("en");
     expect(i18n.t("sessions:taskProgress.more", { count: 1 })).toBe(

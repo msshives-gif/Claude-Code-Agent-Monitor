@@ -43,7 +43,7 @@ and do not add them without being asked:
   `og:locale=en_US`, and English `<title>`/meta. The React app never reassigns
   `document.documentElement.lang` when the user switches language — a known gap,
   not something a translation PR is expected to fix.
-- **The CLI (`bin/ccam.js`), the MCP server (`mcp/`), the Express server
+- **The CLI (`bin/ccam.js` + `cli/`), the MCP server (`mcp/`), the Express server
   (`server/`), the desktop shell (`desktop/`), the VS Code extension, and the
   statusline** contain no i18n wiring at all. Their output is English.
 - **`client/src/lib/event-summary.ts` and `event-grouping.ts`** build tool-event

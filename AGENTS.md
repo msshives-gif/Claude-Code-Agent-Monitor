@@ -19,6 +19,7 @@
 - `client/` for React UI behavior.
 - `mcp/` for local MCP server tooling.
 - `scripts/` for hook/install/import/cleanup utilities.
+- `cli/` for the `ccam` CLI (Commander.js; entry `bin/ccam.js`, reference `docs/CLI.md`).
 
 ## Validation expectations
 - Full local gate (headers + format + client typecheck + server + client tests): `npm run verify`
@@ -39,3 +40,4 @@
 - MCP helpers: `npm run mcp:install`, `npm run mcp:build`, `npm run mcp:start`
 - Shrink `events.data` rows stored before payload trimming existed: `npm run trim-events` (dry run; `--yes --backup` with the dashboard stopped)
 - Token repair: `npm run repair-tokens` — one-time re-derivation of token totals inflated before usage was reconciled per `message.id` (the dashboard also runs this automatically once per database; `DASHBOARD_TOKEN_REPAIR=0` opts out)
+- Transcript snapshot retention: `ccam snapshots` (storage + policy), `ccam snapshots prune --days N` (dry run unless `--apply --confirm PRUNE_SNAPSHOTS`); `npm run test:snapshots` runs the cross-OS snapshot store tests (CI runs them on Linux, macOS, and Windows)

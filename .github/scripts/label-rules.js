@@ -127,7 +127,7 @@ const AREA_PATTERNS = [
   [/^mcp\//, "area/mcp"],
   [/^desktop\//, "area/desktop"],
   [/^vscode-extension\//, "area/vscode-extension"],
-  [/^(bin|statusline)\//, "area/cli"],
+  [/^(bin|cli|statusline)\//, "area/cli"],
   [/^plugins\//, "area/plugins"],
   [/^(deployments|monitoring)\/|^Dockerfile|^docker-compose/, "area/deploy"],
   [/^(\.github|\.husky|\.claude)\//, "area/ci"],

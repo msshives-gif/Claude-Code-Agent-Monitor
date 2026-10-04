@@ -1,6 +1,6 @@
 {
   "name": "agent-dashboard",
-  "version": "2.2.4",
+  "version": "2.2.5",
   "bin": {
     "ccam": "bin/ccam.js"
   },
@@ -95,6 +95,7 @@
     "trim-events": "node scripts/trim-events.js",
     "test": "node --test server/__tests__/*.test.js && cd client && npm test",
     "test:server": "node --test server/__tests__/*.test.js",
+    "test:snapshots": "node --test server/__tests__/snapshot-store.test.js server/__tests__/snapshot-retention.test.js",
     "test:client": "cd client && npm test",
     "test:mcp": "npm --prefix mcp run test",
     "check:headers": "bash .claude/skills/file-headers/scripts/check-headers.sh",
@@ -120,6 +121,7 @@
   },
   "dependencies": {
     "adm-zip": "0.6.0",
+    "commander": "^14.0.3",
     "cors": "^2.8.5",
     "cross-spawn": "^7.0.6",
     "express": "4.22.2",

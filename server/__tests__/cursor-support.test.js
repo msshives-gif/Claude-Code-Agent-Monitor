@@ -32,6 +32,8 @@ const SUBAGENT_TRANSCRIPT = path.join(path.dirname(TRANSCRIPT), "subagents", "wo
 process.env.DASHBOARD_DB_PATH = path.join(ROOT, "dashboard.db");
 process.env.DASHBOARD_DATA_DIR = DATA_DIR;
 process.env.DASHBOARD_CURSOR_HOME = CURSOR_HOME;
+// Keep titles hermetic: never read the developer's real Cursor state.vscdb.
+process.env.DASHBOARD_CURSOR_STATE_DB = path.join(ROOT, "state.vscdb");
 process.env.DASHBOARD_LIVENESS_PROBE = "0";
 process.env.DASHBOARD_CURSOR_SYNC_MS = "0";
 

@@ -126,7 +126,7 @@
             "applicationCategory": "DeveloperApplication",
             "applicationSubCategory": "Monitoring and observability",
             "operatingSystem": "macOS, Windows, Linux",
-            "softwareVersion": "2.2.4",
+            "softwareVersion": "2.2.5",
             "license": "https://opensource.org/licenses/MIT",
             "isAccessibleForFree": true,
             "image": "https://hoangsonww.github.io/Claude-Code-Agent-Monitor/og-image.png",
@@ -872,6 +872,7 @@
                 <span class="tech-badge badge-ws">Remote data sources</span>
                 <span class="tech-badge badge-openapi">SSH tunnel federation</span>
                 <span class="tech-badge badge-ts">ccam CLI</span>
+                <span class="tech-badge badge-node">Commander CLI</span>
                 <span class="tech-badge badge-react">Data scope (local/all/selected)</span>
                 <span class="tech-badge badge-express">Import history</span>
                 <span class="tech-badge badge-github">File-header PR CI</span>
@@ -949,6 +950,7 @@
                 <span class="tech-badge badge-ws">Remote data sources</span>
                 <span class="tech-badge badge-openapi">SSH tunnel federation</span>
                 <span class="tech-badge badge-ts">ccam CLI</span>
+                <span class="tech-badge badge-node">Commander CLI</span>
                 <span class="tech-badge badge-react">Data scope (local/all/selected)</span>
                 <span class="tech-badge badge-express">Import history</span>
                 <span class="tech-badge badge-github">File-header PR CI</span>
@@ -1059,9 +1061,9 @@
                     Switch between <strong>Agent</strong> and <strong>Session</strong> swim lanes for
                     working, waiting, completed, error, and abandoned states. Yellow Waiting cards
                     identify work paused for user input, a permission gate, or the next prompt;
-                    hover badges and column headers for the exact reason and lifecycle rules. Cards
-                    show model, cumulative cost, and current tool, while WebSocket updates keep lane
-                    counts synchronized with the live event store.
+                    hover status dots and column headers for the exact reason and lifecycle rules.
+                    Cards show the session's own title (up to three lines), model, cumulative cost,
+                    and current tool, while WebSocket updates keep lane counts live.
                   </p>
                 </div>
                 <div class="feature-card">
@@ -1313,7 +1315,7 @@
                   <div class="feature-icon ic-blue">🔌</div>
                   <h3>Local MCP Server</h3>
                   <p>
-                    Local MCP sidecar with three transport modes and 97 typed tools across 16
+                    Local MCP sidecar with three transport modes and 103 typed tools across 16
                     domain modules. It covers the complete supported app surface, including
                     scoped data, transcripts and images, Claude/Cursor/GPT pricing, workflows, alerts,
                     webhooks, imports and restore, Claude/Codex config, Run Agent, remote sources,
@@ -1437,15 +1439,14 @@
                   <div class="feature-icon ic-cyan">⌨️</div>
                   <h3 id="feat-ccam-cli">ccam CLI</h3>
                   <p>
-                    The whole dashboard as terminal commands — <code>ccam stats</code>,
-                    <code>kanban</code>, <code>tail</code>, <code>session &lt;id&gt;</code>,
-                    <code>analytics</code>, <code>alerts</code>, <code>pricing</code>,
-                    <code>import</code>, <code>doctor</code>, <code>export</code> and more.
-                    Zero dependencies, linked by <code>npm run setup</code>, auto-discovers the
-                    running server, renders a full terminal UI (box-drawn tables, status icons,
-                    inline bar charts, agent trees), and pipes cleanly (colors off when not a
-                    TTY). The one
-                    destructive command is gated behind <code>--yes</code>.
+                    The whole dashboard as terminal commands, built on Commander.js — a nested
+                    tree like <code>ccam sessions transcript &lt;id&gt;</code>,
+                    <code>alerts ack</code>, or <code>pricing gpt set</code>, plus a live
+                    <code>overview</code>, a WebSocket <code>stream</code>, and a REPL. It renders a
+                    full terminal UI on a TTY, prints plain text when piped, and gives agents
+                    <code>--json</code> on every command with JSON errors and a
+                    <code>commands --json</code> schema. Writes ask to confirm; shell completion
+                    ships built in.
                   </p>
                 </div>
                 <div class="feature-card">
@@ -1569,7 +1570,7 @@
             </div>
             <div class="screenshot-card" id="ss-kanban">
               <img src="../images/board.png" alt="Kanban Board — Agents view" width="100%" loading="lazy" decoding="async" />
-              <div class="screenshot-caption"><span class="caption-icon">📋</span> <span><strong>Kanban Board (agents)</strong> — agents swim-laned by status: Working, Waiting, Completed, Error. Cards show model, cost, and current tool call. Yellow column flags agents waiting on user input</span></div>
+              <div class="screenshot-caption"><span class="caption-icon">📋</span> <span><strong>Kanban Board (agents)</strong> — agents swim-laned by status: Working, Waiting, Completed, Error. Cards show the full session title, model, cost, and current tool call, with status as a colored dot. Yellow column flags agents waiting on user input</span></div>
             </div>
             <div class="screenshot-card">
               <img src="../images/board-sessions.png" alt="Kanban Board — Sessions view" width="100%" loading="lazy" decoding="async" />
@@ -2175,6 +2176,21 @@ npm run mcp:start:repl         # interactive CLI with tab completion</code></pre
                   <td>Serve-stale window (ms) for per-transcript task-progress summaries behind <code>include_task_progress</code> list requests and the session-detail <code>todo_snapshot</code>. A grown transcript is parsed incrementally from its last complete JSONL line; this floor still coalesces bursts of list reloads into one parse. <code>0</code> parses every append immediately.</td>
                 </tr>
                 <tr>
+                  <td><code>DASHBOARD_SNAPSHOT_COMPRESS</code></td>
+                  <td><code>1</code></td>
+                  <td>Lossless background compression of transcript snapshots whose original Claude Code or Cursor already deleted (and idle for 24 h). Each <code>.jsonl.gz</code> is decompressed and matched (SHA-256 + length) before the plain copy is removed, and a provider whose source tree is missing or unreadable is skipped. Codex snapshots stay plain. <code>0</code> turns it off.</td>
+                </tr>
+                <tr>
+                  <td><code>DASHBOARD_SNAPSHOT_MAX_AGE_DAYS</code></td>
+                  <td><code>unset</code></td>
+                  <td>Opt-in retention cap: every 6 h, delete the snapshots of finished sessions idle longer than this many days and stop snapshotting sources that old. Pruned sessions are tombstoned so a re-import does not regrow them. Preview with <code>ccam snapshots prune --days N</code> first, because a pruned snapshot may be the only remaining copy of a conversation.</td>
+                </tr>
+                <tr>
+                  <td><code>DASHBOARD_SNAPSHOT_MAX_BYTES</code></td>
+                  <td><code>unset</code></td>
+                  <td>Opt-in size cap for all three snapshot directories, in bytes or a size such as <code>5GB</code>. Every 6 h the snapshots of the oldest finished sessions are deleted until the total is under the cap; active sessions and those active in the last 24 h are never pruned, so the total can stay above it.</td>
+                </tr>
+                <tr>
                   <td><code>DASHBOARD_TOKEN_REPAIR</code></td>
                   <td><code>1</code></td>
                   <td>One-time automatic repair of historical token totals affected by per-record inflation or omitted same-model flat subagents. Live fixes cannot revisit every completed session, and <code>replaceTokenUsage</code> cannot lower an old high-water mark. Marker-gated, deferred off the boot path, skipped while another dashboard shares the data directory, and it snapshots the old rows to <code>token_usage_pre_repair_v2</code> first. <code>0</code> skips it — repair manually with <code>npm run repair-tokens</code>.</td>
@@ -2464,16 +2480,26 @@ npm run mcp:start:repl         # interactive CLI with tab completion</code></pre
           <h2>ccam CLI</h2>
           <p>
             The full dashboard feature surface is also available from any terminal through the
-            dependency-free <code>ccam</code> CLI (<code>bin/ccam.js</code>). It is linked
+            <code>ccam</code> CLI (<code>bin/ccam.js</code> → <code>cli/</code>), built on
+            Commander.js — the Node analogue of Go's Cobra: a nested command tree with grouped
+            help at every level, inherited global options, and validated flags. It is linked
             automatically by <code>npm run setup</code> (via a fail-soft <code>npm link</code>),
-            discovers the running server through the same
-            <code>~/.claude/.agent-dashboard.json</code> registry the hook handler uses
-            (override with <code>CLAUDE_DASHBOARD_PORT</code> / <code>DASHBOARD_PORT</code>),
-            and renders a full terminal UI — box-drawn tables, status icons, inline bar
-            charts, and agent trees — that degrades to plain text when piped
-            (<code>--no-color</code> / <code>NO_COLOR</code> / <code>FORCE_COLOR</code>
-            respected), so it is equally at home in an interactive shell,
-            <code>grep</code> pipelines, or CI.
+            targets <code>--server</code> / <code>CCAM_URL</code> or discovers the running server
+            through the same <code>~/.claude/.agent-dashboard.json</code> registry the hook
+            handler uses (override with <code>CLAUDE_DASHBOARD_PORT</code> /
+            <code>DASHBOARD_PORT</code>), and renders a full terminal UI — box-drawn tables,
+            status icons, bar charts, sparklines, and agent trees — that degrades to plain text
+            when piped (<code>--no-color</code> / <code>NO_COLOR</code> /
+            <code>FORCE_COLOR</code> respected).
+          </p>
+          <p>
+            It is built for machines as well as people: <code>--json</code> (or
+            <code>CCAM_OUTPUT=json</code>) on any command prints stable JSON — NDJSON for
+            <code>tail</code>, <code>stream</code>, and <code>run follow</code> — with errors as
+            <code>{"error":{"code":"…","message":"…"}}</code> on stderr and exit codes 0 / 1, while
+            <code>ccam commands --json</code> describes every command, argument, and option.
+            <code>ccam completion bash|zsh|fish</code> prints a Cobra-style completion script
+            driven by the live command tree.
           </p>
           <p>
             For a live monitoring session, <code>ccam repl</code> (aliases
@@ -2508,18 +2534,20 @@ npm run mcp:start:repl         # interactive CLI with tab completion</code></pre
                 </tr>
                 <tr>
                   <td>Monitoring</td>
-                  <td><code>health</code> · <code>stats</code> · <code>kanban</code> · <code>tail</code></td>
+                  <td><code>overview</code> · <code>stats</code> · <code>kanban</code> · <code>tail</code> · <code>stream</code> · <code>watch</code></td>
                   <td>
-                    Reachability, totals and status distributions, the Kanban board rendered as
-                    text columns, and a live event feed that polls for new rows every 2 seconds
+                    A one-screen live snapshot, totals and status distributions, the Kanban board
+                    as text lanes, a polling event feed, the raw real-time WebSocket feed, and a
+                    <code>watch</code> that re-runs any command on an interval
                   </td>
                 </tr>
                 <tr>
                   <td>Data</td>
-                  <td><code>sessions</code> · <code>session &lt;id&gt;</code> · <code>agents</code> · <code>events</code></td>
+                  <td><code>sessions</code> · <code>sessions get/stats/transcript</code> · <code>agents</code> · <code>events</code></td>
                   <td>
                     Filterable tables plus a per-session deep dive with an indented agent tree,
-                    per-session cost, and the most recent events
+                    per-session cost, stats, the conversation as a readable chat log, and rename /
+                    update writes
                   </td>
                 </tr>
                 <tr>
@@ -2544,7 +2572,7 @@ npm run mcp:start:repl         # interactive CLI with tab completion</code></pre
                 </tr>
                 <tr>
                   <td>Pricing</td>
-                  <td><code>pricing</code> · <code>pricing set / delete / reset</code></td>
+                  <td><code>pricing</code> · <code>pricing set / delete / reset</code> · <code>pricing gpt / cursor</code></td>
                   <td>
                     Full pricing-rule CRUD with per-mtok rates — including 1-hour cache-write,
                     fast-tier, and time-limited intro rates — straight from the terminal, with
@@ -2593,12 +2621,7 @@ npm run mcp:start:repl         # interactive CLI with tab completion</code></pre
             <div class="callout-body">
               <strong>Safe by default</strong>
               <p>
-                Read commands only issue GETs; mutating commands map one-to-one to explicit
-                dashboard actions; and the single destructive command,
-                <code>clear-data</code>, always refuses to run without an explicit
-                <code>--yes</code> flag. Exit codes are script-friendly: 0 on success, 1 on any
-                failure. See <code>docs/CLI.md</code> for the complete reference.
-              </p>
+                Read commands only issue GETs; writes ask for confirmation on a terminal and require <code>--yes</code> in scripts; and <code>clear-data</code>, which wipes every session, always refuses to run without an explicit <code>--yes</code> flag. Exit codes are script-friendly: 0 on success, 1 on any failure. See <code>docs/CLI.md</code> for the complete reference. </p>
             </div>
           </div>
         </section>
@@ -7235,7 +7258,7 @@ npm run install-hooks</code></pre>
     <!-- Body-content translations — must load before script.js so the
          i18n engine sees window.__WIKI_CONTENT_I18N. Both are deferred, so they
          run in document order. -->
-    <script src="i18n-content.js?v=104" defer></script>
+    <script src="i18n-content.js?v=109" defer></script>
     <script src="script.js?v=59" defer></script>
     <script>
       (function () {

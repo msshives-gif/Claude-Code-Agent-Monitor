@@ -51,9 +51,8 @@ shell (`<html lang="en">`, `og:locale`) and the app does not reassign
 - [ ] Plural keys use the i18next v4 suffixes `_one` / `_other`. Key parity is
       absolute, so the new locale needs **both** forms for every plural key even
       if the language has no plural inflection — give both the same string, the
-      way `zh`/`vi`/`ko` already do. (The stray `_plural` keys in `kanban.json`
-      and `sessions.json` are legacy and no longer resolved; mirror them for
-      parity, but do not create new ones.)
+      way `zh`/`vi`/`ko` already do. Never use the legacy `_plural` suffix —
+      i18next v4 does not resolve it.
 - [ ] Add `"<xx>"` to **`languageNames` and `languageShort` in every locale's
       `nav.json`** — `en`, `zh`, `vi`, `ko`, `es`, and the new one. This is the
       switcher label; a missing entry renders the raw key in that language.

@@ -52,7 +52,7 @@ operations — mention this to the user as a faster alternative to raw `curl`.
    - First start / production: `npm run setup` then `npm start` from the repo root.
    - Development with live reload: `npm run dev` from the repo root.
    - Restart cleanly: stop the running process, then re-run the same command.
-   - Self-update + restart: `node scripts/self-update-restart.js` (pull → setup → restart).
+   - Self-update + restart: `npm run update:pull-setup` (pull → setup), then restart as above.
    Tell the user the dashboard URL is `http://localhost:4820`.
 5. **Guide data import.** Fetch `GET /api/import/guide` and relay the discovered
    source paths. Explain the import endpoints:

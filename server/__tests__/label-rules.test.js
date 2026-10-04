@@ -133,6 +133,7 @@ describe("areas", () => {
       ["desktop/main.js", "area/desktop"],
       ["vscode-extension/src/extension.ts", "area/vscode-extension"],
       ["bin/ccam.js", "area/cli"],
+      ["cli/commands/data.js", "area/cli"],
       ["statusline/statusline.js", "area/cli"],
       ["plugins/monitor/plugin.json", "area/plugins"],
       ["deployments/helm/values.yaml", "area/deploy"],
