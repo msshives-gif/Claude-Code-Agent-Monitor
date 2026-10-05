@@ -63,10 +63,22 @@
 
 import type { TabbyStatus } from "./brain";
 
+/**
+ * Result of a question to Tabby: an answer to show inline, or a prompt to hand off to the Run page.
+ */
 export type AskResult = { kind: "answer"; text: string } | { kind: "handoff"; prompt: string };
 
+/** Plural suffix for an English count. */
 const plural = (n: number) => (n === 1 ? "" : "s");
 
+/**
+ * Answer simple status questions (what is running, how many sessions are waiting or errored, a
+ * quick status) from the live counts. Anything else is handed off to Claude through the Run page.
+ *
+ * @param query - What the user typed.
+ * @param status - Current live counts.
+ * @returns An inline answer or a handoff prompt.
+ */
 export function matchIntent(query: string, status: TabbyStatus): AskResult {
   const q = query.trim().toLowerCase();
   if (!q) {
@@ -76,6 +88,7 @@ export function matchIntent(query: string, status: TabbyStatus): AskResult {
     };
   }
 
+  /** Whether the question mentions any of the words. */
   const has = (...words: string[]) => words.some((w) => q.includes(w));
 
   if (has("help", "what can you", "what do you do")) {

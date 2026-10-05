@@ -63,6 +63,8 @@ import { registrarFor } from "../../core/tool-registry.js";
  * plain GETs, always available regardless of policy flags.
  * `dashboard_get_operational_snapshot` is the only one fanning out to
  * multiple endpoints in parallel rather than proxying a single one.
+ *
+ * @param context - Shared tool context.
  */
 export function registerObservabilityTools(context: ToolContext): void {
   const { api } = context;

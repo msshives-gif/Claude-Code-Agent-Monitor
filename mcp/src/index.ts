@@ -64,6 +64,9 @@ import { printBanner, printServerInfo, printReady, printShutdown } from "./ui/ba
  * `MCP_TRANSPORT` env value passed as `env`. Priority: explicit
  * `--transport=<mode>`, then bare `--repl`/`--http`, then `env`. An
  * unrecognized `--transport=` value falls through rather than throwing.
+ *
+ * @param env - Transport from `MCP_TRANSPORT`.
+ * @returns The transport to start.
  */
 function resolveTransport(env: TransportMode): TransportMode {
   const cliArg = process.argv.find((a) => a.startsWith("--transport="));

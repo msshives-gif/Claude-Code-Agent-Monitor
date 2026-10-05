@@ -62,7 +62,9 @@ import { assertMutationsEnabled } from "../../policy/tool-guards.js";
 import { JsonObjectSchema } from "../schemas.js";
 import type { ToolContext } from "../../types/tool-context.js";
 
+/** Scope filter for listing Claude Code config artifacts. */
 const ClaudeScopeSchema = z.enum(["all", "user", "project"]);
+/** Kinds of Claude Code config artifact the write and delete tools accept. */
 const ClaudeArtifactTypeSchema = z.enum([
   "skills",
   "agents",
@@ -71,6 +73,7 @@ const ClaudeArtifactTypeSchema = z.enum([
   "memory",
   "auto-memory",
 ]);
+/** Config surfaces `dashboard_get_claude_config` can read. */
 const ClaudeSurfaceSchema = z.enum([
   "overview",
   "skills",
@@ -88,6 +91,13 @@ const ClaudeSurfaceSchema = z.enum([
   "hook-scripts",
 ]);
 
+/**
+ * Register the agent-configuration tools: reading, writing, and deleting Claude Code config
+ * artifacts and keybindings, listing their backups, and reading, editing, and creating Codex config
+ * files and profiles. Writes and deletes always take a server-side backup first.
+ *
+ * @param context - Shared tool context.
+ */
 export function registerConfigTools(context: ToolContext): void {
   const { api, config } = context;
   const register = registrarFor(context);

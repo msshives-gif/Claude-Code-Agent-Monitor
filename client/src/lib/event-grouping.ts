@@ -204,9 +204,15 @@ export function statusFromEventType(type: string): "working" | "waiting" | "comp
 /** Row status for the Dashboard's Recent Activity feed: {@link
  *  statusFromEventType} plus the one heuristic that surface has always applied
  *  — a summary that reports an error is an error, whatever the event type says
- *  (a failed Stop, for instance). */
+ *  (a failed Stop, for instance).
+ *
+ * @param event - Event type and summary.
+ * @returns The row status.
+ */
 export function activityStatusFromEvent(event: {
+  /** Event type to classify. */
   event_type: string;
+  /** Event summary; a summary that mentions an error marks the row as an error. */
   summary?: string | null;
 }): "working" | "waiting" | "completed" | "error" {
   if (event.summary?.toLowerCase().includes("error")) return "error";

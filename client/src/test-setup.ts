@@ -50,6 +50,13 @@ import { afterEach, beforeEach } from "vitest";
 import "./i18n/index";
 import i18n from "i18next";
 
+/**
+ * In-memory `Storage` implementation for tests. Node 26 exposes a process-level `localStorage`
+ * getter that returns undefined without `--localstorage-file`, so the suite installs these stores
+ * to behave the same on every supported Node version.
+ *
+ * @returns A fresh, empty store.
+ */
 function memoryStorage(): Storage {
   const entries = new Map<string, string>();
   return {

@@ -69,6 +69,10 @@ import { registerAllTools } from "./tools/index.js";
  * same {@link AppConfig}/{@link DashboardApiClient}.
  * @returns A new `McpServer` with all six tool domains registered, ready to
  *   `connect()` to a transport.
+ *
+ * @param config - Resolved configuration.
+ * @param api - Dashboard API client the tools call.
+ * @param logger - Logger for tool calls.
  */
 export function buildServer(config: AppConfig, api: DashboardApiClient, logger: Logger): McpServer {
   const server = new McpServer({

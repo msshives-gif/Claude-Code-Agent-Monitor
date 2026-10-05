@@ -67,6 +67,12 @@ import { formatModelName } from "../../lib/format";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/**
+ * Classify a model id into a Claude model family by name.
+ *
+ * @param name - Model id.
+ * @returns `opus`, `sonnet`, `haiku`, or `other`.
+ */
 function modelFamily(name: string): "opus" | "sonnet" | "haiku" | "other" {
   const lower = name.toLowerCase();
   if (lower.includes("opus")) return "opus";
@@ -75,6 +81,12 @@ function modelFamily(name: string): "opus" | "sonnet" | "haiku" | "other" {
   return "other";
 }
 
+/**
+ * Compact token count: `1.2M`, `340K`, or the plain number.
+ *
+ * @param n - Token count.
+ * @returns The formatted count.
+ */
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
@@ -85,6 +97,10 @@ function fmtTokens(n: number): string {
 
 // ── Color palette per model family ───────────────────────────────────────────
 
+/**
+ * Gradient, stroke, text, and badge colors for each model family, so a family has the same look on
+ * both sides of the chart.
+ */
 const FAMILY_COLORS = {
   opus: {
     grad: ["#7c3aed", "#a855f7"] as [string, string],
@@ -114,35 +130,69 @@ const FAMILY_COLORS = {
 
 // ── Types used internally ─────────────────────────────────────────────────────
 
+/** One model box in the delegation chart. */
 interface NodeDatum {
+  /** Unique node id, prefixed by side so the same model can appear in both columns. */
   id: string;
+  /** Display name of the model. */
   label: string;
+  /** Model family; picks the colors. */
   family: "opus" | "sonnet" | "haiku" | "other";
+  /** Agents that ran on this model. */
   agentCount: number;
+  /** Sessions in which this model was used. */
   sessionCount: number;
+  /** Tokens consumed by agents on this model. */
   totalTokens: number;
+  /** `main` for the left column (main agents), `sub` for the right column (subagents). */
   side: "main" | "sub";
+  /** Left edge in SVG units. */
   x: number;
+  /** Top edge in SVG units. */
   y: number;
 }
 
+/** A connector from a main-agent model to a subagent model. */
 interface EdgeDatum {
+  /** Id of the main-agent model node. */
   sourceId: string;
+  /** Id of the subagent model node. */
   targetId: string;
 }
 
+/** Shows the tooltip for a node, anchored to its SVG element. */
 type ShowTipFn = (node: NodeDatum, anchor: SVGGraphicsElement) => void;
+/** Hides the tooltip. */
 type HideTipFn = () => void;
 
 // ── D3 chart renderer ─────────────────────────────────────────────────────────
 
+/** Width of a model box in SVG units. */
 const NODE_W = 160;
+/** Height of a model box in SVG units. */
 const NODE_H = 80;
+/** Corner radius of model boxes. */
 const NODE_RX = 10;
+/** Horizontal gap between the main-agent and subagent columns. */
 const COL_GAP = 200;
+/** Vertical distance between rows. */
 const ROW_GAP = 108;
+/** Padding around the drawing; the top padding leaves room for the column headings. */
 const PADDING = { top: 40, left: 24, right: 24, bottom: 24 };
 
+/**
+ * Draw the two-column delegation chart into the SVG with D3: column headings, curved connectors,
+ * and a box per model with its agent count, tokens, and (for main-agent models) session count.
+ * Clears the SVG first, so it can be called on every data change.
+ *
+ * @param svg - Target SVG element.
+ * @param mainNodes - Left column (main-agent models).
+ * @param subNodes - Right column (subagent models).
+ * @param edges - Connectors to draw.
+ * @param t - Translation function.
+ * @param showTip - Called on node hover.
+ * @param hideTip - Called when the pointer leaves a node.
+ */
 function renderFlow(
   svg: SVGSVGElement,
   mainNodes: NodeDatum[],
@@ -314,10 +364,17 @@ function renderFlow(
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
+/** Props for {@link ModelDelegationFlow}. */
 export interface ModelDelegationFlowProps {
+  /** Main-agent and subagent model usage from `/api/workflows`. */
   data: ModelDelegationData;
 }
 
+/**
+ * Model delegation chart on the Workflows page: models used by main agents on the left, models used
+ * by subagents on the right, and connectors from every main-agent model to every subagent model.
+ * Hovering a model shows its agents, sessions, tokens, and share of all agents.
+ */
 export function ModelDelegationFlow({ data }: ModelDelegationFlowProps) {
   const { t } = useTranslation("workflows");
   const svgRef = useRef<SVGSVGElement>(null);
@@ -327,11 +384,13 @@ export function ModelDelegationFlow({ data }: ModelDelegationFlowProps) {
   const hasData = data.mainModels.length > 0 || data.subagentModels.length > 0;
   const totalAgents = countTotalAgents(data);
 
+  /** Hide the tooltip. */
   const hideTip = useCallback(() => {
     const tip = tipRef.current;
     if (tip) tip.style.opacity = "0";
   }, []);
 
+  /** Fill the tooltip for a model and anchor it next to its box, kept inside the container. */
   const showTip = useCallback(
     (node: NodeDatum, anchor: SVGGraphicsElement) => {
       const tip = tipRef.current;
@@ -454,14 +513,28 @@ export function ModelDelegationFlow({ data }: ModelDelegationFlowProps) {
 
 // ── Tooltip helpers ───────────────────────────────────────────────────────────
 
+/**
+ * Total agents across both columns, used as the denominator for each model's share.
+ *
+ * @param data - Model delegation data.
+ * @returns The summed agent count.
+ */
 function countTotalAgents(data: ModelDelegationData): number {
   const mainSum = data.mainModels.reduce((s, m) => s + m.agent_count, 0);
   const subSum = data.subagentModels.reduce((s, m) => s + m.agent_count, 0);
   return mainSum + subSum;
 }
 
+/** Translation function signature used by the imperative tooltip builder. */
 type TFn = (key: string, options?: Record<string, unknown>) => string;
 
+/**
+ * Localized one-line description of a model family for the tooltip.
+ *
+ * @param family - Model family.
+ * @param t - Translation function.
+ * @returns The description.
+ */
 function describeFamily(family: NodeDatum["family"], t: TFn): string {
   switch (family) {
     case "opus":
@@ -475,6 +548,16 @@ function describeFamily(family: NodeDatum["family"], t: TFn): string {
   }
 }
 
+/**
+ * Fill the tooltip element for a model: name, whether it is a main-agent or subagent model, family,
+ * agent count with share of all agents, sessions, and tokens. Built with DOM calls so hovering does
+ * not touch React state.
+ *
+ * @param el - Tooltip container; its children are replaced.
+ * @param node - Hovered model.
+ * @param totalAgents - Denominator for the share.
+ * @param t - Translation function.
+ */
 function buildModelDelegationTooltip(
   el: HTMLDivElement,
   node: NodeDatum,
@@ -500,6 +583,7 @@ function buildModelDelegationTooltip(
   subtitle.textContent = `${sideLabel} · ${node.family}`;
   el.appendChild(subtitle);
 
+  /** Append a label/value row to the tooltip. */
   const addRow = (label: string, value: string) => {
     const row = document.createElement("div");
     row.style.cssText =

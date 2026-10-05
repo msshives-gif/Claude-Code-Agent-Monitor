@@ -84,21 +84,43 @@ import {
 import { pickQuip } from "./quips";
 import { tabbyPrefs } from "./prefs";
 
+/** How long a speech bubble stays up before it hides itself, in milliseconds. */
 const BUBBLE_MS = 4500;
-// Minimum gap between non-error bubbles, so a burst of activity doesn't spam.
+/**
+ * Minimum gap between non-error speech bubbles, so a burst of activity does not spam. Error bubbles
+ * always show.
+ */
 const BUBBLE_THROTTLE_MS = 3000;
 
+/** What {@link useTabbyBrain} gives the Tabby widget. */
 export interface TabbyBrain {
+  /** Current mood, which drives the avatar's animation. */
   mood: Mood;
+  /** Live counts for the panel. */
   status: TabbyStatus;
+  /** Text of the current speech bubble, or null when none is showing. */
   bubble: string | null;
+  /** Hides the current bubble early. */
   dismissBubble: () => void;
+  /** Whether speech bubbles are muted; the preference is shared with Settings and other tabs. */
   muted: boolean;
+  /** Toggles mute. */
   toggleMute: () => void;
+  /** Forgets errored sessions and ends the worried mood, resetting the error count. */
   clearAlerts: () => void;
+  /** Marks an Ask request as in flight, which shows the thinking mood. */
   setThinking: (v: boolean) => void;
 }
 
+/**
+ * Tabby's live brain. Seeds session counts from the REST sessions list on mount, then folds every
+ * WebSocket message through `reduceTabby`, turning the resulting pulses into speech bubbles
+ * (throttled, except errors). A clock tick re-evaluates timed moods such as stuck and sleeping
+ * without needing new events, and mute stays in sync across the Settings page and other tabs.
+ * Starts optimistically connected so the eyes are live from the first frame.
+ *
+ * @returns Mood, counts, bubble, and controls.
+ */
 export function useTabbyBrain(): TabbyBrain {
   const now0 = Date.now();
   // Start optimistically connected (idle, open eyes) so the cursor-tracking
@@ -120,6 +142,10 @@ export function useTabbyBrain(): TabbyBrain {
   // Keep mute in sync with the Settings page / other tabs.
   useEffect(() => tabbyPrefs.subscribe(() => setMuted(tabbyPrefs.getMuted())), []);
 
+  /**
+   * Show a speech bubble unless muted. Non-forced bubbles are throttled to one per 3 seconds; error
+   * bubbles are forced through.
+   */
   const showBubble = useCallback((text: string, force: boolean) => {
     if (!text) return;
     if (mutedRef.current) return;
@@ -177,14 +203,18 @@ export function useTabbyBrain(): TabbyBrain {
 
   useEffect(() => () => clearTimeout(bubbleTimer.current), []);
 
+  /** Current mood, re-evaluated on every state change and clock tick. */
   const mood = useMemo(() => deriveMood(state, tick), [state, tick]);
+  /** Live counts for the panel. */
   const status = useMemo(() => statusOf(state), [state]);
 
+  /** Hide the current bubble. */
   const dismissBubble = useCallback(() => {
     clearTimeout(bubbleTimer.current);
     setBubble(null);
   }, []);
 
+  /** Toggle mute, persist it, and hide any bubble when muting. */
   const toggleMute = useCallback(() => {
     const next = !mutedRef.current;
     tabbyPrefs.setMuted(next);
@@ -192,8 +222,10 @@ export function useTabbyBrain(): TabbyBrain {
     if (next) dismissBubble();
   }, [dismissBubble]);
 
+  /** Forget errored sessions and end the worried mood. */
   const clearAlerts = useCallback(() => setState((prev) => clearErrors(prev)), []);
 
+  /** Mark an Ask request as in flight, skipping the update when nothing changes. */
   const setThinking = useCallback(
     (v: boolean) => setState((prev) => (prev.thinking === v ? prev : { ...prev, thinking: v })),
     []

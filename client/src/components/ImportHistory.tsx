@@ -91,11 +91,24 @@ import { api, type ImportResult, type ImportBackupResult, type RunProvider } fro
 import { eventBus } from "../lib/eventBus";
 import type { WSMessage, ImportProgressMessage } from "../lib/types";
 
+/**
+ * Import method: rescan the default history folder, scan a folder path, upload files, or restore a
+ * backup export.
+ */
 type Mode = "rescan" | "path" | "upload" | "backup";
 
+/** Shape of the import guide: platform-specific default folders and instructions. */
 type GuideResponse = Awaited<ReturnType<typeof api.import.guide>>;
+/** Progress message streamed over the WebSocket while an import runs. */
 type Progress = ImportProgressMessage;
 
+/**
+ * Guide used when the server's guide cannot be loaded: the provider's default history folder
+ * (`~/.claude/projects` or `~/.codex/sessions`) with generic instructions.
+ *
+ * @param provider - Provider being imported.
+ * @returns A minimal guide.
+ */
 function fallbackGuide(provider: RunProvider): GuideResponse {
   const isCodex = provider === "codex";
   return {
@@ -115,6 +128,13 @@ function fallbackGuide(provider: RunProvider): GuideResponse {
   };
 }
 
+/**
+ * Import History panel in Settings. Imports Claude Code or Codex history by rescanning the default
+ * folder, scanning a chosen folder, or uploading transcript files, and can restore a backup export.
+ * Shows platform-specific guidance, live progress from the WebSocket, and a result summary
+ * (imported, skipped, backfilled, and errors). Imports are idempotent, so rerunning one never
+ * duplicates data.
+ */
 export function ImportHistory() {
   const { t } = useTranslation("settings");
   const [provider, setProvider] = useState<RunProvider>("claude");
@@ -137,6 +157,10 @@ export function ImportHistory() {
   const [backupResult, setBackupResult] = useState<ImportBackupResult | null>(null);
   const backupInputRef = useRef<HTMLInputElement | null>(null);
 
+  /**
+   * Translate a provider-specific string: Codex keys live under `import.codex`, Claude keys under
+   * `import`.
+   */
   const providerText = useCallback(
     (key: string, options?: Record<string, unknown>) =>
       provider === "codex" ? t(`import.codex.${key}`, options) : t(`import.${key}`, options),
@@ -178,6 +202,7 @@ export function ImportHistory() {
     });
   }, [provider]);
 
+  /** Clear the previous error, result, and progress before a new import. */
   const reset = useCallback(() => {
     setErrorMsg(null);
     setResult(null);
@@ -185,6 +210,7 @@ export function ImportHistory() {
     setProgress(null);
   }, []);
 
+  /** Rescan the provider's default history folder. */
   const handleRescan = async () => {
     reset();
     setRunning(true);
@@ -199,6 +225,7 @@ export function ImportHistory() {
     }
   };
 
+  /** Scan a folder on the server's filesystem; a path is required. */
   const handleScanPath = async () => {
     reset();
     const trimmed = folderPath.trim();
@@ -218,6 +245,7 @@ export function ImportHistory() {
     }
   };
 
+  /** Upload the selected transcript files or archives; at least one file is required. */
   const handleUpload = async () => {
     reset();
     if (files.length === 0) {
@@ -238,6 +266,7 @@ export function ImportHistory() {
     }
   };
 
+  /** Restore a backup export file. */
   const handleRestore = async () => {
     reset();
     if (!backupFile) {
@@ -258,6 +287,10 @@ export function ImportHistory() {
     }
   };
 
+  /**
+   * Accept the chosen files, keeping only transcript files (`.jsonl`, `.meta.json`) and archives
+   * (`.zip`, `.tar`, `.tar.gz`, `.tgz`, `.gz`).
+   */
   const onSelectFiles = (list: FileList | null) => {
     if (!list) return;
     const arr = Array.from(list).filter((f) => {
@@ -283,6 +316,7 @@ export function ImportHistory() {
     });
   };
 
+  /** Copy the guide's archive command and show a check mark for 1.5 seconds. */
   const copyArchiveCmd = async () => {
     if (!guide) return;
     try {
@@ -316,6 +350,7 @@ export function ImportHistory() {
 
   const totalSize = files.reduce((s, f) => s + f.size, 0);
 
+  /** Switch provider, clearing the chosen folder and files. Ignored while an import is running. */
   const chooseProvider = (next: RunProvider) => {
     if (next === provider || running) return;
     setProvider(next);
@@ -781,13 +816,17 @@ export function ImportHistory() {
   );
 }
 
+/** Numbered step in the import guide: a title, explanation, and optional content. */
 function Step({
   title,
   body,
   children,
 }: {
+  /** Step title. */
   title: string;
+  /** Step explanation. */
   body: string;
+  /** Optional content under the explanation, such as a command. */
   children?: React.ReactNode;
 }) {
   return (
@@ -799,6 +838,7 @@ function Step({
   );
 }
 
+/** Selectable card for one import method. */
 function ModeButton({
   active,
   icon,
@@ -806,10 +846,15 @@ function ModeButton({
   desc,
   onClick,
 }: {
+  /** Whether this method is selected. */
   active: boolean;
+  /** Icon element. */
   icon: React.ReactNode;
+  /** Method name. */
   title: string;
+  /** One-line description. */
   desc: string;
+  /** Selects the method. */
   onClick: () => void;
 }) {
   return (
@@ -834,6 +879,7 @@ function ModeButton({
   );
 }
 
+/** Provider tab (Claude Code or Codex) with an optional badge. */
 function ProviderTab({
   active,
   icon,
@@ -841,10 +887,15 @@ function ProviderTab({
   badge,
   onClick,
 }: {
+  /** Whether this provider is selected. */
   active: boolean;
+  /** Icon element. */
   icon: React.ReactNode;
+  /** Provider name. */
   label: string;
+  /** Optional badge, such as BETA. */
   badge?: string;
+  /** Selects the provider. */
   onClick: () => void;
 }) {
   return (
@@ -870,6 +921,7 @@ function ProviderTab({
   );
 }
 
+/** One counter in the import result summary. */
 function ResultStat({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <div className="bg-surface-2 rounded-md px-2.5 py-2">
@@ -879,6 +931,12 @@ function ResultStat({ label, value, color }: { label: string; value: number; col
   );
 }
 
+/**
+ * Human-readable size in B, KB, MB, or GB.
+ *
+ * @param bytes - Size in bytes.
+ * @returns The formatted size.
+ */
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;

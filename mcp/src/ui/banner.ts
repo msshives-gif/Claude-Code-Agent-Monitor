@@ -99,17 +99,28 @@ export function printBanner(): void {
 /** Prints a boxed config summary beneath the banner, shared by HTTP (`port`
  * set) and REPL (`port` omitted). Mutations/Destructive rows mirror the
  * `policy/tool-guards.ts` flags, warning-colored when enabled. Ends with a
- * reminder that the dashboard must already be running at the printed URL. */
+ * reminder that the dashboard must already be running at the printed URL.
+ *
+ * @param info - Values to show in the panel.
+ */
 export function printServerInfo(info: {
+  /** Transport description, for example `http (sse + streamable)`. */
   transport: string;
+  /** MCP server version. */
   version: string;
+  /** Dashboard base URL the tools call. */
   dashboard: string;
+  /** Listening port, for the HTTP transport. */
   port?: number;
+  /** Whether tools that change dashboard data are enabled (`allowMutations`). */
   mutations: boolean;
+  /** Whether destructive tools are enabled (`MCP_DASHBOARD_ALLOW_DESTRUCTIVE`, off by default). */
   destructive: boolean;
+  /** Number of registered tools. */
   tools: number;
 }): void {
   const divider = c.dim(c.cyan("─".repeat(62)));
+  /** Format one label/value line of the startup panel. */
   const line = (label: string, value: string) =>
     `  ${c.dim(c.cyan("│"))} ${c.label(label.padEnd(18))} ${value}`;
 
@@ -142,7 +153,10 @@ export function printServerInfo(info: {
 }
 
 /** Prints "Server ready" once the HTTP server has bound to its port; not
- * used by the REPL transport. */
+ * used by the REPL transport.
+ *
+ * @param transport - Transport description shown after the message.
+ */
 export function printReady(transport: string): void {
   const icon = "✔";
   process.stdout.write(

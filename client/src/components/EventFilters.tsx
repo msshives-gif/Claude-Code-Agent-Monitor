@@ -99,17 +99,34 @@ import { Search, X, Filter } from "lucide-react";
 import { api } from "../lib/api";
 import { DateTimePicker } from "./DateTimePicker";
 
+/**
+ * Filter state shared by the Activity Feed and the Session Detail events tab. Every list is an OR
+ * within itself, the different filters are combined with AND, and an empty list means no
+ * restriction.
+ */
 export type EventFiltersValue = {
+  /** Event types to include. */
   event_type: string[];
+  /** Tool names to include. */
   tool_name: string[];
+  /** Agent ids to include. */
   agent_id: string[];
+  /** Session ids to include. */
   session_id: string[];
+  /**
+   * Status presets (`working`, `waiting`, `completed`, `error`), expanded into event types by
+   * {@link expandStatusToEventTypes}.
+   */
   status: string[];
+  /** Free-text search over event summaries; pushed to the parent 300 ms after typing stops. */
   q: string;
+  /** Start of the time range (ISO string), or empty for no lower bound. */
   from: string;
+  /** End of the time range (ISO string), or empty for no upper bound. */
   to: string;
 };
 
+/** Filters with nothing selected. */
 export const EMPTY_FILTERS: EventFiltersValue = {
   event_type: [],
   tool_name: [],
@@ -121,6 +138,12 @@ export const EMPTY_FILTERS: EventFiltersValue = {
   to: "",
 };
 
+/**
+ * Whether no filter is active, so callers can hide the clear button and skip filtering.
+ *
+ * @param f - Filter state.
+ * @returns True when every list is empty and the search and time range are blank.
+ */
 export function isEmptyFilters(f: EventFiltersValue): boolean {
   return (
     f.event_type.length === 0 &&
@@ -134,18 +157,18 @@ export function isEmptyFilters(f: EventFiltersValue): boolean {
   );
 }
 
-// Status preset → event_type values. Inverts the FILTERABLE rows of
-// `statusFromEventType` in lib/event-grouping, which paints the badge on every
-// event row: every type listed here must badge as the status it is filed under,
-// or a preset silently stops matching what the user can see (a test asserts
-// exactly that). Cursor/Codex-native types are included, without which the
-// presets never match those provider rows (issue #310).
-//
-// The lifecycle/metadata types that reach "waiting" only through the mapping's
-// default — SessionStart, Notification, TurnDuration, codex_turn_aborted — are
-// deliberately absent, since filtering on them would return rows the user did
-// not ask for. That is also why "Idle" expands to nothing and therefore does
-// not restrict the query (same as no selection).
+/**
+ * Status preset to event types. Inverts the filterable rows of `statusFromEventType` in
+ * `lib/event-grouping`, which paints the badge on every event row: every type listed here must
+ * badge as the status it is filed under, or a preset silently stops matching what the user can see
+ * (a test asserts exactly that). Cursor and Codex native types are included; without them the
+ * presets never match those providers' rows (issue #310).
+ *
+ * The lifecycle and metadata types that reach `waiting` only through the mapping's default
+ * (SessionStart, Notification, TurnDuration, codex_turn_aborted) are deliberately absent, since
+ * filtering on them would return rows the user did not ask for. That is also why "Idle" expands to
+ * nothing and therefore does not restrict the query, the same as no selection.
+ */
 export const STATUS_TO_EVENT_TYPES: Record<string, string[]> = {
   working: [
     "PreToolUse",
@@ -172,12 +195,17 @@ export const STATUS_TO_EVENT_TYPES: Record<string, string[]> = {
   error: ["error", "APIError", "codex_error"],
 };
 
+/** Status presets offered as chips, in display order. */
 export const STATUS_OPTIONS = ["working", "waiting", "completed", "error"] as const;
 
-// Expand the selected status presets into a union of event_type values. The
-// consumer merges this with any explicit event_type selection so both layers
-// can be combined (selecting "Working" AND a specific event_type still works
-// as an OR inside the single `event_type` API param).
+/**
+ * Expand the selected status presets into the union of their event types. The consumer merges this
+ * with any explicit event type selection, so both can be combined: selecting "Working" and a
+ * specific event type is still an OR inside the single `event_type` API parameter.
+ *
+ * @param statuses - Selected presets.
+ * @returns De-duplicated event types.
+ */
 export function expandStatusToEventTypes(statuses: string[]): string[] {
   const out = new Set<string>();
   for (const s of statuses) {
@@ -187,19 +215,31 @@ export function expandStatusToEventTypes(statuses: string[]): string[] {
   return Array.from(out);
 }
 
+/** Props for {@link EventFilters}. */
 type EventFiltersProps = {
+  /** Current filters (controlled). */
   value: EventFiltersValue;
+  /** Called with the full new filter state on every change. */
   onChange: (next: EventFiltersValue) => void;
-  // If set, hides the session filter - useful inside SessionDetail where the
-  // session is already implicit.
+  /**
+   * Hides the session filter. Used inside Session Detail, where the session is already implicit.
+   */
   hideSessionFilter?: boolean;
-  // Optional pre-known agent ids (SessionDetail passes the agents from its
-  // parent query instead of fetching /agents again).
+  /**
+   * Agent choices supplied by the parent. Session Detail passes the agents it already loaded
+   * instead of the component fetching them again.
+   */
   agentOptions?: Array<{ id: string; label: string }>;
-  // Optional pre-known session ids (ActivityFeed passes session options).
+  /** Session choices supplied by the parent. The Activity Feed passes these. */
   sessionOptions?: Array<{ id: string; label: string }>;
 };
 
+/**
+ * Filter toolbar for event lists: search box, status presets, event type and tool chips, agent and
+ * session pickers, and a time range. Event type and tool choices come from `/api/events/facets`; if
+ * that request fails, filtering still works through the search box. Search input is debounced by
+ * 300 ms and kept in sync when the parent clears the filters.
+ */
 export function EventFilters({
   value,
   onChange,
@@ -248,6 +288,7 @@ export function EventFilters({
     };
   }, []);
 
+  /** Toggle one value of a multi-select filter. */
   const toggle = (field: keyof EventFiltersValue, item: string) => {
     const current = value[field];
     if (!Array.isArray(current)) return;
@@ -348,6 +389,10 @@ export function EventFilters({
   );
 }
 
+/**
+ * Labelled group of toggle chips for one multi-select filter. Selected chips are highlighted, and
+ * `labels` can map raw values to display names.
+ */
 function ChipGroup({
   label,
   options,
@@ -355,10 +400,15 @@ function ChipGroup({
   onToggle,
   labels,
 }: {
+  /** Group label. */
   label: string;
+  /** Values offered. */
   options: string[];
+  /** Values currently selected. */
   selected: string[];
+  /** Called with the clicked value. */
   onToggle: (item: string) => void;
+  /** Display names for values, keyed by raw value. */
   labels?: Record<string, string>;
 }) {
   const { t } = useTranslation("common");
@@ -368,6 +418,7 @@ function ChipGroup({
   // Click-outside dismiss.
   useEffect(() => {
     if (!open) return;
+    /** Close the dropdown on a click outside it. */
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };

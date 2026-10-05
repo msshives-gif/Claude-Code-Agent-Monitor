@@ -67,6 +67,8 @@ import type { ToolContext } from "../../types/tool-context.js";
  * {@link assertMutationsEnabled} first. Agents mirror Claude Code's own
  * main-agent/subagent model: one main agent plus zero or more subagents
  * (`type: "subagent"`, optional `subagent_type`, linked via `parent_agent_id`).
+ *
+ * @param context - Shared tool context.
  */
 export function registerAgentTools(context: ToolContext): void {
   const { api, config } = context;

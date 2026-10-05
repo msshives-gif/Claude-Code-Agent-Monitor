@@ -91,12 +91,22 @@
 
 import { useCallback, useSyncExternalStore } from "react";
 
+/**
+ * localStorage key recording that the user has opened the command palette at least once, which
+ * retires the "press Cmd/Ctrl+K" hints.
+ */
 const STORAGE_KEY = "ccam-palette-discovered";
 
 /** In-memory mirror so a hint hides the instant the palette opens. */
 let discovered = read();
+/** Subscribers notified when the discovered flag changes. */
 const listeners = new Set<() => void>();
 
+/**
+ * Read the stored flag.
+ *
+ * @returns True once the palette has been opened; false when unset or storage is unavailable.
+ */
 function read(): boolean {
   try {
     return localStorage.getItem(STORAGE_KEY) === "1";
@@ -127,7 +137,12 @@ export function markPaletteDiscovered(): void {
   listeners.forEach((listener) => listener());
 }
 
-/** Subscribe to the one transition this store can make. */
+/**
+ * Subscribe to the one transition this store can make.
+ *
+ * @param listener - Called when the discovered flag changes.
+ * @returns A function that unsubscribes.
+ */
 export function subscribeToPaletteDiscovery(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
@@ -139,6 +154,7 @@ export function subscribeToPaletteDiscovery(listener: () => void): () => void {
  * @returns `false` once the palette has been opened, permanently.
  */
 export function useShowPaletteHint(): boolean {
+  /** Stable subscribe function for `useSyncExternalStore`. */
   const subscribe = useCallback(
     (listener: () => void) => subscribeToPaletteDiscovery(listener),
     []

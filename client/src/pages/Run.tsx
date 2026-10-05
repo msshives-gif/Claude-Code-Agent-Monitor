@@ -146,14 +146,29 @@ import { Select } from "../components/Select";
 
 // ── Stream-json envelope shapes (the bits we render) ──────────────────
 
+/**
+ * One content block inside a Claude stream-json message. Only the four block kinds the chat view
+ * renders are modelled: plain text, extended-thinking text, a tool invocation, and the tool result
+ * that answers it (which arrives inside a `user` message).
+ */
 type ContentBlock =
   | { type: "text"; text: string }
   | { type: "thinking"; thinking?: string }
   | { type: "tool_use"; id: string; name: string; input: unknown }
   | { type: "tool_result"; tool_use_id: string; content: unknown; is_error?: boolean };
 
+/**
+ * Canonical `assistant` envelope from `claude --output-format stream-json`: one complete assistant
+ * message. Its `usage` block feeds the token meter, and `message.content` may be a plain string or
+ * an array of {@link ContentBlock}s.
+ */
 interface AssistantMessage {
+  /** Envelope discriminator. */
   type: "assistant";
+  /**
+   * The Anthropic Messages API message the CLI forwarded. `usage` carries the per-turn input,
+   * output, and cache token counts used by {@link computeTokens}.
+   */
   message?: {
     content?: ContentBlock[] | string;
     usage?: {
@@ -164,31 +179,75 @@ interface AssistantMessage {
     };
   };
 }
+/**
+ * A `user` envelope. Besides prompts the user typed, the CLI emits one of these for every tool
+ * result, with `tool_result` blocks in `message.content`.
+ */
 interface UserMessage {
+  /** Envelope discriminator. */
   type: "user";
+  /**
+   * Prompt text, or the `tool_result` blocks that answer the previous assistant turn's tool calls.
+   */
   message?: { content?: ContentBlock[] | string };
 }
+/**
+ * The `system`/`init` envelope the CLI emits once at startup, describing the session it opened. The
+ * chat view does not render it; its fields are surfaced in the toolbar and its `model` sizes the
+ * context meter.
+ */
 interface SystemInit {
+  /** Envelope discriminator. */
   type: "system";
+  /** System envelope subtype; only `init` is modelled. */
   subtype: "init";
+  /**
+   * Claude Code session id the run is writing to. Used to link the run to its session and to resume
+   * it later.
+   */
   session_id?: string;
+  /**
+   * Model the CLI resolved for this session. A `[1m]` suffix tells the meter to size for a 1M-token
+   * context window.
+   */
   model?: string;
+  /** Working directory the CLI is running in. */
   cwd?: string;
+  /** Tool names available to the session. */
   tools?: string[];
+  /** Effective `--permission-mode` for the session. */
   permissionMode?: string;
 }
+/**
+ * The final `result` envelope the CLI emits when a turn (headless run) finishes. Drives the footer
+ * summary: success or error, duration, cost, and turn count.
+ */
 interface ResultEnvelope {
+  /** Envelope discriminator. */
   type: "result";
+  /** Outcome subtype, for example `success` or an error subtype. */
   subtype?: string;
+  /** True when the run ended in an error; the footer switches to its red error style. */
   is_error?: boolean;
+  /** Wall-clock duration of the turn in milliseconds, shown in the footer. */
   duration_ms?: number;
+  /** Time spent waiting on the API, in milliseconds. */
   duration_api_ms?: number;
+  /** Number of model turns the run took, including tool round trips. */
   num_turns?: number;
+  /** Final assistant text of the run. */
   result?: string;
+  /** Session id the run wrote to. */
   session_id?: string;
+  /** Cost of the run in USD as computed by the CLI. */
   total_cost_usd?: number;
+  /** Final token totals for the run. */
   usage?: { input_tokens?: number; output_tokens?: number };
 }
+/**
+ * Any envelope the Run page may hold in its log. The last member is a catch-all so unknown envelope
+ * types survive merging and can be shown as raw JSON by {@link UnknownTurn}.
+ */
 type Envelope =
   | AssistantMessage
   | UserMessage
@@ -196,18 +255,39 @@ type Envelope =
   | ResultEnvelope
   | { type: string; [k: string]: unknown };
 
+/**
+ * A Codex app-server notification forwarded by the server, for example `item/agentMessage/delta` or
+ * `item/completed`. {@link mergeEnvelope} folds these into the synthetic `codex_assistant`,
+ * `codex_reasoning`, and `codex_tool` entries the chat view renders.
+ */
 interface CodexEventEnvelope {
+  /** Envelope discriminator. */
   type: "codex_event";
+  /** App-server JSON-RPC notification method name. */
   method: string;
+  /** Notification payload, for example `{ itemId, delta }` or `{ item }`. */
   params?: Record<string, unknown>;
 }
 
-// Convert past-session transcript messages into envelope shapes so the chat
-// view can render the prior conversation alongside live output from the
-// resumed run. The shapes are close but not identical (`thinking.text` vs
-// `thinking.thinking`, tool_result `id`/`output` vs `tool_use_id`/`content`),
-// so each block is mapped individually.
+/**
+ * Convert past-session transcript messages into envelope shapes so the chat view can render the
+ * prior conversation alongside live output from the resumed run. The shapes are close but not
+ * identical (`thinking.text` vs `thinking.thinking`, tool_result `id`/`output` vs
+ * `tool_use_id`/`content`), so each block is mapped individually.
+ *
+ * @param messages - Transcript messages from `/api/sessions/:id/transcript`.
+ * @returns Envelopes in transcript order, preceded by a synthetic `system`/`init` envelope carrying
+ * the first assistant model (when known) so the context meter is sized correctly before any live
+ * envelope arrives.
+ */
 function transcriptToEnvelopes(messages: TranscriptMessage[]): Envelope[] {
+  /**
+   * Map one transcript content block to its stream-json equivalent, renaming the fields that
+   * differ. Unknown block kinds are dropped.
+   *
+   * @param b - Transcript content block.
+   * @returns The stream-json block, or null for unknown kinds.
+   */
   const mapBlock = (b: TranscriptContent): ContentBlock | null => {
     if (b.type === "text") return { type: "text", text: b.text || "" };
     if (b.type === "thinking") return { type: "thinking", thinking: b.text || "" };
@@ -261,8 +341,19 @@ function transcriptToEnvelopes(messages: TranscriptMessage[]): Envelope[] {
 // content is identical at that point, but the final envelope has authoritative
 // usage / metadata).
 
+/**
+ * A partial-message `stream_event` envelope (emitted with `--include-partial-messages`). Wraps one
+ * Anthropic streaming event such as `message_start`, `content_block_delta`, or `message_stop`,
+ * which {@link mergeEnvelope} uses to grow a placeholder assistant message token by token.
+ */
 interface StreamEventEnvelope {
+  /** Envelope discriminator. */
   type: "stream_event";
+  /**
+   * The wrapped Anthropic streaming event. `index` addresses the content block being streamed,
+   * `delta` carries the text, thinking, or partial tool-input JSON to append, and `message.id` ties
+   * the event to its assistant message.
+   */
   event?: {
     type: string;
     index?: number;
@@ -284,13 +375,31 @@ interface StreamEventEnvelope {
   };
 }
 
+/**
+ * A content block while it is still streaming. `_partialJson` buffers the raw `input_json_delta`
+ * fragments of a tool call until they parse as complete JSON.
+ */
 type StreamingAssistantBlock = ContentBlock & {
   _partialJson?: string;
 };
 
+/**
+ * The placeholder assistant message built from `stream_event`s before the canonical `assistant`
+ * envelope arrives. `_streaming` stays true until `message_stop`, which keeps the typewriter effect
+ * revealing text gradually.
+ */
 interface StreamingAssistantMessage {
+  /**
+   * Envelope discriminator; shares `assistant` with the canonical envelope so both render through
+   * {@link AssistantTurn}.
+   */
   type: "assistant";
+  /** Optional client-side stream id. */
   _streamId?: string;
+  /**
+   * Message under construction. `id` matches the Anthropic message id from `message_start`, and
+   * `_streaming` is cleared by `message_stop`.
+   */
   message: {
     id?: string;
     content: StreamingAssistantBlock[];
@@ -298,6 +407,12 @@ interface StreamingAssistantMessage {
   };
 }
 
+/**
+ * Find the most recent assistant message that is still streaming.
+ *
+ * @param prev - Current envelope log.
+ * @returns Its index, or -1 when no assistant message is streaming.
+ */
 function findLastStreamingAssistant(prev: Envelope[]): number {
   for (let i = prev.length - 1; i >= 0; i--) {
     const env = prev[i] as { type?: string; message?: { _streaming?: boolean } };
@@ -306,6 +421,14 @@ function findLastStreamingAssistant(prev: Envelope[]): number {
   return -1;
 }
 
+/**
+ * Find the most recent synthetic `codex_assistant` entry for one Codex item, so deltas for that
+ * item append to it instead of starting a new bubble.
+ *
+ * @param prev - Current envelope log.
+ * @param itemId - App-server item id from the notification.
+ * @returns Its index, or -1 when the item has no entry yet.
+ */
 function findLastCodexAssistant(prev: Envelope[], itemId: string): number {
   for (let i = prev.length - 1; i >= 0; i--) {
     const candidate = prev[i] as { type?: string; itemId?: string };
@@ -314,6 +437,15 @@ function findLastCodexAssistant(prev: Envelope[], itemId: string): number {
   return -1;
 }
 
+/**
+ * Find the assistant message a streaming event belongs to. Matches on the Anthropic message id when
+ * the event carries one and falls back to the latest still-streaming message otherwise, because not
+ * every stream event repeats the id.
+ *
+ * @param prev - Current envelope log.
+ * @param id - Message id from the event, if any.
+ * @returns The index of the matching assistant envelope, or -1.
+ */
 function findAssistantByMessageId(prev: Envelope[], id: string | undefined): number {
   if (!id) return findLastStreamingAssistant(prev);
   for (let i = prev.length - 1; i >= 0; i--) {
@@ -323,6 +455,15 @@ function findAssistantByMessageId(prev: Envelope[], id: string | undefined): num
   return findLastStreamingAssistant(prev);
 }
 
+/**
+ * Immutably replace the assistant message at `idx` with `fn(message)`. Returns `prev` unchanged
+ * when `idx` is negative, so callers can pass the result of a lookup straight through.
+ *
+ * @param prev - Current envelope log.
+ * @param idx - Index of a {@link StreamingAssistantMessage}.
+ * @param fn - Produces the updated message from the current one.
+ * @returns A new envelope array, or `prev` itself when nothing matched.
+ */
 function mutateAssistantAt(
   prev: Envelope[],
   idx: number,
@@ -338,6 +479,23 @@ function mutateAssistantAt(
   return next;
 }
 
+/**
+ * Reducer that folds one incoming WebSocket envelope into the Run page's envelope log.
+ *
+ * - Codex app-server notifications become synthetic `codex_assistant` (streamed text, appended per
+ * item), `codex_reasoning`, and `codex_tool` (command execution and file change) entries.
+ * - Claude `stream_event`s grow a placeholder assistant message block by block. `message_start` and
+ * `message_delta` envelopes are also kept in the log because they carry the only live token usage
+ * the meter can read.
+ * - A canonical `assistant` envelope replaces its placeholder. While the placeholder is still
+ * streaming, its delta-built content is kept unless the canonical message has more blocks, because
+ * the canonical envelope can omit an already-streamed thinking block.
+ * - Everything else is appended as-is.
+ *
+ * @param prev - Current envelope log (never mutated).
+ * @param envelope - The envelope from a `run_stream` message.
+ * @returns The next envelope log.
+ */
 function mergeEnvelope(prev: Envelope[], envelope: Envelope): Envelope[] {
   if (!envelope || typeof envelope !== "object") return prev;
   const env = envelope as { type?: string };
@@ -554,6 +712,9 @@ function mergeEnvelope(prev: Envelope[], envelope: Envelope): Envelope[] {
  * The hook returns a derived envelope list with each actively-streaming
  * text/thinking block clamped to a displayed length that grows toward the
  * server's target via requestAnimationFrame.
+ *
+ * @param envelopes - Envelope log as received.
+ * @returns The log with streaming text and thinking clamped to what has been revealed so far.
  */
 function useTypewriterEnvelopes(envelopes: Envelope[]): Envelope[] {
   const lengthsRef = useRef<Map<string, number>>(new Map());
@@ -676,6 +837,21 @@ function useTypewriterEnvelopes(envelopes: Envelope[]): Envelope[] {
 
 // ── Page ──────────────────────────────────────────────────────────────
 
+/**
+ * The Run Agent page (`/run`): launch Claude Code or Codex from the browser and chat with the run
+ * live.
+ *
+ * On every visit it first asks which provider to run, then shows the config card (prompt, mode,
+ * model, effort, permission or approval and sandbox settings, working directory, and an optional
+ * session to resume). Once a run starts, it switches to the live chat view, which is fed by
+ * `run_stream`, `run_status`, and `run_input_ack` WebSocket messages and merged by {@link
+ * mergeEnvelope}.
+ *
+ * It also keeps the active-run list and persistent run history fresh: a background poll, refresh on
+ * tab focus, and WebSocket status updates. It handles deep links: `?session=<id>` attaches to that
+ * session's live run, and `?prompt=` (plus `?autostart=1` for Tabby's Ask handoff) prefills or
+ * auto-starts a run.
+ */
 export function Run() {
   const { t } = useTranslation("run");
   const navigate = useNavigate();
@@ -794,6 +970,10 @@ export function Run() {
     setResumeSession(null);
   }, [provider]);
 
+  /**
+   * Refresh both the live run list and the 50 most recent history rows. Failures are ignored; the
+   * next poll or WebSocket update catches up.
+   */
   const refreshList = useCallback(() => {
     api.run
       .list()
@@ -821,6 +1001,7 @@ export function Run() {
   // current state of every run without waiting for the next poll.
   useEffect(() => {
     const onFocus = () => refreshList();
+    /** Refresh when the tab becomes visible again. */
     const onVis = () => {
       if (document.visibilityState === "visible") refreshList();
     };
@@ -988,6 +1169,11 @@ export function Run() {
     followUpRef.current = followUp;
   }, [followUp]);
 
+  /**
+   * Start a run from the form. Resumes always use conversation mode, and user or project slash
+   * commands are expanded client-side so the model receives the rendered template, as the CLI does.
+   * The prompt is shown in the chat immediately, before the CLI echoes it.
+   */
   const start = useCallback(async () => {
     if (!prompt.trim() || busy) return;
     setBusy("start");
@@ -1036,6 +1222,11 @@ export function Run() {
     slashCommands,
   ]);
 
+  /**
+   * Attach the chat view to an existing run, loading its buffered envelopes. For a resumed run the
+   * spawner only has output since the resume, so when the session's transcript on disk has more
+   * messages, the transcript is used instead to show the full conversation.
+   */
   const attachToRun = useCallback(
     async (id: string) => {
       if (busy) return;
@@ -1170,6 +1361,7 @@ export function Run() {
     void start();
   }, [binaryStatus, prompt, cwd, busy, handle, start]);
 
+  /** Send the follow-up message to the running process, expanding slash commands first. */
   const send = useCallback(async () => {
     if (!handle || !followUp.trim() || busy) return;
     setBusy("send");
@@ -1188,6 +1380,7 @@ export function Run() {
     }
   }, [handle, followUp, busy, t, slashCommands]);
 
+  /** Kill the running process. */
   const stop = useCallback(async () => {
     if (!handle || busy) return;
     setBusy("stop");
@@ -1202,6 +1395,7 @@ export function Run() {
     }
   }, [handle, busy, t]);
 
+  /** Leave the current run and return to an empty new-run form. */
   const newRun = useCallback(() => {
     setHandle(null);
     setEnvelopes([]);
@@ -1353,8 +1547,19 @@ export function Run() {
 
 // ── Limitations banner (above the config card) ────────────────────────
 
+/**
+ * localStorage key remembering that the user minimized the in-browser limitations banner. The `-v1`
+ * suffix lets a future rewrite of the banner show it again.
+ */
 const LIMITATIONS_MINIMIZED_KEY = "run-limitations-minimized-v1";
 
+/**
+ * Collapsible notice explaining what differs between running Claude here and in a terminal. The
+ * page spawns the same `claude` binary, but over one-way stream-json, so interactive TUI features
+ * (in-place permission prompts, the keybinding overlay, mid-session config changes) must be set at
+ * spawn time. Remembers the minimized state per browser via {@link LIMITATIONS_MINIMIZED_KEY};
+ * storage failures fall back to showing the banner.
+ */
 function LimitationsBanner() {
   const { t } = useTranslation("run");
   const [minimized, setMinimized] = useState(() => {
@@ -1365,6 +1570,11 @@ function LimitationsBanner() {
     }
   });
   const [expanded, setExpanded] = useState(false);
+  /**
+   * Store the minimized state and apply it; storage failures are ignored.
+   *
+   * @param v - True to minimize.
+   */
   const persistMinimized = (v: boolean) => {
     try {
       localStorage.setItem(LIMITATIONS_MINIMIZED_KEY, v ? "1" : "0");
@@ -1374,6 +1584,7 @@ function LimitationsBanner() {
     setMinimized(v);
   };
   const minimize = () => persistMinimized(true);
+  /** Show the full banner again, collapsed to its summary. */
   const restore = () => {
     persistMinimized(false);
     setExpanded(false);
@@ -1504,15 +1715,31 @@ function LimitationsBanner() {
 
 // ── Token / context-window meter ──────────────────────────────────────
 
+/**
+ * Token totals shown by the run's context meter, rolled up from the envelope log by {@link
+ * computeTokens}.
+ */
 interface TokenStats {
+  /** Uncached input tokens of the latest turn's prompt. */
   inputTokens: number;
+  /** Output tokens generated so far. */
   outputTokens: number;
+  /** Prompt tokens served from the prompt cache in the latest turn. */
   cacheReadTokens: number;
+  /** Prompt tokens written to the prompt cache in the latest turn. */
   cacheCreationTokens: number;
+  /** Run cost in USD from the final `result` envelope, or null while the run is still going. */
   costUsd: number | null;
+  /**
+   * Context window the model reported (1M-context variants report it), or null to use {@link
+   * DEFAULT_CONTEXT_WINDOW}.
+   */
   contextWindow: number | null;
 }
 
+/**
+ * Context window assumed when the model does not report one: the standard 200K-token Claude window.
+ */
 const DEFAULT_CONTEXT_WINDOW = 200_000;
 
 /**
@@ -1521,6 +1748,9 @@ const DEFAULT_CONTEXT_WINDOW = 200_000;
  * during streaming) and the canonical `result.usage` envelope when the run
  * finishes. The 1M-context Opus variants emit `contextWindow` in
  * `result.modelUsage`; we surface that to size the meter correctly.
+ *
+ * @param envelopes - Envelope log.
+ * @returns Token totals for the meter.
  */
 function computeTokens(envelopes: Envelope[]): TokenStats {
   // Per-turn rolling counters (overwritten as each new turn's message_start
@@ -1546,6 +1776,10 @@ function computeTokens(envelopes: Envelope[]): TokenStats {
   let outputAuthoritativeForCurrent = false;
   let streamingChars = 0;
 
+  /**
+   * Close out the current turn: add its output tokens to the completed total and reset the per-turn
+   * counters.
+   */
   const commitTurn = () => {
     completedOutputTokens += currentTurnOutput;
     currentTurnOutput = 0;
@@ -1695,6 +1929,13 @@ function computeTokens(envelopes: Envelope[]): TokenStats {
   };
 }
 
+/**
+ * Compact token count for the meter: plain below 1,000, one decimal in thousands below 100K
+ * (`12.3k`), whole thousands below 1M (`456k`), and two decimals in millions above (`1.25M`).
+ *
+ * @param n - Token count.
+ * @returns The formatted string.
+ */
 function formatNum(n: number): string {
   if (n < 1000) return String(n);
   if (n < 100_000) return (n / 1000).toFixed(1) + "k";
@@ -1702,6 +1943,13 @@ function formatNum(n: number): string {
   return (n / 1_000_000).toFixed(2) + "M";
 }
 
+/**
+ * Context-window meter shown under the chat. Fills by the latest turn's prompt size (input plus
+ * cache read plus cache write) against the model's context window, turning amber at 80% and red at
+ * 95%.
+ *
+ * @param props.stats - Rolled-up token totals from {@link computeTokens}.
+ */
 function TokenMeter({ stats }: { stats: TokenStats }) {
   const { t } = useTranslation("run");
   const total = stats.inputTokens + stats.cacheReadTokens + stats.cacheCreationTokens;
@@ -1762,16 +2010,29 @@ function TokenMeter({ stats }: { stats: TokenStats }) {
 
 // ── Slash commands (built-in list + user/project/plugin from API) ─────
 
+/** One slash command offered by the prompt editor's `/` autocomplete. */
 interface SlashCommand {
+  /** Command name without the leading slash. */
   name: string;
+  /** One-line description shown next to the name. */
   description?: string;
+  /**
+   * Where the command comes from. `builtin` commands are handled by the interactive CLI and are not
+   * executed when sent over stream-json; `user`, `project`, and `plugin` commands are markdown
+   * files the page expands before sending.
+   */
   source: "builtin" | "user" | "project" | "plugin";
+  /**
+   * Path of the command's markdown file, read by {@link maybeExpandSlashCommand} to expand the
+   * command into its prompt text. Absent for built-ins.
+   */
   filePath?: string;
 }
 
-// Built-in commands the CLI handles itself. We surface them in autocomplete
-// with a "CLI only" tag so users know they won't actually execute when
-// sent over stream-json stdin.
+/**
+ * Built-in commands the interactive CLI handles itself. They appear in autocomplete with a "CLI
+ * only" tag so users know they will not actually execute when sent over stream-json stdin.
+ */
 const BUILTIN_SLASH_COMMANDS: SlashCommand[] = [
   { name: "help", description: "List available commands", source: "builtin" },
   { name: "clear", description: "Clear the conversation", source: "builtin" },
@@ -1795,6 +2056,12 @@ const BUILTIN_SLASH_COMMANDS: SlashCommand[] = [
   { name: "output-style", description: "Change output style", source: "builtin" },
 ];
 
+/**
+ * Badge text for a slash command's source in the autocomplete list.
+ *
+ * @param s - Command source.
+ * @returns `CLI only` for built-ins, otherwise the source name.
+ */
 function commandSourceLabel(s: SlashCommand["source"]): string {
   return s === "builtin"
     ? "CLI only"
@@ -1805,6 +2072,13 @@ function commandSourceLabel(s: SlashCommand["source"]): string {
         : "plugin";
 }
 
+/**
+ * Tailwind badge classes for a slash command's source: gray for built-ins, sky for user, emerald
+ * for project, and violet for plugin commands.
+ *
+ * @param s - Command source.
+ * @returns Class names for the source badge.
+ */
 function commandSourceTone(s: SlashCommand["source"]): string {
   return s === "builtin"
     ? "bg-gray-500/10 text-gray-400 border-gray-500/30"
@@ -1821,6 +2095,10 @@ function commandSourceTone(s: SlashCommand["source"]): string {
  * `$ARGUMENTS` with whatever the user typed after the command name. If the
  * command isn't user-defined (built-in or unknown), returns the original
  * text unchanged so it still gets sent (the model will see it as text).
+ *
+ * @param text - Text the user is about to send.
+ * @param commands - Known slash commands.
+ * @returns The expanded prompt, or the original text.
  */
 async function maybeExpandSlashCommand(text: string, commands: SlashCommand[]): Promise<string> {
   const trimmed = text.trimStart();
@@ -1846,12 +2124,24 @@ async function maybeExpandSlashCommand(text: string, commands: SlashCommand[]): 
 
 // ── Autocomplete dropdown for slash + @-files ─────────────────────────
 
+/**
+ * Which autocomplete popup is open in the prompt editor and what it is completing. Derived from the
+ * text around the caret by {@link detectAutocomplete}.
+ */
 interface AutocompleteState {
+  /**
+   * `slash` completes `/command` names; `file` completes `@path` file references in the run's
+   * working directory.
+   */
   kind: "slash" | "file";
+  /** Text typed after the trigger character, used to filter suggestions. */
   query: string;
-  // The position in the textarea where the trigger character starts (so we
-  // can replace from there to the cursor on selection).
+  /**
+   * Offset in the textarea where the trigger character (`/` or `@`) starts, so accepting a
+   * suggestion replaces everything from there to the caret.
+   */
   triggerStart: number;
+  /** Caret offset when the popup state was computed. */
   cursor: number;
 }
 
@@ -1865,6 +2155,11 @@ interface AutocompleteState {
  *   5. Subsequence match across the name
  *   6. Description contains query - only when query is at least 3 chars,
  *      so a single keystroke can't drag in tangential descriptions.
+ *
+ * @param name - Command name.
+ * @param description - Command description, if any.
+ * @param q - Lowercased query.
+ * @returns A score, higher for better matches, or 0 for no match.
  */
 function scoreSlashMatch(name: string, description: string | undefined, q: string): number {
   if (!q) return 1;
@@ -1885,6 +2180,14 @@ function scoreSlashMatch(name: string, description: string | undefined, q: strin
   return 0;
 }
 
+/**
+ * Fuzzy match: true when every character of `q` appears in `s` in order, not necessarily adjacent
+ * (so `rvw` matches `review`).
+ *
+ * @param s - Candidate string.
+ * @param q - Query.
+ * @returns Whether `q` is a subsequence of `s`.
+ */
 function subsequenceMatch(s: string, q: string): boolean {
   let i = 0;
   for (let k = 0; k < s.length && i < q.length; k++) {
@@ -1893,6 +2196,15 @@ function subsequenceMatch(s: string, q: string): boolean {
   return i === q.length;
 }
 
+/**
+ * Work out whether the caret is inside an autocomplete trigger. Scans back from the caret to the
+ * start of the current whitespace-delimited token; a token starting with `/` opens slash-command
+ * completion and one starting with `@` opens file completion.
+ *
+ * @param value - Full textarea value.
+ * @param cursor - Caret offset.
+ * @returns The popup state, or null when the token is not a trigger.
+ */
 function detectAutocomplete(value: string, cursor: number): AutocompleteState | null {
   // Look back from the cursor to find the active "token". A token starts at
   // the beginning of the line / after whitespace and continues until cursor.
@@ -1914,17 +2226,33 @@ function detectAutocomplete(value: string, cursor: number): AutocompleteState | 
   return null;
 }
 
+/** Props for {@link PromptEditor}. */
 interface PromptEditorProps {
+  /** Current prompt text (controlled). */
   value: string;
+  /** Called with the new text on every edit, including accepted autocomplete suggestions. */
   onChange: (s: string) => void;
+  /** Called on Cmd/Ctrl+Enter. Omit to disable submit-by-keyboard. */
   onSubmit?: () => void;
+  /** Placeholder shown while the textarea is empty. */
   placeholder?: string;
+  /** Visible textarea rows; defaults to 4. */
   rows?: number;
+  /** Commands offered by `/` autocomplete. */
   slashCommands: SlashCommand[];
+  /** Working directory that `@` file suggestions are resolved against. */
   fileCwd: string;
+  /** Focus the textarea on mount. */
   autoFocus?: boolean;
 }
 
+/**
+ * Prompt textarea with inline autocomplete. Typing `/` suggests slash commands, ranked so prefix
+ * matches beat substring matches, name matches beat description matches, and project commands come
+ * before user, plugin, and built-in ones. Typing `@` suggests files under {@link
+ * PromptEditorProps.fileCwd} from `/api/run/files`, fetched with a 120 ms debounce. Arrow keys move
+ * the selection, Enter or Tab accepts, Escape closes the popup, and Cmd/Ctrl+Enter submits.
+ */
 function PromptEditor({
   value,
   onChange,
@@ -1992,6 +2320,12 @@ function PromptEditor({
     if (active >= items.length) setActive(Math.max(0, items.length - 1));
   }, [items.length, active]);
 
+  /**
+   * Replace the trigger token with the chosen suggestion (`/name` or `@path`), adding a space after
+   * it unless one already follows, then put the caret after it.
+   *
+   * @param choice - Chosen slash command, or a file path for `@` completion.
+   */
   const insertChoice = (choice: SlashCommand | string) => {
     if (!state || !taRef.current) return;
     const ta = taRef.current;
@@ -2016,6 +2350,10 @@ function PromptEditor({
     });
   };
 
+  /**
+   * Keyboard handling: with suggestions open, arrows move the selection, Enter or Tab accepts, and
+   * Escape closes; otherwise Cmd/Ctrl+Enter submits.
+   */
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (state && items.length > 0) {
       if (e.key === "ArrowDown") {
@@ -2052,6 +2390,7 @@ function PromptEditor({
     }
   };
 
+  /** Report the edit and re-detect whether the caret is in an autocomplete trigger. */
   const onTextareaInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     onChange(e.target.value);
     const ta = e.target;
@@ -2060,6 +2399,7 @@ function PromptEditor({
     if (!next) setActive(0);
   };
 
+  /** Re-detect the autocomplete trigger when the caret moves without typing. */
   const onSelect = (e: React.SyntheticEvent<HTMLTextAreaElement>) => {
     const ta = e.currentTarget;
     const next = detectAutocomplete(ta.value, ta.selectionStart || 0);
@@ -2147,6 +2487,10 @@ function PromptEditor({
 
 // ── Header ────────────────────────────────────────────────────────────
 
+/**
+ * Page header: title, the provider toggle (locked while a run is attached), WebSocket connection
+ * state, and the switcher that opens the combined list of live runs and run history.
+ */
 function Header({
   provider,
   providerLocked,
@@ -2160,16 +2504,27 @@ function Header({
   onViewFromHistory,
   onRefresh,
 }: {
+  /** Provider currently selected. */
   provider: RunProvider;
+  /** Disable the provider toggle, while a run is attached. */
   providerLocked: boolean;
+  /** Switches provider. */
   onProviderChange: (provider: RunProvider) => void;
+  /** Live run list, for the runs switcher badge. */
   activeRuns: RunListResponse | null;
+  /** Id of the run shown in the chat, or null. */
   currentHandleId: string | null;
+  /** Attaches to a live run. */
   onAttach: (id: string) => void;
+  /** Live WebSocket state. */
   wsConnected: boolean;
+  /** Persisted run history. */
   runHistory: DashboardRunHistoryItem[];
+  /** Resumes a past run. */
   onResumeFromHistory: (item: DashboardRunHistoryItem) => void;
+  /** Views a past headless run read-only. */
   onViewFromHistory: (item: DashboardRunHistoryItem) => void;
+  /** Refreshes the run list and history. */
   onRefresh: () => void;
 }) {
   const { t } = useTranslation("run");
@@ -2214,13 +2569,20 @@ function Header({
   );
 }
 
+/**
+ * Compact Claude Code / Codex pill toggle in the header. Codex carries a BETA tag. Disabled while a
+ * run is attached, since an attached run's provider cannot change.
+ */
 function RunProviderToggle({
   value,
   disabled,
   onChange,
 }: {
+  /** Selected provider. */
   value: RunProvider;
+  /** Disables both options. */
   disabled: boolean;
+  /** Called with the chosen provider. */
   onChange: (provider: RunProvider) => void;
 }) {
   const { t } = useTranslation("run");
@@ -2246,11 +2608,18 @@ function RunProviderToggle({
   );
 }
 
+/**
+ * Modal shown on every visit to the Run page asking which agent to run, Claude Code or Codex.
+ * Cancelling goes back to the previous page, or to the dashboard home when the page was opened
+ * directly, instead of defaulting to a provider.
+ */
 function ProviderChooser({
   onChoose,
   onCancel,
 }: {
+  /** Called with the chosen provider. */
   onChoose: (provider: RunProvider) => void;
+  /** Called when the dialog is dismissed without choosing. */
   onCancel: () => void;
 }) {
   const { t } = useTranslation("run");
@@ -2317,6 +2686,7 @@ function ProviderChooser({
   );
 }
 
+/** Status filter in the runs modal: `all` or one run lifecycle state. */
 type RunStatusFilter =
   | "all"
   | "running"
@@ -2325,21 +2695,47 @@ type RunStatusFilter =
   | "error"
   | "killed"
   | "abandoned";
+/** Mode filter in the runs modal. */
 type RunModeFilter = "all" | "conversation" | "headless";
 
+/**
+ * One row in the runs modal. Merges a live {@link RunHandle} and a persisted {@link
+ * DashboardRunHistoryItem} into one camelCase shape so the list can render both.
+ */
 interface UnifiedRunRow {
+  /**
+   * Run id; live handles and history rows with the same id are de-duplicated, keeping the live one.
+   */
   id: string;
+  /**
+   * Claude Code session the run wrote to, or null if never captured. Needed for Resume and View.
+   */
   sessionId: string | null;
+  /** Whether the run was a conversation or a one-shot headless run. */
   mode: RunMode;
+  /** Working directory the run used. */
   cwd: string;
+  /** Model passed to the CLI, or null for the CLI default. */
   model: string | null;
+  /** Lifecycle state. */
   status: RunStatus;
+  /** Start of the prompt, for the row's summary line. */
   promptPreview: string;
+  /** Start time, epoch milliseconds (0 when the stored timestamp cannot be parsed). */
   startedAt: number;
+  /** End time in epoch milliseconds, or null while running. */
   endedAt: number | null;
+  /**
+   * True while a live handle exists for the run, which enables Attach instead of Resume or View.
+   */
   isLive: boolean;
 }
 
+/**
+ * Header button that opens the runs modal, with a badge counting live runs. Builds the merged,
+ * newest-first row list from live handles and run history, locks page scroll while the modal is
+ * open, and closes it on Escape.
+ */
 function ActiveRunsSwitcher({
   activeRuns,
   currentHandleId,
@@ -2349,12 +2745,19 @@ function ActiveRunsSwitcher({
   onViewFromHistory,
   onRefresh,
 }: {
+  /** Live run list. */
   activeRuns: RunListResponse | null;
+  /** Id of the run shown in the chat, or null. */
   currentHandleId: string | null;
+  /** Attaches to a live run. */
   onAttach: (id: string) => void;
+  /** Persisted run history. */
   runHistory: DashboardRunHistoryItem[];
+  /** Resumes a past run. */
   onResumeFromHistory: (item: DashboardRunHistoryItem) => void;
+  /** Views a past headless run read-only. */
   onViewFromHistory: (item: DashboardRunHistoryItem) => void;
+  /** Refreshes the run list and history. */
   onRefresh: () => void;
 }) {
   const { t } = useTranslation("run");
@@ -2471,6 +2874,12 @@ function ActiveRunsSwitcher({
   );
 }
 
+/**
+ * Modal listing every run, live and historical, with status and mode filter chips plus a text
+ * search. It re-fetches immediately when opened and every 2 seconds while visible, so state changes
+ * from other tabs or server reconciliation show up quickly. Rows offer Attach for live runs, Resume
+ * for finished conversations, and View for finished headless runs.
+ */
 function RunsModal({
   rows,
   currentHandleId,
@@ -2481,13 +2890,21 @@ function RunsModal({
   onClose,
   onRefresh,
 }: {
+  /** Merged live and historical runs, newest first. */
   rows: UnifiedRunRow[];
+  /** Id of the run shown in the chat, or null. */
   currentHandleId: string | null;
+  /** Attaches to a live run. */
   onAttach: (id: string) => void;
+  /** Resumes a past run. */
   onResume: (item: DashboardRunHistoryItem) => void;
+  /** Views a past headless run read-only. */
   onView: (item: DashboardRunHistoryItem) => void;
+  /** Persisted run history, used to look up a row's history item. */
   runHistory: DashboardRunHistoryItem[];
+  /** Closes the modal. */
   onClose: () => void;
+  /** Refreshes the run list and history. */
   onRefresh: () => void;
 }) {
   const { t } = useTranslation("run");
@@ -2506,6 +2923,7 @@ function RunsModal({
     return () => clearInterval(tick);
   }, [onRefresh]);
 
+  /** Run counts per status and per mode, shown on the filter chips. */
   const counts = useMemo(() => {
     const byStatus: Record<string, number> = { all: rows.length };
     const byMode: Record<string, number> = { all: rows.length };
@@ -2516,6 +2934,10 @@ function RunsModal({
     return { byStatus, byMode };
   }, [rows]);
 
+  /**
+   * Rows matching the status and mode filters and the search text (prompt, working directory,
+   * session, or model).
+   */
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return rows.filter((r) => {
@@ -2528,6 +2950,7 @@ function RunsModal({
     });
   }, [rows, statusFilter, modeFilter, search]);
 
+  /** History items by run id, for the Resume and View actions. */
   const historyById = useMemo(() => {
     const m = new Map<string, DashboardRunHistoryItem>();
     for (const h of runHistory) m.set(h.id, h);
@@ -2686,15 +3109,25 @@ function RunsModal({
   );
 }
 
+/**
+ * Row of filter chips for one dimension in the runs modal. Each chip shows its match count, and
+ * options with no matches (other than `all`) are disabled.
+ *
+ * @typeParam T - Filter value type.
+ */
 function FilterChipGroup<T extends string>({
   label,
   value,
   options,
   onChange,
 }: {
+  /** Group label. */
   label: string;
+  /** Selected value. */
   value: T;
+  /** Options with their labels and match counts. */
   options: { value: T; label: string; count: number }[];
+  /** Called with the chosen value. */
   onChange: (v: T) => void;
 }) {
   return (
@@ -2725,6 +3158,12 @@ function FilterChipGroup<T extends string>({
   );
 }
 
+/**
+ * One row in the runs modal: status pill, mode badge, prompt preview, working directory, model, and
+ * start time, plus the action that fits the run. Live runs can be attached; finished conversation
+ * runs with a known session can be resumed; finished headless runs with a known session can be
+ * viewed read-only, since a one-shot run cannot be resumed.
+ */
 function UnifiedRunRowView({
   row,
   isCurrent,
@@ -2732,10 +3171,15 @@ function UnifiedRunRowView({
   onResume,
   onView,
 }: {
+  /** Run to show. */
   row: UnifiedRunRow;
+  /** Whether this run is the one shown in the chat. */
   isCurrent: boolean;
+  /** Attaches to the run. */
   onAttach: () => void;
+  /** Resumes the run. */
   onResume: () => void;
+  /** Views the run read-only. */
   onView: () => void;
 }) {
   const { t } = useTranslation("run");
@@ -2828,37 +3272,78 @@ function UnifiedRunRowView({
 
 // ── Config card (pre-run) ────────────────────────────────────────────
 
+/**
+ * Props for {@link ConfigCard}: the new-run form's controlled values and their change handlers,
+ * owned by the {@link Run} page.
+ */
 interface ConfigCardProps {
+  /** Provider the form is configuring; switches between Claude and Codex controls. */
   provider: RunProvider;
+  /** Selected run mode. */
   mode: RunMode;
+  /** Called when the user picks a different mode. */
   onModeChange: (m: RunMode) => void;
+  /** Prompt text. */
   prompt: string;
+  /** Called on prompt edits. */
   onPromptChange: (s: string) => void;
+  /** Working directory for the run. */
   cwd: string;
+  /** Called when the working directory changes. */
   onCwdChange: (s: string) => void;
+  /**
+   * Suggested directories for the cwd picker (home, the dashboard's own directory, and recent run
+   * directories).
+   */
   cwdSuggestions: CwdSuggestion[];
+  /** Selected model id; empty means the CLI default. */
   model: string;
+  /** Called when the model changes. */
   onModelChange: (s: string) => void;
+  /** Claude permission mode, or Codex approval policy when `provider` is `codex`. */
   permissionMode: PermissionMode | CodexApprovalPolicy;
+  /** Called when the permission mode or approval policy changes. */
   onPermissionModeChange: (m: PermissionMode | CodexApprovalPolicy) => void;
+  /** Codex sandbox mode (only shown for Codex). */
   sandbox: CodexSandbox;
+  /** Called when the sandbox mode changes. */
   onSandboxChange: (sandbox: CodexSandbox) => void;
+  /** Models offered by the model picker. */
   models: ModelChoice[];
+  /** True while the model list is being fetched. */
   modelsLoading: boolean;
+  /** Where the model list came from, shown as a hint under the picker. */
   modelsSource: string | null;
+  /** Selected reasoning effort; empty means the model default. */
   effort: EffortLevel;
+  /** Called when the effort changes. */
   onEffortChange: (e: EffortLevel) => void;
+  /** Whether the selected CLI binary was found on the server. Start is disabled when it was not. */
   binaryFound: boolean;
+  /** True while a start request is in flight. */
   busy: boolean;
+  /** Starts the run with the current form values. */
   onStart: () => void;
+  /** Live run counts, used to disable Start once the server's concurrency cap is reached. */
   activeRuns: RunListResponse | null;
+  /** Session chosen for `--resume`, or null for a fresh session. */
   resumeSession: Session | null;
+  /** Called when the resume session is picked or cleared. */
   onResumeSessionChange: (s: Session | null) => void;
+  /** Commands offered by the prompt editor's `/` autocomplete. */
   slashCommands: SlashCommand[];
+  /** Persisted run history, listed for quick resume. */
   runHistory: DashboardRunHistoryItem[];
+  /** Resumes a past run from the history list. */
   onResumeFromHistory: (item: DashboardRunHistoryItem) => void;
 }
 
+/**
+ * The new-run form. Provider-aware: Claude shows permission mode and every effort except `ultra`;
+ * Codex shows approval policy, sandbox mode, and only the efforts the selected model supports. In
+ * conversation mode it also offers starting fresh or resuming an earlier session, and disables
+ * Start when the CLI is missing or the concurrency cap is reached.
+ */
 function ConfigCard(props: ConfigCardProps) {
   const { t } = useTranslation("run");
   const providerLabel = t(
@@ -3148,15 +3633,20 @@ function ConfigCard(props: ConfigCardProps) {
   );
 }
 
+/** Large selectable button for one run mode, with a label and a one-line hint. */
 function ModeOption({
   active,
   label,
   hint,
   onClick,
 }: {
+  /** Whether this mode is selected. */
   active: boolean;
+  /** Mode name. */
   label: string;
+  /** One-line explanation. */
   hint: string;
+  /** Selects the mode. */
   onClick: () => void;
 }) {
   return (
@@ -3174,6 +3664,7 @@ function ModeOption({
   );
 }
 
+/** Small uppercase field label wrapped around a form control. */
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
@@ -3187,15 +3678,24 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 // ── CWD autocomplete ──────────────────────────────────────────────────
 
+/**
+ * Working-directory text input with a suggestion dropdown. Suggestions are filtered by path or
+ * label and grouped in a fixed order (home, dashboard, recent) to match the home-directory default
+ * the page pre-fills. Supports arrow-key navigation and closes on an outside click.
+ */
 function CwdAutocomplete({
   provider,
   value,
   onChange,
   suggestions,
 }: {
+  /** Provider the directory is for. */
   provider: RunProvider;
+  /** Directory path as typed. */
   value: string;
+  /** Called with the new path. */
   onChange: (s: string) => void;
+  /** Suggested directories. */
   suggestions: CwdSuggestion[];
 }) {
   const { t } = useTranslation("run");
@@ -3215,6 +3715,7 @@ function CwdAutocomplete({
     return () => document.removeEventListener("mousedown", onClick);
   }, [open]);
 
+  /** Suggestions whose path or label contains the typed text. */
   const filtered = useMemo(() => {
     const q = value.toLowerCase().trim();
     const out = suggestions.filter(
@@ -3240,12 +3741,21 @@ function CwdAutocomplete({
     if (active >= flat.length) setActive(Math.max(0, flat.length - 1));
   }, [flat.length, active]);
 
+  /**
+   * Use a suggestion, close the dropdown, and blur the input.
+   *
+   * @param s - Chosen suggestion.
+   */
   const choose = (s: CwdSuggestion) => {
     onChange(s.path);
     setOpen(false);
     inputRef.current?.blur();
   };
 
+  /**
+   * Keyboard handling: arrows open the dropdown and move the selection, Enter picks the highlighted
+   * suggestion, and Escape closes.
+   */
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
       setOpen(true);
@@ -3345,13 +3855,21 @@ function CwdAutocomplete({
 
 // ── Session picker (for resume) ───────────────────────────────────────
 
+/**
+ * Searchable picker for the session to resume. Loads the provider's 100 most recent sessions the
+ * first time it opens, filters by id, working directory, or status, and resets when the provider
+ * changes. Once a session is selected, it collapses to a summary with a clear button.
+ */
 function SessionPicker({
   provider,
   selected,
   onSelect,
 }: {
+  /** Provider whose sessions are listed. */
   provider: RunProvider;
+  /** Chosen session, or null. */
   selected: Session | null;
+  /** Called with the chosen session, or null when cleared. */
   onSelect: (s: Session | null) => void;
 }) {
   const { t } = useTranslation("run");
@@ -3384,6 +3902,7 @@ function SessionPicker({
     return () => document.removeEventListener("mousedown", onClick);
   }, [open]);
 
+  /** Sessions whose id, working directory, or status contains the search text. */
   const filtered = useMemo(() => {
     if (!sessions) return [];
     const q = query.toLowerCase().trim();
@@ -3496,10 +4015,18 @@ function SessionPicker({
 // The custom Select dropdown now lives in ../components/Select (shared with the
 // webhook settings form). Imported at the top of this file.
 
-// Sentinel option value for "Custom model…". Empty string is already taken by
-// the "inherit from settings" choice, so use a non-empty marker.
+/**
+ * Sentinel select value for the "Custom model…" option. The empty string is already taken by the
+ * "inherit from settings" choice, so a non-empty marker is used.
+ */
 const MODEL_CUSTOM = "__custom__";
 
+/**
+ * Model selector built on the shared `Select`, so it matches the permission and effort dropdowns.
+ * Lists the provider's models plus a "Custom model…" option that reveals a free-text input. A value
+ * not in the list is treated as custom, which keeps advanced CLI model aliases usable without a
+ * static catalog.
+ */
 function ModelPicker({
   provider,
   value,
@@ -3507,10 +4034,15 @@ function ModelPicker({
   models,
   loading,
 }: {
+  /** Provider whose models are listed. */
   provider: RunProvider;
+  /** Selected model id; empty for the CLI default. */
   value: string;
+  /** Called with the new model id. */
   onChange: (s: string) => void;
+  /** Models to offer. */
   models: ModelChoice[];
+  /** True while the model list loads. */
   loading: boolean;
 }) {
   const { t } = useTranslation("run");
@@ -3538,6 +4070,12 @@ function ModelPicker({
     [models, t]
   );
 
+  /**
+   * Handle a dropdown choice: the custom option reveals the free-text input; any other option
+   * selects that model.
+   *
+   * @param v - Chosen option value.
+   */
   const onSelect = (v: string) => {
     if (v === MODEL_CUSTOM) {
       setShowCustom(true);
@@ -3586,21 +4124,39 @@ function ModelPicker({
 
 // ── Live run session ─────────────────────────────────────────────────
 
+/** Props for {@link RunSession}, the live chat view of one run. */
 interface RunSessionProps {
+  /** The run being shown. */
   handle: RunHandle;
+  /** Envelope log to render, already smoothed by the typewriter hook. */
   envelopes: Envelope[];
+  /** Run mode. Only conversation runs accept follow-ups. */
   mode: RunMode;
+  /** True while the process is running, which shows Stop and the follow-up box. */
   isLive: boolean;
+  /** True once the run has exited, which shows the result footer. */
   hasFinished: boolean;
+  /** Follow-up message text. */
   followUp: string;
+  /** Called on follow-up edits. */
   onFollowUpChange: (s: string) => void;
+  /** Which action is currently in flight, used to disable buttons and show spinners. */
   busy: "start" | "send" | "stop" | "attach" | null;
+  /** Sends the follow-up message to the running process. */
   onSend: () => void;
+  /** Kills the running process. */
   onStop: () => void;
+  /** Returns to the new-run form. */
   onNewRun: () => void;
+  /** Commands offered by the follow-up editor's `/` autocomplete. */
   slashCommands: SlashCommand[];
 }
 
+/**
+ * Live chat view of one run: toolbar, scrolling transcript, context meter, result footer, and (for
+ * live conversation runs) the follow-up box. Auto-scrolls to new output only while the user is
+ * within 80px of the bottom, so reading earlier output is never interrupted.
+ */
 function RunSession(props: RunSessionProps) {
   const { t } = useTranslation("run");
   const providerLabel = t(
@@ -3614,6 +4170,7 @@ function RunSession(props: RunSessionProps) {
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
+    /** Track whether the user is within 80px of the bottom of the transcript. */
     const onScroll = () => {
       const distance = el.scrollHeight - (el.scrollTop + el.clientHeight);
       setPinnedToBottom(distance < 80);
@@ -3630,14 +4187,17 @@ function RunSession(props: RunSessionProps) {
     el.scrollTop = el.scrollHeight;
   }, [props.envelopes.length, pinnedToBottom]);
 
+  /** The run's final `result` envelope, once it has arrived. */
   const result = useMemo(
     () => props.envelopes.find((e) => e.type === "result") as ResultEnvelope | undefined,
     [props.envelopes]
   );
+  /** The run's `system`/`init` envelope, for the toolbar. */
   const init = useMemo(
     () => props.envelopes.find((e) => e.type === "system") as SystemInit | undefined,
     [props.envelopes]
   );
+  /** Token totals for the context meter. */
   const tokenStats = useMemo(() => computeTokens(props.envelopes), [props.envelopes]);
 
   return (
@@ -3736,6 +4296,10 @@ function RunSession(props: RunSessionProps) {
   );
 }
 
+/**
+ * Placeholder shown before the transcript has any envelopes: a spinner while the process is
+ * spawning, otherwise an empty-state message.
+ */
 function EmptyStream({ isLive }: { isLive: boolean }) {
   const { t } = useTranslation("run");
   if (isLive) {
@@ -3755,6 +4319,10 @@ function EmptyStream({ isLive }: { isLive: boolean }) {
   );
 }
 
+/**
+ * Colored status chip for a run lifecycle state. Spawning spins, running pulses, and unknown states
+ * fall back to a neutral idle style.
+ */
 function StatusPill({ status }: { status: string }) {
   const { t } = useTranslation("run");
   const idle = { color: "bg-surface-3 text-gray-400 border-border", icon: Clock as typeof Play };
@@ -3788,6 +4356,7 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
+/** Small badge showing whether a run is a conversation or a headless run. */
 function ModeBadge({ mode }: { mode: RunMode }) {
   const { t } = useTranslation("run");
   return (
@@ -3804,6 +4373,11 @@ function ModeBadge({ mode }: { mode: RunMode }) {
 
 // ── Envelope rendering ───────────────────────────────────────────────
 
+/**
+ * Render one envelope as a chat entry. `system`, `result`, and `stream_event` envelopes return null
+ * because their data is shown in the toolbar, footer, and meter instead; unknown types render as
+ * collapsible raw JSON.
+ */
 function EnvelopeRow({ envelope }: { envelope: Envelope }) {
   if (!envelope || typeof envelope !== "object") return null;
   switch (envelope.type) {
@@ -3829,6 +4403,10 @@ function EnvelopeRow({ envelope }: { envelope: Envelope }) {
   }
 }
 
+/**
+ * Chat bubble for streamed Codex assistant text, rendered as markdown, with a running tag while the
+ * item is still streaming.
+ */
 function CodexAssistantTurn({ env }: { env: { text?: string; streaming?: boolean } }) {
   const { t } = useTranslation("run");
   const text = env.text || "";
@@ -3853,6 +4431,10 @@ function CodexAssistantTurn({ env }: { env: { text?: string; streaming?: boolean
   );
 }
 
+/**
+ * Collapsible card for a Codex tool event (command execution or file changes). The header shows the
+ * command and its exit status; expanding shows the command, output, or the raw change set.
+ */
 function CodexToolEvent({ env }: { env: Record<string, unknown> }) {
   const [open, setOpen] = useState(false);
   const name = String(env.name || "Tool");
@@ -3885,6 +4467,12 @@ function CodexToolEvent({ env }: { env: Record<string, unknown> }) {
   );
 }
 
+/**
+ * Join the `text` blocks of a message's content.
+ *
+ * @param content - A string, an array of content blocks, or undefined.
+ * @returns The joined text, or an empty string.
+ */
 function extractText(content: ContentBlock[] | string | undefined): string {
   if (!content) return "";
   if (typeof content === "string") return content;
@@ -3894,6 +4482,10 @@ function extractText(content: ContentBlock[] | string | undefined): string {
     .join("\n");
 }
 
+/**
+ * Chat entry for a `user` envelope. A user envelope that only carries tool results renders as
+ * result cards; otherwise it renders as the user's prompt bubble.
+ */
 function UserTurn({ env }: { env: UserMessage }) {
   const { t } = useTranslation("run");
   const content = env.message?.content;
@@ -3930,6 +4522,10 @@ function UserTurn({ env }: { env: UserMessage }) {
   );
 }
 
+/**
+ * Chat entry for an `assistant` envelope: collapsible thinking blocks, the markdown reply, and a
+ * card per tool call.
+ */
 function AssistantTurn({ env }: { env: AssistantMessage }) {
   const { t } = useTranslation("run");
   const content = env.message?.content;
@@ -3970,6 +4566,7 @@ function AssistantTurn({ env }: { env: AssistantMessage }) {
   );
 }
 
+/** Collapsed-by-default block showing the model's extended thinking text. */
 function ThinkingBlock({ text }: { text: string }) {
   const { t } = useTranslation("run");
   const [open, setOpen] = useState(false);
@@ -3993,6 +4590,10 @@ function ThinkingBlock({ text }: { text: string }) {
   );
 }
 
+/**
+ * Collapsible card for one tool call: the tool name, a one-line summary of its main argument from
+ * {@link describeToolInput}, and the full input as JSON when expanded.
+ */
 function ToolUseBlock({ toolUse }: { toolUse: Extract<ContentBlock, { type: "tool_use" }> }) {
   const { t } = useTranslation("run");
   const [open, setOpen] = useState(false);
@@ -4022,6 +4623,10 @@ function ToolUseBlock({ toolUse }: { toolUse: Extract<ContentBlock, { type: "too
   );
 }
 
+/**
+ * Collapsible card for one tool result, flattening string, array, or object content to text and
+ * showing its line count. Error results use a red style.
+ */
 function ToolResultBlock({ result }: { result: Extract<ContentBlock, { type: "tool_result" }> }) {
   const { t } = useTranslation("run");
   const [open, setOpen] = useState(false);
@@ -4072,6 +4677,10 @@ function ToolResultBlock({ result }: { result: Extract<ContentBlock, { type: "to
   );
 }
 
+/**
+ * Fallback entry for an envelope type the page does not recognize, shown as collapsible raw JSON so
+ * nothing is silently dropped.
+ */
 function UnknownTurn({ env }: { env: Envelope }) {
   return (
     <details className="rounded-md border border-border bg-surface-2 px-2.5 py-1.5">
@@ -4085,6 +4694,10 @@ function UnknownTurn({ env }: { env: Envelope }) {
   );
 }
 
+/**
+ * Square letter avatar beside chat entries, in the accent color for the agent or indigo for the
+ * user.
+ */
 function Avatar({ tone, letter }: { tone: "accent" | "indigo"; letter: string }) {
   const cls =
     tone === "accent"
@@ -4099,6 +4712,13 @@ function Avatar({ tone, letter }: { tone: "accent" | "indigo"; letter: string })
   );
 }
 
+/**
+ * Pick the most telling argument of a tool call for its one-line summary, checking `file_path`,
+ * `path`, `command`, `pattern`, `url`, and `name` in that order.
+ *
+ * @param input - The tool call's input object.
+ * @returns The first non-empty string value, cut to 80 characters, or an empty string.
+ */
 function describeToolInput(input: unknown): string {
   if (!input || typeof input !== "object") return "";
   const obj = input as Record<string, unknown>;
@@ -4110,6 +4730,10 @@ function describeToolInput(input: unknown): string {
   return "";
 }
 
+/**
+ * Footer summarizing a finished run from its `result` envelope: success or error, duration, cost in
+ * USD, and turn count.
+ */
 function ResultFooter({ result }: { result: ResultEnvelope }) {
   const { t } = useTranslation("run");
   const isError = result.is_error;
@@ -4153,6 +4777,7 @@ function ResultFooter({ result }: { result: ResultEnvelope }) {
   );
 }
 
+/** One icon, label, and value item in the result footer. */
 function Stat({ icon: Icon, label, value }: { icon: typeof Clock; label: string; value: string }) {
   return (
     <span className="inline-flex items-center gap-1.5">

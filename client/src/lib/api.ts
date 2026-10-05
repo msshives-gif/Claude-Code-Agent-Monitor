@@ -414,8 +414,11 @@ import type {
 
 import { activeProvidersParam, activeSourcesParam } from "./dataScope";
 
-// Root path all endpoint paths are appended to. Kept relative (no host) so the
-// same client bundle works behind the Vite dev proxy and in same-origin prod.
+/**
+ * Root path every endpoint path is appended to. Kept relative (no host) so the same client bundle
+ * works behind the Vite dev proxy and in same-origin production, where the Express server serves
+ * both the built UI and `/api`.
+ */
 const BASE = "/api";
 
 /**
@@ -425,6 +428,9 @@ const BASE = "/api";
  * so changing a machine or product scope narrows the whole app without every
  * call site threading it. An all-machine / both-product selection yields no
  * added filter, so unscoped installs hit clean URLs.
+ *
+ * @param qs - Query parameters being built.
+ * @returns The same parameters with the scope applied.
  */
 function applyScope(qs: URLSearchParams): URLSearchParams {
   if (!qs.has("sources")) {
@@ -648,15 +654,28 @@ export const api = {
      *   row count and the effective paging window for building pager controls.
      */
     list: (params?: {
+      /** Lifecycle status to filter by (for example `active` or `completed`). */
       status?: string;
+      /** Free-text search matched server-side. */
       q?: string;
+      /** Working directories to include. */
       cwd?: string[];
+      /** Sort column: `time` (default), `duration`, or `price`. */
       sort_by?: string;
+      /** Sort descending; sent even when explicitly false. */
       sort_desc?: boolean;
+      /** Page size. */
       limit?: number;
+      /** Rows to skip. */
       offset?: number;
+      /** Restrict to one product's sessions. */
       provider?: "claude" | "codex";
+      /**
+       * Include transient rows: interactive Codex TUI processes discovered in memory before Codex
+       * has written a session id. Only added to the first page of local results.
+       */
       include_transient?: boolean;
+      /** Attach the compact task-progress summary (`todo_summary`) to each row. */
       include_task_progress?: boolean;
     }) => {
       const qs = new URLSearchParams();
@@ -767,11 +786,17 @@ export const api = {
     transcript: (
       id: string,
       params?: {
+        /** Read a subagent's transcript instead of the main one. */
         agent_id?: string;
+        /** Read a Workflow-tool run's transcript. */
         run_id?: string;
+        /** Maximum messages to return. */
         limit?: number;
+        /** Legacy numeric offset; prefer the line cursors for live files. */
         offset?: number;
+        /** Return messages after this JSONL line number. */
         after?: number;
+        /** Return messages before this JSONL line number. */
         before?: number;
       }
     ) => {
@@ -809,10 +834,19 @@ export const api = {
      * @returns `{ agents }` — the matching agents (note: no `total` here).
      */
     list: (params?: {
+      /** Agent status to filter by. */
       status?: string;
+      /** Restrict to one session's agents. */
       session_id?: string;
+      /** Page size; the server defaults to its 10,000-row cap. */
       limit?: number;
+      /** Rows to skip. */
       offset?: number;
+      /**
+       * Include transient rows: interactive Codex TUI processes discovered in memory before Codex
+       * has written a session id. Only added to the first page of local results. Only applies when
+       * filtering by `waiting`.
+       */
       include_transient?: boolean;
     }) => {
       const qs = new URLSearchParams();
@@ -855,14 +889,23 @@ export const api = {
      * @returns `{ events, limit, offset, total }` — the page and paging metadata.
      */
     list: (params?: {
+      /** Event types to include (OR'd). */
       event_type?: string[];
+      /** Tool names to include (OR'd). */
       tool_name?: string[];
+      /** Agent ids to include (OR'd). */
       agent_id?: string[];
+      /** One session id, or several (OR'd). */
       session_id?: string | string[];
+      /** Free-text search across event summaries. */
       q?: string;
+      /** Start of the time window. */
       from?: string;
+      /** End of the time window. */
       to?: string;
+      /** Page size; 0 is forwarded. */
       limit?: number;
+      /** Rows to skip; 0 is forwarded. */
       offset?: number;
     }) => {
       const qs = new URLSearchParams();
@@ -1224,10 +1267,18 @@ export const api = {
        * @returns The plan (and, when applied, what was removed).
        */
       prune: (params: {
+        /** Prune finished sessions idle longer than this many days. */
         max_age_days?: number;
+        /**
+         * Then prune oldest-first until the total is under this size: bytes, or a size string such
+         * as `5GB`.
+         */
         max_bytes?: number | string;
+        /** Also prune snapshots that have no session row. */
         orphans?: boolean;
+        /** Preview only; the server treats anything but an explicit `false` as a dry run. */
         dry_run?: boolean;
+        /** Required, with `dry_run: false`, to actually delete. */
         confirm?: "PRUNE_SNAPSHOTS";
       }) =>
         request<SnapshotPruneResult>("/settings/snapshots/prune", {
@@ -1885,10 +1936,15 @@ export const api = {
        * @returns `{ rule }` — the created {@link AlertRule} as persisted.
        */
       create: (rule: {
+        /** Rule name, used in alert messages. */
         name: string;
+        /** Kind of rule. */
         rule_type: AlertRule["rule_type"];
+        /** Rule-type-specific settings. */
         config: AlertRule["config"];
+        /** Whether the rule is active; defaults to enabled. */
         enabled?: boolean;
+        /** Minimum seconds between alerts from this rule for the same target; defaults to 300. */
         cooldown_seconds?: number;
       }) =>
         request<{ rule: AlertRule }>("/alerts/rules", {
@@ -1959,13 +2015,21 @@ export const api = {
      * @returns `{ target }` — the created {@link WebhookTarget} (redacted).
      */
     create: (target: {
+      /** Display name. */
       name: string;
+      /** Provider type; fixed after creation. */
       type: WebhookType;
+      /** Destination URL. Hosted providers require HTTPS. */
       url?: string;
+      /** Whether the target receives alerts; defaults to enabled. */
       enabled?: boolean;
+      /** Signing secret for providers that support one. */
       secret?: string;
+      /** Extra HTTP headers for providers that support them. */
       headers?: Record<string, string>;
+      /** Provider-specific settings. */
       config?: Record<string, string>;
+      /** Alert rules the target is limited to; omitted means every rule. */
       rule_ids?: string[];
     }) =>
       request<{ target: WebhookTarget }>("/webhooks", {
@@ -1986,12 +2050,19 @@ export const api = {
     update: (
       id: string,
       patch: {
+        /** New display name. */
         name?: string;
+        /** New destination URL; omit to keep the stored one. */
         url?: string;
+        /** Enable or disable the target. */
         enabled?: boolean;
+        /** New signing secret, or `null` to clear the stored one; omit to keep it. */
         secret?: string | null;
+        /** Replacement HTTP headers. */
         headers?: Record<string, string>;
+        /** Replacement provider-specific settings. */
         config?: Record<string, string>;
+        /** Replacement rule scope; an empty list means every rule. */
         rule_ids?: string[];
       }
     ) =>
@@ -2146,48 +2217,130 @@ function requestBackupsHelper(params?: { scope?: "user" | "project"; type?: CcAr
 /** Storage of one snapshot directory (`transcripts`, `codex-transcripts`,
  *  `cursor-transcripts` under the dashboard data dir). */
 export interface SnapshotRootSummary {
+  /** Absolute path of this snapshot root under the dashboard data directory. */
   path: string;
+  /**
+   * Every snapshot file under the root, plain and gzip-compressed, including subagent transcripts.
+   */
   files: number;
+  /**
+   * Total on-disk size of the root's files, in bytes (compressed files count at their compressed
+   * size).
+   */
   bytes: number;
+  /**
+   * How many of `files` are lossless `.jsonl.gz` copies written by background compression. Always 0
+   * for the Codex root, which is never compressed because its ingest cursors read it in place.
+   */
   compressed_files: number;
+  /** Bytes held by the compressed files alone - a subset of `bytes`. */
   compressed_bytes: number;
+  /** Distinct session ids that own at least one file in this root. */
   sessions: number;
 }
 
 /** Snapshot storage report plus the env-configured retention policy
  *  (`DASHBOARD_SNAPSHOT_COMPRESS`, `_MAX_AGE_DAYS`, `_MAX_BYTES`). */
 export interface SnapshotStorage {
+  /** Sum of `bytes` across all three roots - the figure a `max_bytes` cap is compared against. */
   total_bytes: number;
+  /** Sum of `files` across all three roots. */
   total_files: number;
+  /**
+   * Per-provider breakdown, one entry for each snapshot directory: `transcripts` (Claude Code),
+   * `codex-transcripts`, and `cursor-transcripts`.
+   */
   roots: Record<"claude" | "codex" | "cursor", SnapshotRootSummary>;
+  /**
+   * Retention policy currently in force, read from the environment. `compress` reflects
+   * `DASHBOARD_SNAPSHOT_COMPRESS`; `max_age_days` / `max_bytes` are null when the matching
+   * `DASHBOARD_SNAPSHOT_MAX_AGE_DAYS` / `DASHBOARD_SNAPSHOT_MAX_BYTES` cap is unset, which is the
+   * default (no automatic pruning).
+   */
   policy: { compress: boolean; max_age_days: number | null; max_bytes: number | null };
 }
 
 /** One session whose snapshots a prune selects. */
 export interface SnapshotPruneCandidate {
+  /** Which snapshot root the files live in, i.e. the provider that produced the transcript. */
   kind: "claude" | "codex" | "cursor";
+  /**
+   * Owning session row id. Can differ from the snapshot file name when an imported session was
+   * re-keyed, so always link to the session with this id.
+   */
   session_id: string;
+  /**
+   * Why the session was selected. `max_age`: a finished session idle longer than the age cap.
+   * `max_bytes`: an older finished session evicted (oldest first) to get under the size cap.
+   * `orphan`: snapshots with no matching session row, only selected by an explicit prune with
+   * `orphans: true`.
+   */
   reason: "max_age" | "max_bytes" | "orphan";
+  /**
+   * Number of snapshot files (main transcript, compressed twin, and subagent files) that would be
+   * or were removed for this session.
+   */
   files: number;
+  /** Bytes those files occupy on disk. */
   bytes: number;
+  /**
+   * ISO timestamp of the later of the session's last activity and its newest snapshot file; null
+   * for orphans, which have no session row to read activity from.
+   */
   last_activity: string | null;
 }
 
 /** Prune plan (dry run) or result (applied). */
 export interface SnapshotPruneResult {
+  /**
+   * True when the request was accepted and the plan was computed (and applied, when not a dry run).
+   */
   ok: boolean;
+  /**
+   * True for a preview: nothing was deleted and all `removed_*` counters are 0. The Settings panel
+   * requests a dry run for its Preview step; an applied prune additionally requires `confirm:
+   * "PRUNE_SNAPSHOTS"`.
+   */
   dry_run: boolean;
+  /**
+   * Normalized criteria the plan was computed with. A cap of 0 or an omitted cap comes back as
+   * null.
+   */
   criteria: { max_age_days: number | null; max_bytes: number | null; orphans: boolean };
+  /** Total snapshot bytes on disk before the prune. */
   total_bytes: number;
+  /**
+   * Number of sessions the plan selected. Covers every candidate even when `candidates` is
+   * truncated.
+   */
   candidate_sessions: number;
+  /** Total files across all candidate sessions. */
   candidate_files: number;
+  /** Total bytes across all candidate sessions - what an applied prune would free. */
   candidate_bytes: number;
+  /** Snapshot bytes that would remain after removing every candidate. */
   remaining_bytes: number;
+  /**
+   * How far `remaining_bytes` would still exceed `max_bytes`, or 0. Non-zero when the cap cannot be
+   * met without touching sessions that are still running or finished within the last 24 hours,
+   * which the size cap never evicts.
+   */
   over_cap_bytes: number;
+  /** Selected sessions, oldest activity first. Capped at 500 rows, see `truncated`. */
   candidates: SnapshotPruneCandidate[];
+  /**
+   * True when more than 500 sessions were selected and `candidates` lists only the first 500.
+   * Totals still cover all of them.
+   */
   truncated: boolean;
+  /** Files actually deleted. 0 for a dry run. */
   removed_files: number;
+  /** Bytes actually freed. 0 for a dry run. */
   removed_bytes: number;
+  /**
+   * Files that could not be deleted (for example locked on Windows). They are retried by a later
+   * maintenance pass rather than failing the prune.
+   */
   failed_files: number;
 }
 
@@ -2211,8 +2364,16 @@ export type CcArtifactType =
 
 /** Body for PUT /api/cc-config/file - create or overwrite one artifact. */
 export interface CcWriteArgs {
-  // "auto-memory" targets a per-project memory file and requires `project`.
+  /**
+   * Which config layer to write into. `user` targets `~/.claude`, `project` targets the current
+   * project's `.claude/` directory, and `auto-memory` targets a per-project memory file under
+   * `~/.claude/projects/<slug>/memory/` and requires `project`.
+   */
   scope: "user" | "project" | "auto-memory";
+  /**
+   * Kind of artifact, which decides the on-disk location and file layout (for example a `SKILL.md`
+   * inside a skill directory vs. a single agent markdown file).
+   */
   type: CcArtifactType;
   /** Artifact name (e.g. skill/agent/command name); omitted for singleton
    *  artifacts like a scope's CLAUDE.md. */
@@ -2226,14 +2387,22 @@ export interface CcWriteArgs {
 /** Body for DELETE /api/cc-config/file - remove one artifact. Mirrors the
  *  identifying fields of {@link CcWriteArgs} (minus `content`). */
 export interface CcDeleteArgs {
+  /** Config layer that holds the artifact. Same meaning as {@link CcWriteArgs.scope}. */
   scope: "user" | "project" | "auto-memory";
+  /** Kind of artifact to delete. Same meaning as {@link CcWriteArgs.type}. */
   type: CcArtifactType;
+  /** Artifact name to delete; omitted for singleton artifacts such as a scope's `CLAUDE.md`. */
   name?: string;
+  /** Target project slug; required when `scope === "auto-memory"`. */
   project?: string;
 }
 
 /** Response shape of a successful `ccConfig.write`/`delete` call. */
 export interface CcMutationResult {
+  /**
+   * Literal success marker; failures are returned as HTTP errors and surface through `request()` as
+   * thrown errors instead.
+   */
   ok: true;
   /** Absolute path of the file that was written/deleted. */
   file: string;
@@ -2249,8 +2418,14 @@ export interface CcMutationResult {
 /** One timestamped backup of a config artifact, from GET /api/cc-config/backups -
  *  written automatically before every destructive `write`/`delete`. */
 export interface CcBackup {
+  /** Config layer the backed-up artifact came from. */
   scope: "user" | "project" | "auto-memory";
+  /** Kind of artifact that was backed up. */
   type: CcArtifactType;
+  /**
+   * Name of the original artifact (not the backup file name), used to group backups of the same
+   * artifact.
+   */
   name: string;
   /** Absolute path to the backup copy (not the original file). */
   backupPath: string;
@@ -2260,6 +2435,7 @@ export interface CcBackup {
   mtime: number;
   /** Backup size in bytes; null for directory backups. */
   size: number | null;
+  /** Project slug the auto-memory file belongs to; present only when `scope === "auto-memory"`. */
   project?: string; // present for scope === "auto-memory"
 }
 
@@ -2272,6 +2448,10 @@ export type CcScope = "user" | "project" | "all";
  *  a lightweight summary (frontmatter + a preview) rather than full contents;
  *  the full text is fetched on demand via {@link api.ccConfig.file}. */
 export interface CcMdItem {
+  /**
+   * Config layer the artifact was found in. Never `all`; merged listings tag each item with its
+   * real scope.
+   */
   scope: "user" | "project";
   /** Artifact name, derived from its filename/frontmatter. */
   name: string;
@@ -2279,6 +2459,7 @@ export interface CcMdItem {
   file?: string;
   /** Absolute path, when the API returns it instead of a bare filename. */
   path?: string;
+  /** Full on-disk file size in bytes, even when `preview` is truncated. */
   size: number;
   /** File's mtime, epoch milliseconds. */
   mtime: number;
@@ -2293,10 +2474,15 @@ export interface CcMdItem {
 /** Counts of what a plugin contributes to Claude Code, plus its manifest
  *  metadata, embedded in {@link CcPlugin}. */
 export interface CcPluginContributions {
+  /** Number of skills the plugin ships. */
   skills: number;
+  /** Number of subagent definitions the plugin ships. */
   agents: number;
+  /** Number of slash commands the plugin ships. */
   commands: number;
+  /** Number of output styles the plugin ships. */
   outputStyles: number;
+  /** Number of hook bindings the plugin registers. */
   hooks: number;
   /** Parsed `plugin.json` fields; null if the plugin has no manifest. */
   pluginJson: {
@@ -2316,14 +2502,17 @@ export interface CcPluginContributions {
 export interface CcPlugin {
   /** Unique key within the plugin manifest (usually `<marketplace>/<name>`). */
   key: string;
+  /** Plugin name as declared by its manifest or marketplace entry. */
   name: string;
   /** Marketplace it was installed from; null for a manually-installed plugin. */
   marketplace: string | null;
   /** Install scope, e.g. "user" or "project". */
   scope: string;
+  /** Installed version string from the install manifest, or null if unrecorded. */
   version: string | null;
   /** Absolute path where the plugin's files live. */
   installPath: string | null;
+  /** ISO timestamp the plugin was installed, or null if unrecorded. */
   installedAt: string | null;
   /** ISO timestamp of the last update check/pull for this plugin. */
   lastUpdated: string | null;
@@ -2333,6 +2522,10 @@ export interface CcPlugin {
   installPathExists: boolean;
   /** Whether the plugin is active; null when enablement isn't tracked for it. */
   enabled: boolean | null;
+  /**
+   * What the plugin contributes, counted from its install directory; null when the install path is
+   * missing so nothing could be counted.
+   */
   contributes: CcPluginContributions | null;
 }
 
@@ -2340,7 +2533,12 @@ export interface CcPlugin {
 export interface CcPluginsResponse {
   /** Path to the plugin install manifest file. */
   manifestPath: string;
+  /**
+   * Whether the install manifest exists. False on a machine that has never installed a plugin, in
+   * which case `plugins` is empty.
+   */
   manifestExists: boolean;
+  /** Installed plugins, one per manifest entry. */
   plugins: CcPlugin[];
 }
 
@@ -2349,6 +2547,7 @@ export interface CcPluginsResponse {
  *  env-var/header *names* are surfaced, never their values, to avoid leaking
  *  secrets into the dashboard. */
 export interface CcMcpServer {
+  /** Server name as it appears under `mcpServers` in the config file. */
   name: string;
   /** Which config file this entry came from (e.g. a `.mcp.json` path). */
   source: string;
@@ -2356,6 +2555,7 @@ export interface CcMcpServer {
   kind: "stdio" | "http" | "unknown";
   /** Launch command, for `kind === "stdio"`. */
   command?: string;
+  /** Command-line arguments passed to `command`, for `kind === "stdio"`. */
   args?: string[];
   /** Names (not values) of env vars the server config references. */
   envNames?: string[];
@@ -2367,6 +2567,7 @@ export interface CcMcpServer {
 
 /** Response shape of GET /api/cc-config/mcp, split by config scope. */
 export interface CcMcpResponse {
+  /** Servers configured in the user-level config, available in every project. */
   user: CcMcpServer[];
   /** Servers configured in the current project's `.mcp.json`/settings. */
   projectScoped: CcMcpServer[];
@@ -2398,8 +2599,14 @@ export interface CcHookSource {
 
 /** One settings.json layer's raw contents, from GET /api/cc-config/settings. */
 export interface CcSettingsSource {
+  /**
+   * Settings layer this entry describes. `project-local` is the gitignored `settings.local.json`
+   * override layer.
+   */
   scope: "user" | "project" | "project-local";
+  /** Absolute path to the settings file for this layer. */
   file: string;
+  /** Whether the file exists. A layer with no file contributes no settings. */
   exists: boolean;
   /** Parsed JSON contents; absent when `exists` is false. */
   data?: unknown;
@@ -2410,31 +2617,54 @@ export interface CcSettingsSource {
 /** One memory artifact - either a project's/user's editable CLAUDE.md, or a
  *  read-only auto-memory file - from GET /api/cc-config/memory. */
 export interface CcMemoryItem {
-  // "user"/"project" are the two CLAUDE.md files (editable). "auto-memory"
-  // is a per-project file-based memory file under ~/.claude/projects/<slug>/
-  // memory/ — read-only in the dashboard for now.
+  /**
+   * Memory layer. `user` and `project` are the two editable `CLAUDE.md` files. `auto-memory` is a
+   * per-project file-based memory file under `~/.claude/projects/<slug>/memory/`, read-only in the
+   * dashboard for now.
+   */
   scope: "user" | "project" | "auto-memory";
+  /** Absolute path of the memory file. */
   file: string;
+  /** Full on-disk file size in bytes. */
   size: number;
+  /** File modification time, epoch milliseconds. */
   mtime: number;
+  /** Whether `preview` was cut short of the full file content. */
   truncated: boolean;
+  /**
+   * Leading excerpt of the file, for the list view. Open the file through {@link api.ccConfig.file}
+   * for its full text.
+   */
   preview: string;
   // Present only for scope === "auto-memory":
+  /** Project slug the auto-memory file belongs to; present only for `auto-memory` items. */
   project?: string; // the projects/<slug> dir name
+  /** Markdown file name inside the memory directory; present only for `auto-memory` items. */
   name?: string; // the markdown filename (e.g. MEMORY.md, feedback_x.md)
+  /**
+   * Marks index files (`MEMORY.md`, `INDEX-*.md`) that list the other memories, so the UI can pin
+   * them first.
+   */
   isIndex?: boolean; // true for MEMORY.md / INDEX-*.md table-of-contents files
+  /**
+   * Parsed YAML frontmatter (for example `name`, `description`, `type`) when the memory file has
+   * one.
+   */
   frontmatter?: Record<string, string>; // parsed YAML frontmatter, if any
 }
 
 /** Response shape of GET /api/cc-config/file - full contents of one config
  *  artifact, for the read/edit view. */
 export interface CcFileResponse {
+  /** Literal success marker; read failures are returned as HTTP errors. */
   ok: true;
+  /** Absolute path of the file that was read. */
   file: string;
   /** File contents (possibly truncated - see `truncated`). */
   text: string;
   /** Full on-disk file size in bytes (may exceed `text.length` if truncated). */
   size: number;
+  /** File modification time, epoch milliseconds. */
   mtime: number;
   /** Whether `text` was cut short of the full file (very large files). */
   truncated: boolean;
@@ -2472,17 +2702,24 @@ export interface CcOverview {
 
 /** One registered plugin marketplace, from GET /api/cc-config/marketplaces. */
 export interface CcMarketplace {
+  /**
+   * Marketplace key as registered in the known-marketplaces file; plugins reference it as
+   * `<plugin>@<name>`.
+   */
   name: string;
   /** Where the marketplace is sourced from (git repo, URL, …); null if unknown. */
   source: { source?: string; repo?: string; url?: string } | null;
   /** Local checkout path for a git-based marketplace; null otherwise. */
   installLocation: string | null;
+  /** ISO timestamp of the marketplace's last refresh, or null if never refreshed. */
   lastUpdated: string | null;
   /** Number of plugins the marketplace publishes; null if not yet indexed. */
   pluginCount: number | null;
   /** Marketplace's own self-reported display name (may differ from `name`). */
   marketplaceName: string | null;
+  /** Description from the marketplace's own manifest, or null. */
   marketplaceDescription: string | null;
+  /** Owner metadata from the marketplace's own manifest, or null. */
   marketplaceOwner: { name?: string; url?: string } | null;
 }
 
@@ -2490,34 +2727,49 @@ export interface CcMarketplace {
 export interface CcMarketplacesResponse {
   /** Path to the marketplace registry file the dashboard reads. */
   knownPath: string;
+  /** Whether the known-marketplaces file exists. False when no marketplace has ever been added. */
   knownExists: boolean;
+  /** Registered marketplaces. */
   items: CcMarketplace[];
 }
 
 /** One logical group of keybindings sharing a UI context (e.g. "editor",
  *  "global"), as parsed from `keybindings.json`. */
 export interface CcKeybindingGroup {
+  /** Context name the bindings apply in (for example `global` or `editor`). */
   context: string;
+  /** Key chord to action pairs, in file order. */
   bindings: { key: string; action: string }[];
 }
 
 /** Response shape of GET /api/cc-config/keybindings. */
 export interface CcKeybindings {
+  /** Absolute path of `keybindings.json`. */
   file: string;
+  /**
+   * Whether the file exists. When false, `groups` is empty and Claude Code uses its built-in
+   * bindings.
+   */
   exists: boolean;
   /** JSON schema URL declared in the file, if any. */
   schema?: string | null;
   /** Doc/help URL declared in the file, if any. */
   docs?: string | null;
+  /** Bindings grouped by context. */
   groups: CcKeybindingGroup[];
 }
 
 /** One statusline script file, referenced by {@link CcStatusline.config}. */
 export interface CcStatuslineScript {
+  /** Absolute path of the script file. */
   file: string;
+  /** Full on-disk file size in bytes. */
   size: number;
+  /** File modification time, epoch milliseconds. */
   mtime: number;
+  /** Whether `preview` was cut short of the full file content. */
   truncated: boolean;
+  /** Leading excerpt of the script, for an inline preview. */
   preview: string;
 }
 
@@ -2532,17 +2784,27 @@ export interface CcStatusline {
 /** Response shape of GET /api/cc-config/hook-scripts - shell scripts found in
  *  the hooks directory that a `CcHookEntry.command` might reference. */
 export interface CcHookScripts {
+  /** Absolute path of the hooks directory that was scanned. */
   dir: string;
+  /** Script files found in the directory, with size in bytes and mtime in epoch milliseconds. */
   items: { name: string; file: string; size: number; mtime: number }[];
 }
 
 /** Safe preview of one local Codex configuration file. Sensitive TOML and JSON
  * values are redacted server-side before this reaches the browser. */
 export interface CodexConfigFile {
+  /** Absolute path of the file inside the Codex home. */
   path: string;
+  /**
+   * File contents with secret values redacted server-side. Display only; never write this text
+   * back.
+   */
   text: string;
+  /** Full on-disk file size in bytes. */
   size: number;
+  /** File modification time, epoch milliseconds. */
   mtime: number;
+  /** Whether `text` was cut short because the file exceeded the preview limit. */
   truncated: boolean;
 }
 
@@ -2550,35 +2812,65 @@ export interface CodexConfigFile {
  * allowlist. This is separate from {@link CodexConfigFile} so a redacted
  * preview can never accidentally overwrite user secrets. */
 export interface CodexConfigEditableFile {
+  /** Absolute path of the editable file. */
   path: string;
+  /**
+   * Unredacted file contents, used as the editor's starting text. Empty when the file does not
+   * exist yet.
+   */
   text: string;
+  /** Full on-disk file size in bytes; 0 when the file does not exist. */
   size: number;
+  /** Whether the file exists. Saving a missing allowlisted file creates it. */
   exists: boolean;
+  /** File modification time in epoch milliseconds, or null when the file does not exist. */
   mtime: number | null;
+  /** Whether `text` was cut short because the file exceeded the read limit. */
   truncated: boolean;
 }
 
+/**
+ * Body for saving one Codex configuration file. The server only accepts paths on its edit
+ * allowlist: `config.toml`, `hooks.json`, the home and project `AGENTS.md`, `<name>.config.toml`
+ * profiles, skill `SKILL.md` files, and rule files.
+ */
 export interface CodexConfigWriteArgs {
+  /** Absolute path of the file to write; must be on the server's edit allowlist. */
   path: string;
+  /** Complete new file contents. Replaces the file rather than patching it. */
   content: string;
 }
 
+/** Result of a successful Codex config write. */
 export interface CodexConfigWriteResult {
+  /** Literal success marker; rejected writes are returned as HTTP errors. */
   ok: true;
+  /** Absolute path of the file that was written. */
   file: string;
+  /** Path of the backup taken before overwriting, or null when the file was newly created. */
   backupPath: string | null;
+  /** True when the write created a new file instead of overwriting one. */
   created: boolean;
 }
 
 /** Deletes a user-maintained Codex artifact; the base config.toml is never allowed. */
 export interface CodexConfigDeleteArgs {
+  /** Absolute path of the file to delete. `config.toml` itself is always refused. */
   path: string;
 }
 
+/** Result of a successful Codex config delete. */
 export interface CodexConfigDeleteResult {
+  /** Literal success marker; refused deletes are returned as HTTP errors. */
   ok: true;
+  /** Absolute path of the file that was deleted. */
   file: string;
+  /** Path of the backup taken before deleting. Deletes always back up first. */
   backupPath: string;
+  /**
+   * True when the artifact was a directory (for example a whole skill folder) rather than a single
+   * file.
+   */
   deletedDirectory: boolean;
 }
 
@@ -2588,11 +2880,33 @@ export interface CodexConfigCreateProfileArgs {
   name: string;
 }
 
+/**
+ * Everything the Codex half of Agent Config shows, built server-side from the local Codex home.
+ * Secret values in `config.toml` are redacted, and MCP servers expose environment variable names
+ * but never their values.
+ */
 export interface CodexConfigOverview {
+  /** Resolved Codex home (`DASHBOARD_CODEX_HOME`, else `CODEX_HOME`, else `~/.codex`). */
   home: string;
+  /** Redacted preview of `config.toml`, plus whether it exists. */
   config: CodexConfigFile & { exists: boolean };
+  /**
+   * Top-level defaults read from `config.toml`: `model`, `model_reasoning_effort`, and
+   * `personality`. Each is null when unset.
+   */
   defaults: { model: string | null; reasoningEffort: string | null; personality: string | null };
+  /**
+   * Item count per section (`models`, `profiles`, `mcp`, `projects`, `skills`, `hooks`, `rules`,
+   * `plugins`, `instructions`), used for the overview tiles.
+   */
   counts: Record<string, number>;
+  /**
+   * Full model catalog merged from the account cache (`models_cache.json`), custom
+   * `model_catalog_json` catalogs, and models named in `config.toml` or a profile. In each item,
+   * `sources` records where the model was seen, `baseDefault` marks the base `config.toml` model,
+   * and `profiles` / `providers` list the profiles and model providers that reference it. The list
+   * is not capped like the generic previews.
+   */
   models: {
     file: string;
     fetchedAt: string | null;
@@ -2610,6 +2924,10 @@ export interface CodexConfigOverview {
       providers: string[];
     }>;
   };
+  /**
+   * Named `--profile` overlays (`<name>.config.toml` files in the Codex home) with the main
+   * settings each one overrides. Each field is null when the profile leaves it unset.
+   */
   profiles: Array<{
     name: string;
     path: string;
@@ -2624,6 +2942,10 @@ export interface CodexConfigOverview {
     modelCatalog: string | null;
     provider: string | null;
   }>;
+  /**
+   * MCP servers declared in `config.toml`. Only environment variable names are exposed, never their
+   * values.
+   */
   mcp: Array<{
     name: string;
     command: string | null;
@@ -2631,10 +2953,22 @@ export interface CodexConfigOverview {
     enabled: boolean;
     envNames: string[];
   }>;
+  /** Trusted project directories declared in `config.toml`. */
   projects: Array<{ path: string; name: string }>;
+  /** Skills found under `<home>/skills`, each with a short preview of its `SKILL.md`. */
   skills: Array<{ name: string; file: string; preview: string; mtime: number }>;
+  /**
+   * Hook configuration from `hooks.json`: whether it exists and how many matcher groups each event
+   * registers.
+   */
   hooks: { file: string; exists: boolean; items: Array<{ event: string; groups: number }> };
+  /** Rule files found under `<home>/rules`, each with a short preview. */
   rules: Array<{ name: string; file: string; preview: string; mtime: number | null }>;
+  /**
+   * Plugins known to Codex, merged from the plugin cache and `config.toml`, sorted by display name.
+   * `displayName` falls back to a title-cased manifest name, and `enabled` reflects the
+   * `config.toml` toggle.
+   */
   plugins: Array<{
     id: string;
     name: string;
@@ -2645,6 +2979,7 @@ export interface CodexConfigOverview {
     version: string | null;
     enabled: boolean;
   }>;
+  /** Instruction files (`AGENTS.md` at the Codex home and project level) with previews. */
   instructions: Array<{ path: string; name: string; preview: string; mtime: number }>;
 }
 
@@ -2657,6 +2992,10 @@ export interface CodexConfigOverview {
 /** "headless" runs to completion unattended and streams only output;
  *  "conversation" keeps stdin open so the user can send follow-up messages. */
 export type RunProvider = "claude" | "codex";
+/**
+ * How a run talks to the CLI. `headless` runs to completion unattended and streams only output;
+ * `conversation` keeps the process open so the user can send follow-up messages.
+ */
 export type RunMode = "headless" | "conversation";
 /** Lifecycle of a spawned `claude` process, mirrored in `RunHandle.status`
  *  and `RunStatusPayload.status`. "abandoned" is applied by server cleanup
@@ -2664,7 +3003,15 @@ export type RunMode = "headless" | "conversation";
 export type RunStatus = "spawning" | "running" | "completed" | "error" | "killed" | "abandoned";
 /** Maps 1:1 to the `claude --permission-mode` CLI flag. */
 export type PermissionMode = "acceptEdits" | "default" | "plan" | "bypassPermissions";
+/**
+ * Codex `--ask-for-approval` policy: `untrusted` asks before running anything not known-safe,
+ * `on-request` lets the model decide when to ask, and `never` never asks.
+ */
 export type CodexApprovalPolicy = "untrusted" | "on-request" | "never";
+/**
+ * Codex `--sandbox` mode: `read-only` cannot write files, `workspace-write` may write inside the
+ * working directory, and `danger-full-access` disables sandboxing entirely.
+ */
 export type CodexSandbox = "read-only" | "workspace-write" | "danger-full-access";
 /** Maps 1:1 to the `claude --effort` CLI flag; "" omits the flag (model default). */
 export type EffortLevel = "" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
@@ -2673,16 +3020,23 @@ export type EffortLevel = "" | "low" | "medium" | "high" | "xhigh" | "max" | "ul
 export interface RunStartArgs {
   /** Initial prompt/task text passed to the CLI. */
   prompt: string;
+  /**
+   * Whether to run one-shot (`headless`) or keep the session open for follow-ups (`conversation`).
+   */
   mode: RunMode;
+  /** CLI to launch. Defaults to `claude` when omitted. */
   provider?: RunProvider;
   /** Working directory to launch in; server default applies if omitted. */
   cwd?: string;
   /** `--model` value; omitted inherits the CLI's own default (settings.json). */
   model?: string;
+  /** Claude `--permission-mode`, or the Codex approval policy when `provider === "codex"`. */
   permissionMode?: PermissionMode | CodexApprovalPolicy;
+  /** Codex sandbox mode; ignored for Claude runs. */
   sandbox?: CodexSandbox;
   /** Resume an existing Claude Code session id (`--resume`) instead of starting fresh. */
   resumeSessionId?: string;
+  /** Reasoning effort; `""` or omitted leaves the model default. */
   effort?: EffortLevel;
 }
 
@@ -2692,32 +3046,47 @@ export interface RunStartArgs {
  *  survives handle reaping), this is the richer live handle (camelCase, carries
  *  argv/tails/envelope counters) that only exists while the server tracks it. */
 export interface RunHandle {
+  /** Server-assigned run id used by every `/api/run/:id` route and in run WebSocket messages. */
   id: string;
+  /** CLI the run launched. */
   provider: RunProvider;
   /** OS process id; null before the process has actually spawned. */
   pid: number | null;
+  /** Whether the run is one-shot or an open conversation. */
   mode: RunMode;
+  /** Absolute working directory the process was started in. */
   cwd: string;
+  /** Model passed to the CLI, or null when the CLI default applies. */
   model: string | null;
+  /** Effective Claude permission mode or Codex approval policy. */
   permissionMode: PermissionMode | CodexApprovalPolicy;
+  /** Effective Codex sandbox mode; null or absent for Claude runs. */
   sandbox?: CodexSandbox | null;
+  /** Effective reasoning effort, or null when the model default applies. */
   effort: EffortLevel | null;
+  /** Initial prompt the run was started with. */
   prompt: string;
   /** Full argv the server invoked the CLI with, for debugging. */
   argv: string[];
+  /** Session id passed to `--resume`, or null for a fresh session. */
   resumeSessionId: string | null;
+  /** Current lifecycle state of the process. */
   status: RunStatus;
   /** Epoch-ms timestamp the process was spawned. */
   startedAt: number;
   /** Epoch-ms timestamp the process exited; null while still running. */
   endedAt: number | null;
+  /** Process exit code once it has exited; null while running or when killed by a signal. */
   exitCode: number | null;
   /** POSIX signal that killed the process (e.g. "SIGTERM"); null otherwise. */
   signal: string | null;
+  /** Spawn or runtime error message, or null when none occurred. */
   error: string | null;
   /** Claude Code session id the run created/resumed, once known. */
   sessionId: string | null;
+  /** Codex thread name, when the Codex app-server reports one. */
   threadName?: string | null;
+  /** Id of the Codex turn currently in progress, or null between turns. */
   activeTurnId?: string | null;
   /** Count of stream-json envelopes emitted so far. */
   envelopeCount: number;
@@ -2725,11 +3094,19 @@ export interface RunHandle {
   stdoutTail: string;
   /** Last chunk of captured stderr, for a quick inline preview. */
   stderrTail: string;
+  /**
+   * Raw stream envelopes captured so far. Present only when fetched with `?envelopes=1`, which the
+   * live view uses to replay history after a reconnect.
+   */
   envelopes?: unknown[]; // present when fetched with ?envelopes=1
 }
 
 /** Response shape of GET /api/run. */
 export interface RunListResponse {
+  /**
+   * Runs the server is currently tracking in memory, including recently finished ones that have not
+   * been reaped yet.
+   */
   items: RunHandle[];
   /** Server-configured cap on simultaneously running processes. */
   maxConcurrent: number;
@@ -2747,22 +3124,38 @@ export interface RunListResponse {
  * the UI whether a matching live handle still exists for this row.
  */
 export interface DashboardRunHistoryItem {
+  /** Run id, the same id the live {@link RunHandle} used. */
   id: string;
+  /** CLI the run launched. */
   provider: RunProvider;
   /** Claude Code session id the run created/resumed; null if never captured. */
   session_id: string | null;
+  /** Whether the run was one-shot or an open conversation. */
   mode: RunMode;
+  /** Absolute working directory the run was started in. */
   cwd: string;
+  /** Model passed to the CLI, or null when the CLI default applied. */
   model: string | null;
+  /** Claude permission mode or Codex approval policy, or null if unrecorded. */
   permission_mode: (PermissionMode | CodexApprovalPolicy) | null;
+  /** Codex sandbox mode, or null for Claude runs. */
   sandbox: CodexSandbox | null;
+  /** Reasoning effort, or null when the model default applied. */
   effort: EffortLevel | null;
+  /** Session id the run resumed, or null for a fresh session. */
   resume_session_id: string | null;
   /** Truncated leading excerpt of the original prompt, for the history list. */
   prompt_preview: string | null;
+  /**
+   * Last recorded lifecycle state. A run whose process vanished without a clean exit is eventually
+   * marked `abandoned`.
+   */
   status: RunStatus;
+  /** Process exit code, or null while running or when killed by a signal. */
   exit_code: number | null;
+  /** ISO timestamp the run was started. */
   started_at: string;
+  /** ISO timestamp the run ended, or null while it is still running. */
   ended_at: string | null;
   /** True when an in-memory {@link RunHandle} for this row still exists (so
    *  the UI can offer live actions like "send message"/"kill"); false once
@@ -2775,40 +3168,69 @@ export interface CwdSuggestion {
   /** "dashboard" = this server's own cwd; "home" = user's home dir; "recent"
    *  = previously used for a run. */
   kind: "dashboard" | "home" | "recent";
+  /** Absolute directory path that is filled in when the suggestion is picked. */
   path: string;
+  /** Display label; defaults to the directory's base name. */
   label: string;
 }
 
 /** One entry in {@link RUN_MODEL_CHOICES} - a curated model the Run page's
  *  model picker offers. */
 export interface ModelChoice {
+  /** Model id sent to the CLI as `--model`. */
   id: string; // value sent to claude --model
+  /** User-facing name shown in the model picker. */
   label: string; // user-facing
   /** Short helper text shown under the option. */
   hint?: string;
+  /**
+   * Effort levels this model accepts. For Codex runs the effort picker offers only these levels
+   * (plus the default); Claude runs ignore it.
+   */
   supportedEfforts?: Exclude<EffortLevel, "">[];
+  /**
+   * Effort the CLI uses when no `--effort` is passed, so the picker can label the default; null
+   * when unknown.
+   */
   defaultEffort?: Exclude<EffortLevel, ""> | null;
+  /** Marks the model the CLI uses when no `--model` is passed. */
   isDefault?: boolean;
 }
 
+/** Response of the Run page's model list endpoint for one provider. */
 export interface RunModelsResponse {
+  /** Provider the list belongs to. */
   provider: RunProvider;
+  /**
+   * True when the list was discovered live (Codex, from its app-server); false for the curated
+   * Claude CLI alias list.
+   */
   dynamic: boolean;
+  /** Where the list came from: `codex-app-server` or `claude-cli-curated-aliases`. */
   source: string;
+  /** Models to offer, in display order. */
   items: ModelChoice[];
 }
 
-// Effort level choices for `claude --effort`. Higher = more thinking tokens
-// before the assistant turn. Empty inherits the model's default.
+/**
+ * One option in the Run page's effort picker for `claude --effort`. Higher levels spend more
+ * thinking tokens before the assistant turn; the empty id omits the flag so the model default
+ * applies.
+ */
 export interface EffortChoice {
+  /** Value sent as `--effort`; `""` omits the flag. */
   id: EffortLevel;
+  /** Label shown in the picker. */
   label: string;
+  /** Short helper text describing the trade-off. */
   hint?: string;
 }
 
-// Curated `--effort` options rendered by the Run page's effort picker, ordered
-// from least to most reasoning budget. The empty-id entry omits the flag so the
-// model's own default applies. This is UI-facing static data, not fetched.
+/**
+ * Curated `--effort` options rendered by the Run page's effort picker, ordered from least to most
+ * reasoning budget. The empty-id entry omits the flag so the model's own default applies. This is
+ * static UI data, not fetched from the server.
+ */
 export const RUN_EFFORT_CHOICES: EffortChoice[] = [
   { id: "", label: "Default (model decides)", hint: "No --effort flag" },
   { id: "low", label: "Low", hint: "Fast, minimal thinking" },
@@ -2825,6 +3247,10 @@ export const RUN_EFFORT_CHOICES: EffortChoice[] = [
  *  `skipped`/`errors`) are always present; the remaining fields are extra
  *  telemetry populated depending on which import flow produced the result. */
 export interface ImportResult {
+  /**
+   * True when the import ran to completion. Individual file failures are counted in `errors` and do
+   * not make this false.
+   */
   ok: boolean;
   /** Provider whose transcripts were processed. */
   provider: RunProvider;
@@ -2896,42 +3322,80 @@ export interface RemoteSource {
   } | null;
   /** Live number of sessions currently attributed to this source. */
   session_count?: number;
+  /** ISO timestamp the source was added. */
   created_at: string;
+  /** ISO timestamp the source was last edited. */
   updated_at: string;
 }
 
 /** Request body for creating/updating a remote source. */
 export interface RemoteSourceInput {
+  /** Display name for the source; required. */
   label: string;
+  /** SSH destination: `user@host` or a `~/.ssh/config` alias; required. */
   host: string;
+  /** Non-default SSH port; null or omitted uses 22 or the ssh_config value. */
   ssh_port?: number | null;
+  /**
+   * Path to a private key that already exists on the dashboard host; null or omitted uses the SSH
+   * agent or ssh_config.
+   */
   identity_file?: string | null;
+  /** Remote Claude home override; null or omitted means `~/.claude`. */
   remote_home?: string | null;
+  /** Remote Codex home override; null or omitted means `~/.codex`. */
   remote_codex_home?: string | null;
+  /** Whether the background poller should sync this source. Defaults to enabled on create. */
   enabled?: boolean;
 }
 
+/** Providers whose history a remote source can mirror over SSH. Cursor is not mirrored remotely. */
 export type RemoteProvider = "claude" | "codex";
+/**
+ * Per-provider sync state. `unavailable` means that provider's history directory does not exist on
+ * the remote, which is expected when the machine only runs one CLI and is not treated as a failure.
+ */
 export type RemoteProviderStatus = "idle" | "syncing" | "ok" | "unavailable" | "error";
 
+/** Outcome of syncing one provider during a remote sync. */
 export interface RemoteProviderSyncDetails {
+  /** Final state for this provider. */
   status: RemoteProviderStatus;
+  /** Sessions or events newly imported from this provider. */
   imported?: number;
+  /** Entries already present and left untouched. */
   skipped?: number;
+  /** Existing rows filled in with data that was previously missing. */
   backfilled?: number;
+  /** Files or entries that failed to import. */
   errors?: number;
+  /** Distinct sessions found in the mirrored history. */
   sessions_seen?: number;
+  /** Sessions attributed to this source, i.e. their `sessions.source` set to the source id. */
   sessions_tagged?: number;
+  /** Error message when `status` is `error` or `unavailable`. */
   error?: string;
+  /**
+   * Non-fatal warning from Codex only: the remote `session_index.jsonl` title index could not be
+   * copied. Rollouts still import; renamed sessions just keep their default titles.
+   */
   title_index_warning?: string;
 }
 
 /** Result of a connectivity probe (POST /:id/test). */
 export interface RemoteSourceTestResult {
+  /** True when SSH connected and at least one provider's history directory was verified. */
   ok: boolean;
+  /** Human-readable summary of the probe, shown verbatim in the UI. */
   message: string;
+  /** Remote Claude projects path that was probed. */
   remoteProjects?: string;
+  /** Remote Codex sessions path that was probed. */
   remoteCodexSessions?: string;
+  /**
+   * Per-provider probe outcome with the remote path checked. `unavailable` means the directory does
+   * not exist on the remote.
+   */
   providers?: Partial<
     Record<
       RemoteProvider,
@@ -2942,13 +3406,21 @@ export interface RemoteSourceTestResult {
 
 /** Result of an on-demand sync (POST /:id/sync). */
 export interface RemoteSourceSyncResult {
+  /** Whether the sync completed successfully. */
   ok?: boolean;
+  /** Rows newly imported across all providers. */
   imported?: number;
+  /** Entries already present and left untouched, across all providers. */
   skipped?: number;
+  /** Existing rows filled in with previously missing data, across all providers. */
   backfilled?: number;
+  /** Files or entries that failed to import, across all providers. */
   errors?: number;
+  /** Distinct sessions found across all providers. */
   sessions_seen?: number;
+  /** Sessions attributed to this source across all providers. */
   sessions_tagged?: number;
+  /** Per-provider breakdown of the counters above. */
   providers?: Partial<Record<RemoteProvider, RemoteProviderSyncDetails>>;
   /** Present when the sync was skipped because one was already running. */
   skipped_reason?: string;
@@ -2959,20 +3431,41 @@ export interface RemoteSourceSyncResult {
  *  were newly inserted; `sessions_skipped` counts sessions already present
  *  (skipped whole to stay idempotent). Config tables report new rows only. */
 export interface ImportBackupResult {
+  /**
+   * True when the bundle was parsed and restored. Per-entry failures are counted in `errors`
+   * instead.
+   */
   ok: boolean;
   /** The uploaded filename or server-side path the bundle was read from. */
   source: string;
   /** Bundle format marker, or null for a legacy (pre-versioning) export. */
   format: string | null;
+  /** Sessions inserted from the bundle. */
   sessions_imported: number;
+  /**
+   * Sessions already present and skipped whole, including all their child rows, which is what keeps
+   * restore idempotent.
+   */
   sessions_skipped: number;
+  /** Agent rows inserted for newly imported sessions. */
   agents: number;
+  /** Event rows inserted for newly imported sessions. */
   events: number;
+  /** Token usage rows inserted for newly imported sessions. */
   token_usage: number;
+  /** Workflow rows inserted for newly imported sessions. */
   workflows: number;
+  /** Run history rows inserted. */
   dashboard_runs: number;
+  /** Alert rules inserted that did not already exist. */
   alert_rules: number;
+  /**
+   * Claude pricing rules inserted that did not already exist. Existing rules are never overwritten.
+   */
   model_pricing: number;
+  /**
+   * Cursor pricing rules inserted that did not already exist. Existing rules are never overwritten.
+   */
   cursor_model_pricing: number;
   /** Bundle entries that could not be restored (e.g. a session with no id). */
   errors: number;

@@ -58,6 +58,12 @@ import { z } from "zod";
 import { registrarFor } from "../../core/tool-registry.js";
 import type { ToolContext } from "../../types/tool-context.js";
 
+/**
+ * Register the read-only workflow tools: the workflow-intelligence bundle, one session's drill-in,
+ * and Workflow-tool runs.
+ *
+ * @param context - Shared tool context.
+ */
 export function registerWorkflowTools(context: ToolContext): void {
   const { api } = context;
   const register = registrarFor(context);

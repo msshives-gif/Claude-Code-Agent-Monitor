@@ -68,6 +68,11 @@ import { registerAllTools } from "../tools/index.js";
  * Collect the canonical tool declarations without constructing an MCP protocol
  * server. The REPL invokes these handlers directly, while schema validation is
  * retained by the collector registrar.
+ *
+ * @param config - Resolved configuration.
+ * @param api - Dashboard API client the tools call.
+ * @param logger - Logger.
+ * @returns Every tool with its domain, ready for direct invocation.
  */
 export function collectAllTools(
   config: AppConfig,

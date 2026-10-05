@@ -95,10 +95,13 @@ import { FieldHelp } from "./FieldHelp";
 import { timeAgo } from "../lib/format";
 import type { AlertEvent, AlertRule, AlertRuleType, WSMessage } from "../lib/types";
 
+/** Alerts fetched per page in the activity feed. */
 const PAGE_SIZE = 25;
 
-// Example values surfaced in the field-help tooltips so users know what to type.
-// These are the Claude Code hook event types and common built-in tool names.
+/**
+ * Example values surfaced in the field-help tooltips so users know what to type: the Claude Code
+ * hook event types an event-pattern rule can match.
+ */
 const EVENT_TYPE_EXAMPLES = [
   "PreToolUse",
   "PostToolUse",
@@ -109,6 +112,9 @@ const EVENT_TYPE_EXAMPLES = [
   "SessionEnd",
   "UserPromptSubmit",
 ];
+/**
+ * Example tool names for the event-pattern rule's tool field: common built-in Claude Code tools.
+ */
 const TOOL_NAME_EXAMPLES = [
   "Bash",
   "Read",
@@ -121,8 +127,13 @@ const TOOL_NAME_EXAMPLES = [
   "WebSearch",
   "TodoWrite",
 ];
+/** Example substrings for the event-pattern rule's summary field. */
 const SUMMARY_EXAMPLES = ["error", "permission", "timeout", "rate limit", "denied"];
 
+/**
+ * Rule types offered in the form. Event-pattern and token-threshold rules are checked on every
+ * ingested hook event; inactivity and status-duration rules are checked on a timer.
+ */
 const RULE_TYPES: AlertRuleType[] = [
   "event_pattern",
   "inactivity",
@@ -130,22 +141,45 @@ const RULE_TYPES: AlertRuleType[] = [
   "token_threshold",
 ];
 
+/** Panel tabs: alert rules, notification channels (webhooks), and the fired-alert activity feed. */
 type TabKey = "rules" | "channels" | "activity";
 
+/**
+ * Form state for creating or editing an alert rule. Numbers are kept as raw input strings until
+ * {@link buildConfig} parses them; only the fields of the selected rule type are used.
+ */
 interface RuleFormState {
+  /** Rule name, shown in alert messages. */
   name: string;
+  /** Which kind of rule this is; decides which of the fields below apply. */
   rule_type: AlertRuleType;
+  /** Event-pattern rule: hook event type to match, or empty for any. */
   event_type: string;
+  /** Event-pattern rule: tool name to match, or empty for any. */
   tool_name: string;
+  /** Event-pattern rule: substring the event summary must contain, or empty for any. */
   summary_contains: string;
+  /** Event-pattern rule: matching events needed within the window to fire; defaults to 1. */
   count: string;
+  /** Event-pattern rule: window in minutes the count is measured over; defaults to 5. */
   window_minutes: string;
+  /**
+   * Inactivity and status-duration rules: minutes of no activity, or of being stuck in `status`,
+   * before firing.
+   */
   minutes: string;
+  /** Status-duration rule: the agent status that counts as stuck. */
   status: "working" | "waiting";
+  /** Token-threshold rule: session token total that fires the alert. */
   total_tokens: string;
+  /**
+   * Minimum seconds between two alerts from this rule for the same target, so a noisy condition
+   * does not flood the feed.
+   */
   cooldown_seconds: string;
 }
 
+/** Blank rule form: an event-pattern rule with empty matchers. */
 const EMPTY_FORM: RuleFormState = {
   name: "",
   rule_type: "event_pattern",
@@ -160,6 +194,14 @@ const EMPTY_FORM: RuleFormState = {
   cooldown_seconds: "300",
 };
 
+/**
+ * Build the stored rule config from the form, keeping only the selected rule type's fields. Blank
+ * event-pattern matchers are omitted, and an invalid count or window falls back to 1 event in 5
+ * minutes.
+ *
+ * @param form - Current form state.
+ * @returns The `config` object for the rule.
+ */
 function buildConfig(form: RuleFormState): AlertRule["config"] {
   switch (form.rule_type) {
     case "event_pattern": {
@@ -184,6 +226,14 @@ function buildConfig(form: RuleFormState): AlertRule["config"] {
   }
 }
 
+/**
+ * One-line, localized description of a rule's condition for the rule list, for example `Matches
+ * event=PreToolUse tool=Bash` or `≥3 × event=Stop within 5 min`.
+ *
+ * @param rule - The rule.
+ * @param t - Translation function.
+ * @returns The description.
+ */
 function describeRule(rule: AlertRule, t: (key: string, opts?: Record<string, unknown>) => string) {
   const c = rule.config;
   switch (rule.rule_type) {
@@ -211,6 +261,13 @@ function describeRule(rule: AlertRule, t: (key: string, opts?: Record<string, un
   }
 }
 
+/**
+ * Alerts and notifications panel in Settings. The Rules tab creates, edits, enables, and deletes
+ * alert rules. The Channels tab hosts the webhook settings that deliver fired alerts. The Activity
+ * tab is a paginated feed of fired alerts with acknowledge controls. The feed and its counts
+ * refresh on `alert_triggered` and `alert_updated` WebSocket messages regardless of the open tab,
+ * so the unacknowledged badge stays accurate.
+ */
 export function AlertsNotifications() {
   const { t } = useTranslation("alerts");
   const { t: ts } = useTranslation("settings");
@@ -233,6 +290,7 @@ export function AlertsNotifications() {
   const [unackedOnly, setUnackedOnly] = useState(false);
   const [loadingAlerts, setLoadingAlerts] = useState(true);
 
+  /** Load the alert rules. */
   const loadRules = useCallback(async () => {
     setLoadingRules(true);
     try {
@@ -245,6 +303,7 @@ export function AlertsNotifications() {
     }
   }, []);
 
+  /** Load the first page of fired alerts, unacknowledged only when that filter is on. */
   const loadAlerts = useCallback(async () => {
     setLoadingAlerts(true);
     try {
@@ -263,6 +322,7 @@ export function AlertsNotifications() {
     }
   }, [unackedOnly]);
 
+  /** Append the next page of fired alerts. */
   const loadMore = useCallback(async () => {
     try {
       const res = await api.alerts.list({
@@ -296,8 +356,10 @@ export function AlertsNotifications() {
     });
   }, [loadAlerts]);
 
+  /** Merge a change into the rule form. */
   const set = (patch: Partial<RuleFormState>) => setForm((prev) => ({ ...prev, ...patch }));
 
+  /** Create a rule from the form; a missing or negative cooldown falls back to 300 seconds. */
   const onCreateRule = async () => {
     if (saving) return;
     setSaving(true);
@@ -320,6 +382,7 @@ export function AlertsNotifications() {
     }
   };
 
+  /** Enable or disable a rule, then reload the rules. */
   const onToggleRule = async (rule: AlertRule) => {
     try {
       await api.alerts.rules.update(rule.id, { enabled: !rule.enabled });
@@ -329,6 +392,7 @@ export function AlertsNotifications() {
     }
   };
 
+  /** Delete a rule, then reload the rules and the feed. */
   const onDeleteRule = async (rule: AlertRule) => {
     try {
       await api.alerts.rules.remove(rule.id);
@@ -340,6 +404,7 @@ export function AlertsNotifications() {
     }
   };
 
+  /** Acknowledge one alert, then reload the feed. */
   const onAck = async (id: number) => {
     try {
       await api.alerts.ack(id);
@@ -349,6 +414,7 @@ export function AlertsNotifications() {
     }
   };
 
+  /** Acknowledge every alert, then reload the feed. */
   const onAckAll = async () => {
     try {
       await api.alerts.ackAll();

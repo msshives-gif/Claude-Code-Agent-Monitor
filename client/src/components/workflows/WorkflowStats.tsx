@@ -66,6 +66,12 @@ import type { WorkflowStats } from "../../lib/types";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/**
+ * Format seconds as `2h 5m`, `4m 30s`, `4m`, or `45s`.
+ *
+ * @param sec - Duration in seconds.
+ * @returns The formatted duration, `0s` for zero or negative input.
+ */
 function formatDurationSec(sec: number): string {
   if (sec <= 0) return "0s";
   const h = Math.floor(sec / 3600);
@@ -76,6 +82,12 @@ function formatDurationSec(sec: number): string {
   return `${s}s`;
 }
 
+/**
+ * Text color for a success rate: green above 90%, yellow above 70%, red otherwise.
+ *
+ * @param rate - Success rate as a percentage.
+ * @returns Tailwind text class.
+ */
 function successRateColor(rate: number): string {
   if (rate > 90) return "text-emerald-400";
   if (rate > 70) return "text-yellow-400";
@@ -85,9 +97,20 @@ function successRateColor(rate: number): string {
 // ── Deterministic interpreters - return an i18n key + params ─────────────────
 // Pure rule-based mapping so the same input always yields the same explanation.
 
+/** Translation function signature. */
 type TFn = (key: string, options?: Record<string, unknown>) => string;
+/**
+ * A translation key plus interpolation values. The `interp*` helpers return one to explain what a
+ * metric's value means.
+ */
 type Interp = { key: string; params?: Record<string, unknown> };
 
+/**
+ * Pick the explanation for the average agent depth.
+ *
+ * @param v - Average nesting depth.
+ * @returns Explanation key: none, rare, single level, multi-level, or deep nesting.
+ */
 function interpAvgDepth(v: number): Interp {
   if (v <= 0) return { key: "stats.tooltip.depth.zero" };
   if (v < 0.5) return { key: "stats.tooltip.depth.rare" };
@@ -96,6 +119,13 @@ function interpAvgDepth(v: number): Interp {
   return { key: "stats.tooltip.depth.deep" };
 }
 
+/**
+ * Pick the explanation for the average subagents per session. Below one, the explanation is phrased
+ * as "about one in N sessions".
+ *
+ * @param v - Average subagents per session.
+ * @returns Explanation key and parameters.
+ */
 function interpAvgSubagents(v: number): Interp {
   if (v <= 0) return { key: "stats.tooltip.subagents.zero" };
   if (v < 1) {
@@ -107,6 +137,13 @@ function interpAvgSubagents(v: number): Interp {
   return { key: "stats.tooltip.subagents.veryHeavy" };
 }
 
+/**
+ * Pick the explanation for the agent success rate: perfect (99% and above), healthy (95%),
+ * acceptable (80%), concerning (50%), or critical.
+ *
+ * @param v - Success rate as a percentage.
+ * @returns Explanation key.
+ */
 function interpSuccessRate(v: number): Interp {
   if (v >= 99) return { key: "stats.tooltip.success.perfect" };
   if (v >= 95) return { key: "stats.tooltip.success.healthy" };
@@ -115,6 +152,14 @@ function interpSuccessRate(v: number): Interp {
   return { key: "stats.tooltip.success.critical" };
 }
 
+/**
+ * Pick the explanation for the most common tool transition, distinguishing a tool following itself
+ * from a pair of different tools.
+ *
+ * @param source - Tool that ran first, or null.
+ * @param target - Tool that ran next, or null.
+ * @returns Explanation key and parameters.
+ */
 function interpTopFlow(source: string | null, target: string | null): Interp {
   if (!source || !target) return { key: "stats.tooltip.topFlow.none" };
   if (source === target) {
@@ -131,6 +176,13 @@ function interpTopFlow(source: string | null, target: string | null): Interp {
   };
 }
 
+/**
+ * Pick the explanation for the average compactions per session. Below 0.5, it is phrased as "about
+ * one in N sessions".
+ *
+ * @param v - Average compactions per session.
+ * @returns Explanation key and parameters.
+ */
 function interpAvgCompactions(v: number): Interp {
   if (v <= 0) return { key: "stats.tooltip.compactions.zero" };
   if (v < 0.5) {
@@ -141,6 +193,13 @@ function interpAvgCompactions(v: number): Interp {
   return { key: "stats.tooltip.compactions.high" };
 }
 
+/**
+ * Pick the explanation for the average session duration, from under a minute up to marathon
+ * sessions of three hours or more.
+ *
+ * @param sec - Average duration in seconds.
+ * @returns Explanation key.
+ */
 function interpAvgDuration(sec: number): Interp {
   if (sec <= 0) return { key: "stats.tooltip.duration.zero" };
   if (sec < 60) return { key: "stats.tooltip.duration.veryShort" };
@@ -153,16 +212,28 @@ function interpAvgDuration(sec: number): Interp {
 
 // ── Info popover ──────────────────────────────────────────────────────────────
 
+/** Popover width in pixels. */
 const POPOVER_W = 300;
+/** Minimum distance kept between the popover and the viewport edge, in pixels. */
 const POPOVER_MARGIN = 12;
 
+/** Props for {@link InfoPopover}. */
 interface InfoPopoverProps {
+  /** Translation key explaining how the metric is calculated. */
   calculationKey: string;
+  /** Explanation of what the current value means. */
   interp: Interp;
+  /** Current value as displayed on the card. */
   valueDisplay: string;
+  /** Translation key naming the metric inside the explanation sentence. */
   metricPhraseKey: string;
 }
 
+/**
+ * Info button that opens a popover explaining how a stat is calculated and what its current value
+ * means. The popover is positioned next to the button with fixed coordinates, kept inside the
+ * viewport, follows scroll and resize, and closes on Escape.
+ */
 function InfoPopover({ calculationKey, interp, valueDisplay, metricPhraseKey }: InfoPopoverProps) {
   const { t } = useTranslation("workflows");
   const [open, setOpen] = useState(false);
@@ -172,6 +243,10 @@ function InfoPopover({ calculationKey, interp, valueDisplay, metricPhraseKey }: 
 
   useLayoutEffect(() => {
     if (!open) return;
+    /**
+     * Place the popover next to its button, flipping above when there is no room below, and keep it
+     * inside the viewport.
+     */
     const update = () => {
       const btn = buttonRef.current;
       const pop = popoverRef.current;
@@ -203,6 +278,7 @@ function InfoPopover({ calculationKey, interp, valueDisplay, metricPhraseKey }: 
 
   useEffect(() => {
     if (!open) return;
+    /** Close the popover on Escape. */
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
     };
@@ -266,16 +342,25 @@ function InfoPopover({ calculationKey, interp, valueDisplay, metricPhraseKey }: 
 
 // ── Stat card ─────────────────────────────────────────────────────────────────
 
+/** Props for {@link StatCard}. */
 interface StatCardProps {
+  /** Metric name. */
   label: string;
+  /** Formatted value. */
   value: string;
+  /** Icon shown next to the label. */
   icon: LucideIcon;
+  /** Tailwind text class for the value; defaults to the accent color. */
   accentClass?: string;
+  /** Translation key for the calculation explanation. */
   calculationKey: string;
+  /** Explanation of the current value. */
   interp: Interp;
+  /** Translation key naming the metric in the explanation. */
   metricPhraseKey: string;
 }
 
+/** One summary tile: label, icon, value, and an {@link InfoPopover} explaining it. */
 function StatCard({
   label,
   value,
@@ -313,10 +398,17 @@ function StatCard({
 
 // ── Public component ──────────────────────────────────────────────────────────
 
+/** Props for {@link WorkflowStats}. */
 export interface WorkflowStatsProps {
+  /** Aggregate workflow statistics from `/api/workflows`. */
   stats: WorkflowStats;
 }
 
+/**
+ * Row of six summary tiles at the top of the Workflows page: average agent depth, average subagents
+ * per session, agent success rate (color-coded), most common tool transition, average compactions
+ * per session, and average session duration.
+ */
 export function WorkflowStats({ stats }: WorkflowStatsProps) {
   const { t } = useTranslation("workflows");
   // t is referenced for translation prefix consistency.

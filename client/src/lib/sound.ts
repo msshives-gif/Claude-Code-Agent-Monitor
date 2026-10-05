@@ -189,6 +189,7 @@ const CUE_PREF: Record<CueName, CueFlag> = {
 
 // ─── Preference storage ───
 
+/** Memoized preferences; cleared by `setSoundPrefs`. */
 let cached: SoundPrefs | null = null;
 
 /**
@@ -245,6 +246,14 @@ export function subscribeToSoundPrefs(handler: () => void): () => void {
   return () => window.removeEventListener(PREFS_EVENT, listener);
 }
 
+/**
+ * Clamp a number to a range, treating non-finite input (NaN, Infinity) as `min`.
+ *
+ * @param value - Input.
+ * @param min - Lower bound.
+ * @param max - Upper bound.
+ * @returns The clamped value.
+ */
 function clamp(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
   return Math.min(max, Math.max(min, value));
@@ -266,17 +275,30 @@ interface Note {
   type?: OscillatorType;
 }
 
-// Frequencies are equal-temperament pitches. Cues stay inside a C-major
-// pentatonic-ish set so overlapping tails never sound dissonant, and every
-// envelope decays exponentially to avoid the click of a hard cutoff.
+/**
+ * Frequencies in Hz, using equal-temperament pitches. Cues stay inside a C-major pentatonic-like
+ * set so overlapping tails never sound dissonant, and every envelope decays exponentially to avoid
+ * the click of a hard cutoff. This is C5.
+ */
 const C5 = 523.25;
+/** D5 in Hz. */
 const D5 = 587.33;
+/** E5 in Hz. */
 const E5 = 659.25;
+/** G5 in Hz. */
 const G5 = 783.99;
+/** A5 in Hz. */
 const A5 = 880.0;
+/** C6 in Hz. */
 const C6 = 1046.5;
+/** E6 in Hz. */
 const E6 = 1318.51;
+/** G4 in Hz; the lower note of the session-error cue. */
 const G4 = 392.0;
+/**
+ * B-flat 4 in Hz; with G4 it forms the session-error cue's falling minor third, noticeable without
+ * sounding alarming.
+ */
 const Bb4 = 466.16;
 
 /** The synthesis recipe for every cue, as a list of scheduled partials. */
@@ -332,7 +354,9 @@ const BUDGET_EXEMPT: ReadonlySet<CueName> = new Set<CueName>(["click"]);
 
 // ─── Audio graph ───
 
+/** Shared Web Audio context, created lazily on the first cue after a user gesture. */
 let ctx: AudioContext | null = null;
+/** Master gain node; the volume preference (0 to 1) is applied here. */
 let master: GainNode | null = null;
 /** Set once a user gesture has been observed; before that, browsers refuse to
  *  start an `AudioContext` and every cue is a silent no-op. */
@@ -385,6 +409,7 @@ export function unlockSound(): void {
 export function installSoundUnlock(): () => void {
   if (typeof window === "undefined") return () => {};
   const events: (keyof WindowEventMap)[] = ["pointerdown", "keydown", "touchstart"];
+  /** Unlock audio on the first user gesture, then stop listening. */
   const handler = () => {
     unlockSound();
     events.forEach((e) => window.removeEventListener(e, handler));
@@ -395,16 +420,22 @@ export function installSoundUnlock(): () => void {
 
 // ─── Rate limiting ───
 
+/** When each cue last played, for its per-cue cooldown. */
 const lastPlayed = new Map<CueName, number>();
 /** Timestamps of recent plays, used for the global burst budget. */
 let recent: number[] = [];
 /** At most this many cues may start within {@link BURST_WINDOW_MS}. */
 const BURST_LIMIT = 4;
+/** Length of the window the burst budget is counted over, in milliseconds. */
 const BURST_WINDOW_MS = 1200;
 
 /** Returns true when `cue` is allowed to play right now, recording the play if
  *  so. Guards against both a single event type repeating (per-cue cooldown) and
- *  an import or reconnect replaying hundreds of messages (burst budget). */
+ *  an import or reconnect replaying hundreds of messages (burst budget).
+ *
+ * @param cue - Cue that wants to play.
+ * @param now - Current time in epoch milliseconds.
+ */
 function allow(cue: CueName, now: number): boolean {
   const cooldown = COOLDOWN_MS[cue] ?? DEFAULT_COOLDOWN_MS;
   const last = lastPlayed.get(cue);

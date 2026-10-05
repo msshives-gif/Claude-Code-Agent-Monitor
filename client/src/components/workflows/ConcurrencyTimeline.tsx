@@ -70,8 +70,10 @@ import type { ConcurrencyData, ConcurrencyLane } from "../../lib/types";
 
 // ── Color palette ─────────────────────────────────────────────────────────────
 
+/** Lane color for the main agent. */
 const MAIN_COLOR = "#6366f1"; // indigo
 
+/** Lane colors for subagent types, cycled by subagent index. */
 const SUBAGENT_PALETTE = [
   "#10b981", // emerald
   "#3b82f6", // blue
@@ -85,16 +87,32 @@ const SUBAGENT_PALETTE = [
 
 // ── Lane row ──────────────────────────────────────────────────────────────────
 
+/** Props for {@link LaneRow}. */
 interface LaneRowProps {
+  /** Aggregated lane to draw. */
   lane: ConcurrencyLane;
+  /** Lane color. */
   color: string;
+  /** Session count of the busiest lane, used to scale the count bar. */
   maxCount: number;
+  /** Shows the lane's tooltip anchored to the row. */
   onShowTip: (lane: ConcurrencyLane, color: string, anchor: HTMLElement) => void;
+  /** Hides the tooltip. */
   onHideTip: () => void;
 }
 
+/** Translation function signature used by the imperative tooltip builder. */
 type TFn = (key: string, options?: Record<string, unknown>) => string;
 
+/**
+ * Describe when in a session a lane typically runs, from its average start and end as fractions of
+ * the session: the whole session, front-loaded, back-loaded, a tight window, or a middle stretch.
+ *
+ * @param start - Average start, 0 to 1.
+ * @param end - Average end, 0 to 1.
+ * @param t - Translation function.
+ * @returns The timing description.
+ */
 function describeLaneTiming(start: number, end: number, t: TFn): string {
   // start/end are 0–1 fractions of session timeline.
   const startPct = Math.round(start * 100);
@@ -108,6 +126,10 @@ function describeLaneTiming(start: number, end: number, t: TFn): string {
   return t("concurrency.tooltip.timing.midSessionFmt", { start: startPct, end: endPct });
 }
 
+/**
+ * One lane: name, a bar showing how many sessions used it relative to the busiest lane, and a band
+ * marking its average start and end within a session.
+ */
 function LaneRow({ lane, color, maxCount, onShowTip, onHideTip }: LaneRowProps) {
   const { t } = useTranslation("workflows");
   const displayName = lane.name === "Main Agent" ? t("orchestration.mainAgent") : lane.name;
@@ -162,6 +184,17 @@ function LaneRow({ lane, color, maxCount, onShowTip, onHideTip }: LaneRowProps) 
   );
 }
 
+/**
+ * Fill the tooltip element for a lane: name, sessions using it, average start and end as
+ * percentages of the session, a timing description, and a hint explaining the bar. Built with DOM
+ * calls so hovering does not touch React state.
+ *
+ * @param el - Tooltip container; its children are replaced.
+ * @param lane - Hovered lane.
+ * @param displayName - Localized lane name.
+ * @param color - Lane color.
+ * @param t - Translation function.
+ */
 function buildLaneTooltip(
   el: HTMLDivElement,
   lane: ConcurrencyLane,
@@ -191,6 +224,7 @@ function buildLaneTooltip(
   subtitle.textContent = t("concurrency.tooltip.lane");
   el.appendChild(subtitle);
 
+  /** Append a label/value row to the tooltip. */
   const addRow = (label: string, value: string) => {
     const row = document.createElement("div");
     row.style.cssText =
@@ -224,6 +258,7 @@ function buildLaneTooltip(
 
 // ── Empty state ───────────────────────────────────────────────────────────────
 
+/** Placeholder shown when there are no lanes. */
 function EmptyState() {
   const { t } = useTranslation("workflows");
   return (
@@ -249,20 +284,28 @@ function EmptyState() {
 
 // ── Public component ──────────────────────────────────────────────────────────
 
+/** Props for {@link ConcurrencyTimeline}. */
 export interface ConcurrencyTimelineProps {
+  /** Aggregated lanes from `/api/workflows`. */
   data: ConcurrencyData;
 }
 
+/**
+ * Concurrency timeline on the Workflows page: one lane for the main agent and one per subagent
+ * type, showing how widely each is used and where in a typical session it runs.
+ */
 export function ConcurrencyTimeline({ data }: ConcurrencyTimelineProps) {
   const { t } = useTranslation("workflows");
   const tipRef = useRef<HTMLDivElement>(null);
   const lanes = data.aggregateLanes;
 
+  /** Hide the tooltip. */
   const hideTip = useCallback(() => {
     const tip = tipRef.current;
     if (tip) tip.style.opacity = "0";
   }, []);
 
+  /** Fill the tooltip for a lane and anchor it next to the row, kept inside the container. */
   const showTip = useCallback(
     (lane: ConcurrencyLane, color: string, anchor: HTMLElement) => {
       const tip = tipRef.current;
@@ -364,7 +407,14 @@ export function ConcurrencyTimeline({ data }: ConcurrencyTimelineProps) {
   );
 }
 
-// Re-export helper so callers can import the color fn if needed
+/**
+ * Lane color for a lane name: the main agent's fixed color, or a subagent palette color cycled by
+ * index. Exported so other components can color lanes consistently.
+ *
+ * @param name - Lane name (`Main Agent` for the main lane).
+ * @param subagentIndex - Index among subagent lanes.
+ * @returns A hex color.
+ */
 export function laneColor(name: string, subagentIndex: number): string {
   if (name === "Main Agent") return MAIN_COLOR;
   return SUBAGENT_PALETTE[subagentIndex % SUBAGENT_PALETTE.length] ?? MAIN_COLOR;

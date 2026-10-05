@@ -63,6 +63,10 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import type { SubagentEffectivenessItem } from "../../lib/types";
 
+/**
+ * Accent colors cycled across the score cards in order, so neighboring subagent types are easy to
+ * tell apart.
+ */
 const COLORS = [
   "#10b981",
   "#3b82f6",
@@ -74,10 +78,19 @@ const COLORS = [
   "#6366f1",
 ] as const;
 
+/** Radius of the success-rate ring, in SVG units. */
 const RING_RADIUS = 28;
+/** Stroke width of the success-rate ring. */
 const RING_STROKE = 5;
+/** Circumference of the ring, used to turn a percentage into a stroke dash length. */
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 
+/**
+ * Format a duration as `1h 5m`, `3m 20s`, or `45s`.
+ *
+ * @param seconds - Duration in seconds, or null when unknown.
+ * @returns The formatted duration, or `-` for null or negative input.
+ */
 function formatDurationSec(seconds: number | null): string {
   if (seconds === null || seconds < 0) return "-";
   const totalSec = Math.floor(seconds);
@@ -89,11 +102,17 @@ function formatDurationSec(seconds: number | null): string {
   return `${secs}s`;
 }
 
+/** Props for {@link SuccessRing}. */
 interface SuccessRingProps {
+  /** Success rate as a percentage; clamped to 0 to 100. */
   rate: number;
+  /** Ring color. */
   color: string;
 }
 
+/**
+ * Circular progress ring showing a subagent type's success rate with the percentage in the middle.
+ */
 function SuccessRing({ rate, color }: SuccessRingProps) {
   const { t } = useTranslation("workflows");
   const clampedRate = Math.max(0, Math.min(100, rate));
@@ -154,20 +173,31 @@ function SuccessRing({ rate, color }: SuccessRingProps) {
   );
 }
 
+/** Props for {@link Sparkline}. */
 interface SparklineProps {
+  /** Seven invocation counts, Monday first, covering the last eight weeks. */
   data: number[];
+  /** Bar color. */
   color: string;
 }
 
+/** Which sparkline bar is hovered and where it is on screen, for positioning its tooltip. */
 interface SparklineTooltipState {
+  /** Index of the hovered bar (0 is Monday). */
   index: number;
   /** Bounding rect of the hovered bar (in viewport coordinates). */
   rect: DOMRect;
 }
 
+/**
+ * Day-of-week bar chart of a subagent type's invocations. Weekday labels are localized with
+ * `Intl.DateTimeFormat`; bars are scaled to the busiest day, with a small minimum height so days
+ * with few or no invocations stay visible. Hovering a bar shows that day's count.
+ */
 function Sparkline({ data, color }: SparklineProps) {
   const { t, i18n } = useTranslation(["workflows", "common"]);
   const locale = i18n.resolvedLanguage ?? i18n.language;
+  /** Localized short weekday names, Monday first (January 5, 2026 is a Monday). */
   const dayLabels = useMemo(
     () =>
       Array.from({ length: 7 }, (_, day) =>
@@ -245,9 +275,13 @@ function SparklineTooltip({
   value,
   color,
 }: {
+  /** Screen rectangle of the hovered bar, used to position the tooltip. */
   rect: DOMRect;
+  /** Weekday label. */
   label: string;
+  /** Invocations on that weekday. */
   value: number;
+  /** Accent color of the card. */
   color: string;
 }) {
   const { t } = useTranslation("workflows");
@@ -295,11 +329,15 @@ function SparklineTooltip({
   );
 }
 
+/** Props for {@link MetricBox}. */
 interface MetricBoxProps {
+  /** Metric name. */
   label: string;
+  /** Formatted value. */
   value: string;
 }
 
+/** Small value-over-label tile inside a score card. */
 function MetricBox({ label, value }: MetricBoxProps) {
   return (
     <div className="flex flex-col items-center gap-0.5 bg-surface-3 rounded-lg px-2 py-2 flex-1 min-w-0 overflow-hidden">
@@ -313,11 +351,18 @@ function MetricBox({ label, value }: MetricBoxProps) {
   );
 }
 
+/** Props for {@link ScoreCard}. */
 interface ScoreCardProps {
+  /** Subagent type statistics to show. */
   item: SubagentEffectivenessItem;
+  /** Position of the card, used to pick its accent color. */
   colorIndex: number;
 }
 
+/**
+ * Score card for one subagent type: name, success ring, session count, and average duration, plus a
+ * day-of-week activity sparkline.
+ */
 function ScoreCard({ item, colorIndex }: ScoreCardProps) {
   const { t } = useTranslation("workflows");
   const color = COLORS[colorIndex % COLORS.length] ?? COLORS[0];
@@ -368,10 +413,16 @@ function ScoreCard({ item, colorIndex }: ScoreCardProps) {
   );
 }
 
+/** Props for {@link SubagentEffectiveness}. */
 export interface SubagentEffectivenessProps {
+  /** Per-subagent-type statistics from `/api/workflows`. */
   data: SubagentEffectivenessItem[];
 }
 
+/**
+ * Subagent effectiveness section on the Workflows page: a responsive grid of score cards, one per
+ * subagent type, or an empty message when no subagents ran.
+ */
 export function SubagentEffectiveness({ data }: SubagentEffectivenessProps) {
   const { t } = useTranslation("workflows");
   if (data.length === 0) {

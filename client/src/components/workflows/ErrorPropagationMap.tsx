@@ -62,14 +62,22 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ErrorPropagationData } from "../../lib/types";
 
+/** Bar colors by error depth, from the main agent (red) to deeply nested subagents (purple). */
 const DEPTH_COLORS = ["#ef4444", "#f97316", "#eab308", "#a855f7"];
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
+/** Props for {@link ErrorPropagationMap}. */
 export interface ErrorPropagationMapProps {
+  /** Error counts by agent depth and by subagent type, from `/api/workflows`. */
   data: ErrorPropagationData;
 }
 
+/**
+ * Error propagation section on the Workflows page: how many errors happen at each depth (main
+ * agent, direct subagents, nested, deeply nested) and which subagent types fail most. Hovering a
+ * depth highlights it.
+ */
 export function ErrorPropagationMap({ data }: ErrorPropagationMapProps) {
   const { t } = useTranslation("workflows");
   const [hoveredDepth, setHoveredDepth] = useState<number | null>(null);

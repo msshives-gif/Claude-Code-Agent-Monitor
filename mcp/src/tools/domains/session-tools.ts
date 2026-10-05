@@ -66,6 +66,8 @@ import type { ToolContext } from "../../types/tool-context.js";
  * List/get are read-only; create/update both call
  * {@link assertMutationsEnabled} first. None are gated by the
  * destructive-tools flag.
+ *
+ * @param context - Shared tool context.
  */
 export function registerSessionTools(context: ToolContext): void {
   const { api, config } = context;

@@ -70,7 +70,9 @@ import { formatModelName, formatDateTimeFull } from "../lib/format";
 import { CopyButton } from "./event-views/primitives";
 import { ToolInputView, ToolResponseView } from "./event-views/tool-views";
 
+/** Props for {@link EventDetail}. */
 type EventDetailProps = {
+  /** Event to show. */
   event: DashboardEvent;
   /** Optional lookup so the panel can surface a human-friendly agent name
    *  (e.g. "technical-researcher · Subagent 14") next to the raw agent_id.
@@ -87,7 +89,11 @@ type EventDetailProps = {
 /** Human-friendly label for an agent - `subagent_type · name` when both add
  *  signal, else whichever single field is present. Returns null for main
  *  agents whose name is just the session label (the agent_id row already
- *  carries the structural marker `<session>-main`, no need to repeat it). */
+ *  carries the structural marker `<session>-main`, no need to repeat it).
+ *
+ * @param info - Known agent details.
+ * @returns The label, or null when there is nothing friendlier than the raw id.
+ */
 function agentDisplayLabel(info: AgentInfo): string | null {
   if (info.type === "main") {
     return info.name && info.name.trim().length > 0 ? info.name : null;
@@ -100,9 +106,10 @@ function agentDisplayLabel(info: AgentInfo): string | null {
   return null;
 }
 
-// Keys from the payload that are already rendered from event-level fields -
-// skip them to avoid showing the same value twice. Includes `id` and
-// `event_id` defensively in case a future hook payload surfaces them.
+/**
+ * Payload keys already rendered from event-level fields; they are skipped to avoid showing the same
+ * value twice. Includes `id` and `event_id` defensively in case a future hook payload carries them.
+ */
 const DUPLICATE_KEYS = new Set(["id", "event_id", "session_id", "agent_id"]);
 
 /** Map raw payload keys to localized i18n labels under common:eventDetail.
@@ -143,7 +150,11 @@ const PAYLOAD_LABEL_KEYS: Record<string, string> = {
 
 /** Convert `snake_case` / `camelCase` to a human-readable Title Case label
  *  for any payload key not in PAYLOAD_LABEL_KEYS. Defensive fallback so
- *  every row reads naturally even when a new hook field appears. */
+ *  every row reads naturally even when a new hook field appears.
+ *
+ * @param key - Raw payload key, such as `tool_input`.
+ * @returns A readable label.
+ */
 function humanizeKey(key: string): string {
   return key
     .replace(/[_-]+/g, " ")
@@ -151,11 +162,21 @@ function humanizeKey(key: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+/** One payload field: raw key, display label, and value. */
 type Row = { key: string; label: string; value: unknown };
 
+/**
+ * Expanded detail panel for one event. Shows the readable summary first, then the event's
+ * identifiers (with friendly agent and session names when the caller supplies lookups), then each
+ * payload field rendered according to its shape and the tool involved. Unparseable payloads fall
+ * back to raw text.
+ */
 export function EventDetail({ event, agentInfoById, sessionNameById }: EventDetailProps) {
   const { t } = useTranslation("common");
 
+  /**
+   * The event's JSON payload as an object, or null when there is none or it is not a JSON object.
+   */
   const parsed = useMemo<Record<string, unknown> | null>(() => {
     if (!event.data) return null;
     try {
@@ -168,8 +189,13 @@ export function EventDetail({ event, agentInfoById, sessionNameById }: EventDeta
     }
   }, [event.data]);
 
+  /** Readable summary of the event. */
   const summary = useMemo(() => buildEventSummary(event), [event]);
 
+  /**
+   * Rows for the detail list: the event id, the full recorded date and time, identifiers with
+   * friendly agent and session names when known, then the payload fields minus duplicates.
+   */
   const rows = useMemo<Row[]>(() => {
     const result: Row[] = [{ key: "event_id", label: t("eventDetail.eventId"), value: event.id }];
     // Full date + time + timezone - list rows only show a short time, so the
@@ -268,13 +294,20 @@ export function EventDetail({ event, agentInfoById, sessionNameById }: EventDeta
 
 // ───────────────────────── Summary block ─────────────────────────
 
+/**
+ * Readable summary of an event: icon, headline, and bullets. It also notes when the full tool input
+ * or response is shown below.
+ */
 function SummaryBlock({
   summary,
   hasToolInput,
   hasToolResponse,
 }: {
+  /** Icon, headline, and bullet lines for the event. */
   summary: { icon: string; headline: string; bullets: string[] };
+  /** Whether the tool input is shown below, which the summary mentions. */
   hasToolInput: boolean;
+  /** Whether the tool response is shown below, which the summary mentions. */
   hasToolResponse: boolean;
 }) {
   const { t } = useTranslation("common");
@@ -318,6 +351,10 @@ function SummaryBlock({
 
 // ───────────────────────── Field row ─────────────────────────
 
+/**
+ * One payload field. Short scalars render inline; long text, objects, and arrays render as a code
+ * view; tool inputs and responses get tool-aware views.
+ */
 function FieldRow({
   rowKey,
   label,
@@ -327,8 +364,11 @@ function FieldRow({
   /** Raw payload key - used for tool-aware routing decisions so the renderer
    *  doesn't break when the user-visible label is translated. */
   rowKey: string;
+  /** Display label. */
   label: string;
+  /** Field value. */
   value: unknown;
+  /** Tool the event belongs to, used to pick tool-aware views; null for non-tool events. */
   toolName: string | null;
 }) {
   // Route tool_input / tool_response through tool-aware renderers when the
@@ -376,6 +416,12 @@ function FieldRow({
   );
 }
 
+/**
+ * Whether a value is short enough to show inline next to its label.
+ *
+ * @param value - Field value.
+ * @returns True for null, booleans, numbers, and single-line strings of at most 120 characters.
+ */
 function isInlineScalar(value: unknown): boolean {
   if (value == null) return true;
   if (typeof value === "boolean" || typeof value === "number") return true;
@@ -383,6 +429,7 @@ function isInlineScalar(value: unknown): boolean {
   return false;
 }
 
+/** Inline rendering of a scalar: an italic `null`, a true/false chip, or plain text. */
 function ScalarValue({ value }: { value: unknown }) {
   if (value == null) return <span className="text-gray-500 italic">null</span>;
   if (typeof value === "boolean") {
@@ -398,6 +445,10 @@ function ScalarValue({ value }: { value: unknown }) {
 
 // ───────────────────────── Terminal-styled JSON code view (fallback) ─────────────────────────
 
+/**
+ * Code-styled block for long text or structured values, labelled `text`, `array`, or `json`, with a
+ * copy button.
+ */
 function CodeView({ value }: { value: unknown }) {
   const text = typeof value === "string" ? value : safeStringify(value);
 
@@ -416,6 +467,13 @@ function CodeView({ value }: { value: unknown }) {
   );
 }
 
+/**
+ * JSON-stringify with indentation, falling back to `String(value)` for values JSON cannot
+ * serialize.
+ *
+ * @param value - Any value.
+ * @returns The text to display.
+ */
 function safeStringify(value: unknown): string {
   try {
     return JSON.stringify(value, null, 2);

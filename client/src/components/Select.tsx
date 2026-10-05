@@ -114,6 +114,7 @@ export function Select<T extends string>({ value, onChange, options, disabled }:
 
   useEffect(() => {
     if (!open) return;
+    /** Close the list on a click outside the component. */
     const onClick = (e: MouseEvent) => {
       if (!containerRef.current) return;
       if (!containerRef.current.contains(e.target as Node)) setOpen(false);
@@ -141,12 +142,18 @@ export function Select<T extends string>({ value, onChange, options, disabled }:
     }
   }, [open, value, options]);
 
+  /** Pick an option, close the list, and return focus to the button. */
   const choose = (opt: SelectOption<T>) => {
     onChange(opt.value);
     setOpen(false);
     buttonRef.current?.focus();
   };
 
+  /**
+   * Keyboard handling on the button: arrow keys, Enter, or Space open the list; while open, arrows
+   * move the highlight, Home and End jump to the ends, Enter or Space picks the highlighted option,
+   * and Escape closes.
+   */
   const onKey = (e: React.KeyboardEvent<HTMLButtonElement>) => {
     if (
       !open &&

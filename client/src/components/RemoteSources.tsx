@@ -96,6 +96,10 @@ import { isRemoteDataRefreshMessage } from "../lib/remoteDataEvents";
 import { useDataScope } from "../lib/dataScope";
 import type { ScopeMode } from "../lib/dataScope";
 
+/**
+ * Blank form for adding a source: no label or host, the default SSH port, the default remote homes,
+ * and enabled.
+ */
 const EMPTY_FORM: RemoteSourceInput = {
   label: "",
   host: "",
@@ -106,6 +110,7 @@ const EMPTY_FORM: RemoteSourceInput = {
   enabled: true,
 };
 
+/** Order in which per-provider status chips are shown. */
 const REMOTE_PROVIDER_ORDER: RemoteProvider[] = ["claude", "codex"];
 
 /** Compact status pill for a source's last-known sync state. */
@@ -133,6 +138,14 @@ function StatusPill({ status }: { status: RemoteSource["status"] }) {
   );
 }
 
+/**
+ * Remote Data Sources section in Settings. Manages SSH machines whose Claude Code and Codex history
+ * is mirrored into this dashboard: add, edit, enable or disable, test the connection, sync one or
+ * all now, and remove (optionally purging the imported sessions). Each source shows per-provider
+ * status and its last sync counts. It also hosts the machine scope selector, listing every machine
+ * that has data plus any configured source, so a new source is selectable before its first sync.
+ * Refreshes when a sync finishes or remote rows change.
+ */
 export function RemoteSources() {
   const { t } = useTranslation("settings");
   const [sources, setSources] = useState<RemoteSource[]>([]);
@@ -151,6 +164,10 @@ export function RemoteSources() {
   const [testResults, setTestResults] = useState<Record<string, RemoteSourceTestResult>>({});
   const [confirmDelete, setConfirmDelete] = useState<{ id: string; purge: boolean } | null>(null);
 
+  /**
+   * Load the configured sources and the machines that have data. Failures are ignored; the next
+   * refresh catches up.
+   */
   const load = useCallback(() => {
     Promise.all([api.remoteSources.list(), api.sessions.facets()])
       .then(([srcRes, facetRes]) => {
@@ -180,6 +197,10 @@ export function RemoteSources() {
   const scopeOptionIds = ["local", ...new Set([...configuredIds, ...facetSources])].filter(
     (id, i, arr) => id === "local" || (arr.indexOf(id) === i && id !== "local")
   );
+  /**
+   * Display label for a machine id: "This machine" for `local`, the source's label for a configured
+   * source, or the raw id.
+   */
   const labelFor = (id: string) =>
     id === "local"
       ? t("remoteSources.thisMachine", "This machine")
@@ -647,12 +668,18 @@ export function RemoteSources() {
           {sources.map((s) => {
             const test = testResults[s.id];
             const busy = busyId === s.id;
+            /** Display name of a provider. */
             const providerTitle = (provider: RemoteProvider) =>
               provider === "codex"
                 ? t("remoteSources.providerCodex", "Codex")
                 : t("remoteSources.providerClaude", "Claude Code");
+            /** Last sync state of one provider for this source; idle when unknown. */
             const providerState = (provider: RemoteProvider): RemoteProviderStatus =>
               (provider === "codex" ? s.codex_status : s.claude_status) || "idle";
+            /**
+             * Chip classes for a sync state: green for ok, gray for unavailable, red for error,
+             * amber while syncing.
+             */
             const stateClass = (state: RemoteProviderStatus) => {
               if (state === "ok") return "text-emerald-300 border-emerald-500/30 bg-emerald-500/10";
               if (state === "unavailable") return "text-gray-400 border-gray-500/25 bg-gray-500/10";

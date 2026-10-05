@@ -64,6 +64,10 @@
 import React from "react";
 import { CodeBlock } from "./CodeBlock";
 
+/**
+ * A block-level piece of parsed markdown: fenced code, heading, list, block quote, horizontal rule,
+ * table, or paragraph.
+ */
 type Block =
   | { kind: "code"; lang: string; code: string }
   | { kind: "heading"; level: number; text: string }
@@ -78,14 +82,30 @@ type Block =
     }
   | { kind: "para"; text: string };
 
+/**
+ * Opening or closing code fence (``` or ~~~), optionally indented and followed by a language tag.
+ */
 const FENCE_RE = /^([ \t]*)(```|~~~)(\s*[\w+-]*)\s*$/;
+/** ATX heading (`#` to `######`), ignoring optional closing hashes. */
 const HEADING_RE = /^(#{1,6})\s+(.+?)\s*#*\s*$/;
+/** Horizontal rule: three or more `-`, `*`, or `_`. */
 const HR_RE = /^\s*(-{3,}|\*{3,}|_{3,})\s*$/;
+/** Unordered list item marked with `-`, `*`, or `+`. */
 const UL_RE = /^(\s*)([-*+])\s+(.*)$/;
+/** Ordered list item such as `1.`. */
 const OL_RE = /^(\s*)(\d+)\.\s+(.*)$/;
+/** Block quote line starting with `>`. */
 const QUOTE_RE = /^\s*>\s?(.*)$/;
+/** Table header divider row, such as `| --- | :---: |`. */
 const TABLE_DIVIDER_RE = /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/;
 
+/**
+ * Split a markdown table row into cell texts, dropping the outer pipes and honoring `\|` escapes
+ * inside cells.
+ *
+ * @param line - Table row.
+ * @returns Trimmed cell texts.
+ */
 function splitTableRow(line: string): string[] {
   // Trim leading/trailing pipes, then split, respecting escaped pipes.
   let s = line.trim();
@@ -111,6 +131,12 @@ function splitTableRow(line: string): string[] {
   return parts;
 }
 
+/**
+ * Read column alignments from a table divider row: `:---` left, `---:` right, `:---:` center.
+ *
+ * @param divider - Divider row.
+ * @returns One alignment per column, or null when unspecified.
+ */
 function parseAlignments(divider: string): ("left" | "center" | "right" | null)[] {
   return splitTableRow(divider).map((cell) => {
     const left = cell.startsWith(":");
@@ -122,6 +148,15 @@ function parseAlignments(divider: string): ("left" | "center" | "right" | null)[
   });
 }
 
+/**
+ * Split markdown source into blocks in one pass over its lines: fenced code (an unclosed fence runs
+ * to the end), headings, horizontal rules, tables (a header row followed by a divider), block
+ * quotes, ordered and unordered lists, and paragraphs. Inline formatting is handled later, per
+ * block.
+ *
+ * @param src - Markdown text.
+ * @returns The blocks in order.
+ */
 function parseBlocks(src: string): Block[] {
   const lines = src.split("\n");
   const blocks: Block[] = [];
@@ -251,18 +286,26 @@ function parseBlocks(src: string): Block[] {
   return blocks;
 }
 
-/** Render inline markdown (bold/italic/code/strikethrough/links/auto-links). */
+/**
+ * Render inline markdown (bold/italic/code/strikethrough/links/auto-links).
+ *
+ * @param text - Inline markdown.
+ * @param baseKey - Prefix for React keys, unique within the parent.
+ * @returns The rendered nodes.
+ */
 function renderInline(text: string, baseKey = ""): React.ReactNode[] {
   const out: React.ReactNode[] = [];
   let i = 0;
   let buf = "";
   let n = 0;
+  /** Emit pending plain text as a node. */
   const flush = () => {
     if (buf) {
       out.push(buf);
       buf = "";
     }
   };
+  /** Emit a formatted node, flushing pending text first. */
   const push = (node: React.ReactNode) => {
     flush();
     out.push(<React.Fragment key={`${baseKey}-${n++}`}>{node}</React.Fragment>);
@@ -358,7 +401,13 @@ function renderInline(text: string, baseKey = ""): React.ReactNode[] {
   return out;
 }
 
-/** Render a single list item, handling [ ] / [x] task list prefixes. */
+/**
+ * Render a single list item, handling [ ] / [x] task list prefixes.
+ *
+ * @param item - List item text, possibly starting with `[ ]` or `[x]`.
+ * @param key - React key.
+ * @returns The rendered item, with a checkbox for task items.
+ */
 function renderListItem(item: string, key: string): React.ReactNode {
   const taskMatch = item.match(/^\[([ xX])\]\s+(.*)$/s);
   if (taskMatch) {
@@ -380,12 +429,15 @@ function renderListItem(item: string, key: string): React.ReactNode {
   return renderInline(item, key);
 }
 
+/** Props for {@link MarkdownContent}. */
 interface MarkdownContentProps {
+  /** Markdown source to render. */
   text: string;
   /** Tighter spacing for nested contexts (list items, quotes). */
   dense?: boolean;
 }
 
+/** Classes for heading levels 1 to 6. */
 const HEADING_STYLES = [
   "text-[18px] font-semibold text-gray-50 mt-2 pb-1 border-b border-surface-3",
   "text-[16px] font-semibold text-gray-50 mt-2",
@@ -395,6 +447,11 @@ const HEADING_STYLES = [
   "text-xs font-medium text-gray-300 uppercase tracking-wider",
 ];
 
+/**
+ * Lightweight markdown renderer used for agent messages in the conversation views and the Run page.
+ * Supports fenced code with syntax highlighting, headings, lists, quotes, rules, tables, and inline
+ * formatting, without pulling in a full markdown library and without rendering raw HTML.
+ */
 export function MarkdownContent({ text, dense = false }: MarkdownContentProps) {
   const blocks = parseBlocks(text);
   const gap = dense ? "space-y-1.5" : "space-y-2.5";
@@ -459,6 +516,7 @@ export function MarkdownContent({ text, dense = false }: MarkdownContentProps) {
             );
 
           case "table": {
+            /** Text alignment class for a table column. */
             const alignClass = (a: "left" | "center" | "right" | null) =>
               a === "center" ? "text-center" : a === "right" ? "text-right" : "text-left";
             return (

@@ -68,6 +68,7 @@ import type { SessionTodoItem, SessionTodoStatus, SessionTodoSummary } from "../
 import { timeAgo } from "../lib/format";
 import { TODO_STATUS_META, taskProgressSegments, taskSourceLabel } from "./todoProgress";
 
+/** Icon for each task status. */
 const STATUS_ICONS = {
   completed: Check,
   in_progress: LoaderCircle,
@@ -76,11 +77,19 @@ const STATUS_ICONS = {
   unknown: Info,
 } satisfies Record<SessionTodoStatus, typeof Circle>;
 
+/** Props for {@link TodoProgressIndicator}. */
 interface TodoProgressIndicatorProps {
+  /** Task progress summary to show. */
   progress: SessionTodoSummary;
+  /** Stop clicks from reaching the parent, for use inside clickable rows and cards. */
   stopClickPropagation?: boolean;
 }
 
+/**
+ * Compact task-progress indicator for session rows and cards: a progress donut with the completed
+ * count. Hovering or focusing it opens a tooltip with the status breakdown, the current task, and a
+ * preview of upcoming tasks.
+ */
 export function TodoProgressIndicator({
   progress,
   stopClickPropagation = false,
@@ -91,6 +100,10 @@ export function TodoProgressIndicator({
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState({ left: 0, top: 0 });
 
+  /**
+   * Place the tooltip centered under the indicator, at most 340px wide and kept inside the
+   * viewport.
+   */
   const positionTooltip = useCallback(() => {
     const rect = anchorRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -106,6 +119,7 @@ export function TodoProgressIndicator({
     setPosition({ left, top });
   }, []);
 
+  /** Position and open the tooltip. */
   const show = useCallback(() => {
     positionTooltip();
     setOpen(true);
@@ -191,17 +205,25 @@ export function TodoProgressIndicator({
   );
 }
 
+/**
+ * Ring chart of task completion: a track circle with a progress arc on top, and an optional
+ * percentage in the middle.
+ */
 export function ProgressDonut({
   progress,
   size,
   strokeWidth,
   showPercent = false,
 }: {
+  /** Progress to draw: a summary or snapshot. */
   progress:
     | SessionTodoSummary
     | { completed: number; total: number; percentComplete: number | null };
+  /** Diameter in pixels. */
   size: number;
+  /** Ring thickness in pixels. */
   strokeWidth: number;
+  /** Show the completion percentage inside the ring. */
   showPercent?: boolean;
 }) {
   const radius = (size - strokeWidth) / 2;
@@ -243,6 +265,7 @@ export function ProgressDonut({
   );
 }
 
+/** Grid of status counts in the tooltip. */
 function StatusSummary({ progress }: { progress: SessionTodoSummary }) {
   const { t } = useTranslation("sessions");
   return (
@@ -263,6 +286,7 @@ function StatusSummary({ progress }: { progress: SessionTodoSummary }) {
   );
 }
 
+/** One task in the tooltip preview, with its status icon (spinning while in progress) and text. */
 function TaskPreviewRow({ item }: { item: SessionTodoItem }) {
   const Icon = STATUS_ICONS[item.status] || CircleDashed;
   const meta = TODO_STATUS_META[item.status];

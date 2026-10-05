@@ -73,12 +73,21 @@ import type {
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+/** Drill-in panel tab: the agent tree, the tool timeline, or the raw event sequence. */
 type Tab = "tree" | "timeline" | "events";
 
+/** One node of the session's agent tree, possibly with nested children. */
 type AgentNode = SessionDrillInData["tree"][number];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/**
+ * Tailwind text, background, and border classes for an agent status chip: violet for completed,
+ * emerald for working or active, yellow for waiting, red for error, and gray otherwise.
+ *
+ * @param status - Agent or session status.
+ * @returns Class names.
+ */
 function statusColor(status: string): string {
   switch (status) {
     case "completed":
@@ -96,6 +105,13 @@ function statusColor(status: string): string {
   }
 }
 
+/**
+ * Format a database timestamp for display. SQLite timestamps without a zone marker are UTC and are
+ * normalized before formatting.
+ *
+ * @param raw - Timestamp from the API.
+ * @returns The formatted date and time, or `raw` unchanged if formatting throws.
+ */
 function safeTimestamp(raw: string): string {
   try {
     const normalized = /[Zz]$|[+-]\d{2}:\d{2}$/.test(raw) ? raw : raw.replace(" ", "T") + "Z";
@@ -107,11 +123,15 @@ function safeTimestamp(raw: string): string {
 
 // ── Tab bar ───────────────────────────────────────────────────────────────────
 
+/** Props for {@link TabBar}. */
 interface TabBarProps {
+  /** Selected tab. */
   active: Tab;
+  /** Called when a tab is clicked. */
   onChange: (t: Tab) => void;
 }
 
+/** Tab strip for switching between the agent tree, tool timeline, and event sequence. */
 function TabBar({ active, onChange }: TabBarProps) {
   const { t } = useTranslation("workflows");
   const tabs = [
@@ -155,11 +175,18 @@ function TabBar({ active, onChange }: TabBarProps) {
 
 // ── Agent Tree ────────────────────────────────────────────────────────────────
 
+/** Props for {@link TreeNode}. */
 interface TreeNodeProps {
+  /** Agent to render. */
   node: AgentNode;
+  /** Nesting depth; each level indents 20px. */
   depth: number;
 }
 
+/**
+ * One agent row in the tree (name, subagent type, status chip, and duration or `running`) followed
+ * by its children, rendered recursively one level deeper.
+ */
 function TreeNode({ node, depth }: TreeNodeProps) {
   const { t } = useTranslation(["workflows", "common"]);
   const indentPx = depth * 20;
@@ -220,10 +247,13 @@ function TreeNode({ node, depth }: TreeNodeProps) {
   );
 }
 
+/** Props for {@link AgentTree}. */
 interface AgentTreeProps {
+  /** Root agents of the session, each with nested subagents. */
   tree: SessionDrillInData["tree"];
 }
 
+/** Scrollable agent tree for the session, or an empty message when it has no agents. */
 function AgentTree({ tree }: AgentTreeProps) {
   const { t } = useTranslation("workflows");
   if (tree.length === 0) {
@@ -241,12 +271,19 @@ function AgentTree({ tree }: AgentTreeProps) {
 
 // ── Tool Timeline ─────────────────────────────────────────────────────────────
 
+/** One tool call in the session's tool timeline. */
 type ToolEvent = SessionDrillInData["toolTimeline"][number];
 
+/** Props for {@link ToolTimeline}. */
 interface ToolTimelineProps {
+  /** Tool calls in time order. */
   events: ToolEvent[];
 }
 
+/**
+ * Scrollable list of the session's tool calls, each with the tool name (or event type), its
+ * summary, and timestamp; or an empty message.
+ */
 function ToolTimeline({ events }: ToolTimelineProps) {
   const { t } = useTranslation("workflows");
   if (events.length === 0) {
@@ -284,10 +321,13 @@ function ToolTimeline({ events }: ToolTimelineProps) {
 
 // ── Event Sequence ────────────────────────────────────────────────────────────
 
+/** Props for {@link EventSequence}. */
 interface EventSequenceProps {
+  /** Session events to list. */
   events: DashboardEvent[];
 }
 
+/** Text color for each event type in the event sequence. */
 const EVENT_TYPE_COLOR: Record<string, string> = {
   tool_use: "text-blue-400",
   tool_result: "text-emerald-400",
@@ -297,10 +337,20 @@ const EVENT_TYPE_COLOR: Record<string, string> = {
   error: "text-red-400",
 };
 
+/**
+ * Text color for an event type, gray for types without a specific color.
+ *
+ * @param type - Event type.
+ * @returns Tailwind text class.
+ */
 function eventTypeColor(type: string): string {
   return EVENT_TYPE_COLOR[type] ?? "text-gray-400";
 }
 
+/**
+ * The session's raw event stream, limited to the first 100 events, with color-coded types and
+ * summaries.
+ */
 function EventSequence({ events }: EventSequenceProps) {
   const { t } = useTranslation("workflows");
   if (events.length === 0) {
@@ -348,6 +398,7 @@ function EventSequence({ events }: EventSequenceProps) {
 
 // ── Loading / Error states ────────────────────────────────────────────────────
 
+/** Pulsing placeholder lines shown while drill-in data loads. */
 function LoadingState() {
   return (
     <div className="flex flex-col gap-3 py-8 px-4 animate-pulse">
@@ -358,10 +409,13 @@ function LoadingState() {
   );
 }
 
+/** Props for {@link ErrorState}. */
 interface ErrorStateProps {
+  /** Error message from the failed request. */
   message: string;
 }
 
+/** Error panel shown when the drill-in request fails. */
 function ErrorState({ message }: ErrorStateProps) {
   const { t } = useTranslation("workflows");
   return (
@@ -377,10 +431,16 @@ function ErrorState({ message }: ErrorStateProps) {
 
 // ── Empty / no-selection state ────────────────────────────────────────────────
 
+/** Props for {@link NoSessionState}. */
 interface NoSessionStateProps {
+  /** Called with the id of the session the user picks. */
   onSelectSession: (id: string) => void;
 }
 
+/**
+ * Placeholder shown before a session is chosen: previews the three tabs and embeds the {@link
+ * SessionSelector}.
+ */
 function NoSessionState({ onSelectSession }: NoSessionStateProps) {
   const { t } = useTranslation("workflows");
   const tabs = [
@@ -430,13 +490,19 @@ function NoSessionState({ onSelectSession }: NoSessionStateProps) {
 
 // ── Session header ────────────────────────────────────────────────────────────
 
+/** Props for {@link SessionHeader}. */
 interface SessionHeaderProps {
+  /** Drill-in data for the open session. */
   drillIn: SessionDrillInData;
+  /** Closes the drill-in. */
   onClose: () => void;
+  /** Selected tab. */
   activeTab: Tab;
+  /** Called when a tab is clicked. */
   onTabChange: (t: Tab) => void;
 }
 
+/** Drill-in header: session name (or id), model and status, a close button, and the tab bar. */
 function SessionHeader({ drillIn, onClose, activeTab, onTabChange }: SessionHeaderProps) {
   const { t } = useTranslation("workflows");
   const { session } = drillIn;
@@ -470,12 +536,20 @@ function SessionHeader({ drillIn, onClose, activeTab, onTabChange }: SessionHead
 
 // ── Session Selector ──────────────────────────────────────────────────────────
 
+/** Sessions fetched per page in the selector dropdown. */
 const PAGE_SIZE = 20;
 
+/** Props for {@link SessionSelector}. */
 interface SessionSelectorProps {
+  /** Called with the id of the chosen session. */
   onSelectSession: (id: string) => void;
 }
 
+/**
+ * Searchable session dropdown for picking a session to drill into. Without a search it pages
+ * through sessions {@link PAGE_SIZE} at a time; the first keystroke lazily loads up to 5,000
+ * sessions once so the search can match any session by name or id. Closes on an outside click.
+ */
 function SessionSelector({ onSelectSession }: SessionSelectorProps) {
   const { t } = useTranslation("workflows");
   const [open, setOpen] = useState(false);
@@ -489,6 +563,10 @@ function SessionSelector({ onSelectSession }: SessionSelectorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  /**
+   * Fetch one page of sessions for the dropdown, replacing or appending to the list, and note
+   * whether more pages exist.
+   */
   const fetchPage = useCallback((pageOffset: number, replace: boolean) => {
     setLoading(true);
     api.sessions
@@ -671,12 +749,22 @@ function SessionSelector({ onSelectSession }: SessionSelectorProps) {
 
 // ── Public component ──────────────────────────────────────────────────────────
 
+/** Props for {@link SessionDrillIn}. */
 export interface SessionDrillInProps {
+  /** Session to show, or null to show the session picker. */
   sessionId: string | null;
+  /** Closes the drill-in. */
   onClose: () => void;
+  /** Called when a session is picked from the empty state. */
   onSelectSession: (id: string) => void;
 }
 
+/**
+ * Per-session drill-in on the Workflows page. Loads `/api/workflows/session/:id` whenever
+ * `sessionId` changes (ignoring responses that arrive after a newer request) and shows the
+ * session's agent tree, tool timeline, and event sequence in tabs. Opens on the agent tree each
+ * time a session loads.
+ */
 export function SessionDrillIn({ sessionId, onClose, onSelectSession }: SessionDrillInProps) {
   const { t } = useTranslation(["workflows", "common"]);
   const [activeTab, setActiveTab] = useState<Tab>("tree");

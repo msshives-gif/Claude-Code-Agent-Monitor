@@ -87,17 +87,30 @@ import { matchIntent } from "./intents";
 import { tabbyPrefs } from "./prefs";
 import "./tabby.css";
 
+/** Gap between the avatar and its panel or speech bubble, in pixels. */
 const FLYOUT_GAP = 10; // px between avatar and flyout
+/** Minimum distance kept between a flyout and any viewport edge, in pixels. */
 const VIEWPORT_MARGIN = 12; // min gap from any screen edge
 
+/** Where Tabby's avatar sits, used to position its flyouts next to it. */
 interface Anchor {
+  /** Avatar left edge, in screen pixels. */
   left: number;
+  /** Avatar top edge, in screen pixels. */
   top: number;
+  /** Avatar size, in pixels. */
   size: number;
+  /** Edge the avatar is docked to; flyouts open toward the opposite side. */
   side: "left" | "right";
+  /** Whether flyouts open upward, chosen when the avatar sits in the lower half of the screen. */
   openUp: boolean;
 }
 
+/**
+ * Track the user's `prefers-reduced-motion` setting, updating live when it changes.
+ *
+ * @returns True when the user prefers reduced motion.
+ */
 function usePrefersReducedMotion(): boolean {
   const [reduced, setReduced] = useState(
     () =>
@@ -124,6 +137,10 @@ function TabbyFlyout({ anchor, children }: { anchor: Anchor; children: ReactNode
   const ref = useRef<HTMLDivElement>(null);
   const [style, setStyle] = useState<CSSProperties>({ visibility: "hidden" });
 
+  /**
+   * Position the flyout: hug the avatar's docked edge horizontally, open above or below it, and
+   * clamp the result inside the viewport. Re-run on resize and when the flyout's size changes.
+   */
   const place = useCallback(() => {
     const el = ref.current;
     if (!el) return;
@@ -166,6 +183,12 @@ function TabbyFlyout({ anchor, children }: { anchor: Anchor; children: ReactNode
   );
 }
 
+/**
+ * Tabby, the floating cat companion pinned to a screen edge. Renders the draggable avatar with a
+ * mood-driven animation, its speech bubble, and the expandable panel. Cmd/Ctrl+B toggles the panel
+ * and Escape closes it. Hidden entirely when disabled in Settings, and calmer when the user prefers
+ * reduced motion.
+ */
 export function Tabby() {
   const [enabled, setEnabled] = useState(() => tabbyPrefs.getEnabled());
   const [open, setOpen] = useState(false);
@@ -180,6 +203,7 @@ export function Tabby() {
 
   // ⌘B / Ctrl+B toggles the panel; Esc closes it.
   useEffect(() => {
+    /** Cmd/Ctrl+B toggles the panel; Escape closes it. */
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") {
         e.preventDefault();
@@ -192,6 +216,7 @@ export function Tabby() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  /** Navigate from a panel link and close the panel. */
   const onNavigate = useCallback(
     (route: string) => {
       navigate(route);
@@ -200,6 +225,14 @@ export function Tabby() {
     [navigate]
   );
 
+  /**
+   * Answer a typed question. Status questions are answered inline from the live counts; anything
+   * else is handed off to the Run page with the question prefilled and `autostart=1`, so it is
+   * actually sent to Claude rather than left in the composer.
+   *
+   * @param query - What the user typed.
+   * @returns The inline answer, or null when the question was handed off.
+   */
   const onAsk = useCallback(
     (query: string): string | null => {
       const result = matchIntent(query, brain.status);

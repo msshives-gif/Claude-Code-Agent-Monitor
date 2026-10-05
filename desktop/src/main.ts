@@ -85,7 +85,7 @@ interface AppState {
   /** `null` when hidden/not-yet-created; a live window still counts even
    * while hidden by a `close` — see the `win.on("close", ...)` handler. */
   win: BrowserWindow | null;
-  // Hold a reference to the tray so the GC doesn't collect it (electron quirk).
+  /** Tray icon. A reference is kept here so Electron's garbage collector does not destroy it. */
   tray: Electron.Tray | null;
   /** Set once teardown has begun (inside `requestQuit`'s confirm callback or
    * the bypass path in `before-quit`); gates re-entrant quit handling. */
@@ -95,6 +95,10 @@ interface AppState {
   confirmingQuit: boolean;
 }
 
+/**
+ * Mutable app-wide state for the desktop main process: the server, the window, the tray, and the
+ * quit flags.
+ */
 const state: AppState = {
   serverHandle: null,
   win: null,
@@ -219,7 +223,11 @@ function openInBrowser(): void {
 
 /** Show a blocking native error dialog. Used only for conditions the user
  * must see immediately and cannot recover from without restarting the app
- * (e.g. the embedded server failing to boot at all). */
+ * (e.g. the embedded server failing to boot at all).
+ *
+ * @param message - Headline of the error.
+ * @param detail - Optional details shown under it.
+ */
 function showFatalDialog(message: string, detail?: string): void {
   dialog.showErrorBox(`${APP_NAME} — Error`, detail ? `${message}\n\n${detail}` : message);
 }

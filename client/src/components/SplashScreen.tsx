@@ -74,9 +74,15 @@ import { setProviderScope, type ProviderScope } from "../lib/dataScope";
  */
 const ONBOARDING_KEY = "provider-onboarding-shown-v2";
 
+/** A provider whose hooks the setup checks: Claude Code or Codex. */
 type HookProvider = Exclude<ProviderScope, "both">;
 
+/** Hook installation status from `/api/settings/info`, per provider. */
 type HookStatus = {
+  /**
+   * Status per provider: whether the dashboard hooks are fully installed and whether the config
+   * already has other hooks.
+   */
   providers?: Partial<
     Record<
       HookProvider,
@@ -89,12 +95,23 @@ type HookStatus = {
   >;
 };
 
-/** Providers whose live dashboard hooks must be ready for a selected scope. */
+/**
+ * Providers whose live dashboard hooks must be ready for a selected scope.
+ *
+ * @param provider - Selected product scope.
+ * @returns The providers whose hooks are needed.
+ */
 export function hookProvidersForScope(provider: ProviderScope): HookProvider[] {
   return provider === "both" ? ["claude", "codex"] : [provider];
 }
 
-/** Selected providers that still need dashboard hooks. Unknown status is missing. */
+/**
+ * Selected providers that still need dashboard hooks. Unknown status is missing.
+ *
+ * @param provider - Selected product scope.
+ * @param status - Hook status from the server, or nothing when it could not be loaded.
+ * @returns Providers without fully installed hooks.
+ */
 export function missingHookProviders(
   provider: ProviderScope,
   status: HookStatus | null | undefined
@@ -104,7 +121,12 @@ export function missingHookProviders(
   );
 }
 
-/** Map the local hour to a greeting bucket. */
+/**
+ * Map the local hour to a greeting bucket.
+ *
+ * @param hour - Local hour, 0 to 23.
+ * @returns The greeting bucket.
+ */
 function greetingKey(hour: number): "morning" | "afternoon" | "evening" | "night" {
   if (hour >= 5 && hour < 12) return "morning";
   if (hour >= 12 && hour < 17) return "afternoon";
@@ -112,6 +134,14 @@ function greetingKey(hour: number): "morning" | "afternoon" | "evening" | "night
   return "night";
 }
 
+/**
+ * Welcome and setup overlay shown on first visit. Greets the user by time of day, asks which
+ * product's data to show (Claude Code with Cursor, Codex, or both), then checks hook readiness only
+ * for that choice. When every required hook set is installed, it finishes immediately. Otherwise it
+ * lists and installs only the missing providers, preserving unrelated hooks, and falls back to
+ * manual setup instructions when the status check fails. Shown at most once per browser; if storage
+ * is unavailable it is shown again rather than never.
+ */
 export function SplashScreen() {
   const { t } = useTranslation("splash");
   // Show at most once per browser. Read synchronously so we never flash an empty
@@ -142,6 +172,7 @@ export function SplashScreen() {
   // Falls back to the singular keys if a locale ships no array. Must run as an
   // unconditional hook (before the early return below).
   const [copy] = useState(() => {
+    /** Pick a random element. */
     const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)]!;
     const taglines = t("taglines", { returnObjects: true }) as unknown as string[];
     const subs = t("subs", { returnObjects: true }) as unknown as string[][];
@@ -154,6 +185,7 @@ export function SplashScreen() {
     };
   });
 
+  /** Apply the chosen product scope, remember that onboarding finished, and close the overlay. */
   const finishOnboarding = () => {
     setProviderScope(provider);
     try {
@@ -166,6 +198,10 @@ export function SplashScreen() {
 
   const selectedHookProviders = hookProvidersForScope(provider);
 
+  /**
+   * Check hook readiness for the chosen providers. Finishes onboarding when all are installed;
+   * otherwise shows which ones are missing.
+   */
   const continueFromProviderChoice = async () => {
     if (hookCheckInFlightRef.current) return;
     hookCheckInFlightRef.current = true;
@@ -199,6 +235,7 @@ export function SplashScreen() {
     return providerStatus?.has_dashboard_hooks || providerStatus?.has_existing_hooks;
   });
 
+  /** Install hooks for the missing providers and show the installer output, or the failure. */
   const installSelectedHooks = async () => {
     setInstallingHooks(true);
     setInstallFailure(null);
@@ -570,6 +607,9 @@ function ConstellationField() {
   );
 }
 
+/**
+ * Styles for the splash overlay, scoped to its own class names, including a reduced-motion variant.
+ */
 const SPLASH_CSS = `
 .splash-root {
   position: fixed;

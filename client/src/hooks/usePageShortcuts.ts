@@ -90,11 +90,17 @@ export function useUrlTab<T extends string>(
     }
   })();
 
+  /** Whether a URL value is one of the page's valid tabs. */
   const isValid = (value: string | null): value is T =>
     value !== null && (valid as readonly string[]).includes(value);
 
   const active: T = isValid(fromUrl) ? fromUrl : isValid(stored) ? stored : fallback;
 
+  /**
+   * Select a tab: remember it in localStorage (when a storage key is given) and write it to the URL
+   * without adding a history entry. The empty "no filter" value removes the parameter instead of
+   * leaving an empty one in shared links.
+   */
   const setActive = useCallback(
     (tab: T) => {
       if (storageKey) {

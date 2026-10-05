@@ -60,8 +60,17 @@ import { registrarFor } from "../../core/tool-registry.js";
 import { assertMutationsEnabled } from "../../policy/tool-guards.js";
 import type { ToolContext } from "../../types/tool-context.js";
 
+/** Providers a run can launch. */
 const ProviderSchema = z.enum(["claude", "codex"]);
 
+/**
+ * Register the Run Agent tools: list live runs, history, working directories, files, the CLI
+ * binary, and models; get one run; start a run, send it a message, and stop it. Tools that change
+ * data check that mutations are enabled (`MCP_DASHBOARD_ALLOW_MUTATIONS`) before calling the
+ * dashboard.
+ *
+ * @param context - Shared tool context.
+ */
 export function registerRunTools(context: ToolContext): void {
   const { api, config } = context;
   const register = registrarFor(context);

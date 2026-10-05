@@ -79,8 +79,11 @@
 
 import type { CSSProperties } from "react";
 
+/** Props for {@link Skeleton}. */
 interface SkeletonProps {
+  /** Extra classes, typically width and height. */
   className?: string;
+  /** Inline styles, for sizes not covered by classes. */
   style?: CSSProperties;
   /** Rounded shape variant. Defaults to "md". */
   rounded?: "sm" | "md" | "lg" | "full";
@@ -88,6 +91,7 @@ interface SkeletonProps {
   label?: string;
 }
 
+/** Tailwind class for each corner style. */
 const ROUNDED_CLASS = {
   sm: "rounded",
   md: "rounded-md",
@@ -131,7 +135,9 @@ export function TextSkeleton({
   className = "",
   width = "w-16",
 }: {
+  /** Extra classes for the wrapper. */
   className?: string;
+  /** CSS width of the line; defaults to full width. */
   width?: string;
 }) {
   return <Skeleton className={`h-3 ${width} align-middle ${className}`} />;

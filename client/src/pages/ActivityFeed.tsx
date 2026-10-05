@@ -101,14 +101,24 @@ import type { AgentInfo } from "../lib/event-grouping";
 import { formatTime, formatDateShort, timeAgo } from "../lib/format";
 import type { DashboardEvent } from "../lib/types";
 
+/** Events per page. */
 const PAGE_SIZE = 50;
-// Max rows a single /api/events request can return (server cap). Refreshes
-// triggered by live events are bounded by this.
+/**
+ * Most rows a single `/api/events` request can return (the server's cap). Refreshes triggered by
+ * live events are bounded by this.
+ */
 const MAX_REFRESH = 500;
-// Debounce live-event refreshes so a burst of hook events (e.g. a stream of
-// PostToolUse results) triggers one refetch instead of dozens.
+/**
+ * Debounce for live-event refreshes, so a burst of hook events (for example a stream of PostToolUse
+ * results) triggers one refetch instead of dozens.
+ */
 const REFRESH_DEBOUNCE_MS = 500;
 
+/**
+ * Activity Feed page (`/activity`): a paginated, filterable stream of every hook event with
+ * friendly session and agent names. Supports pausing, and refreshes on live events (debounced)
+ * while keeping the current page.
+ */
 export function ActivityFeed() {
   const { t } = useTranslation("activity");
   const [events, setEvents] = useState<DashboardEvent[]>([]);
@@ -174,6 +184,7 @@ export function ActivityFeed() {
   // Global data scope; a change re-runs `load` (api injects the `sources` param).
   const [scope] = useDataScope();
 
+  /** Load the current page for the active filters and data scope. */
   const load = useCallback(async () => {
     setLoading(true);
     try {

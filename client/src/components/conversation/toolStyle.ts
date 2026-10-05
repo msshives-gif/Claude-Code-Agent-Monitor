@@ -73,7 +73,9 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+/** Icon and color classes for one tool, used consistently in tool chips, bars, and borders. */
 export interface ToolStyle {
+  /** Icon component for the tool. */
   Icon: LucideIcon;
   /** Tailwind text colour for the icon and tool name. */
   text: string;
@@ -88,6 +90,7 @@ export interface ToolStyle {
   border: string;
 }
 
+/** Fallback style for unknown and MCP tools. */
 const VIOLET: ToolStyle = {
   Icon: Wrench,
   text: "text-violet-300",
@@ -96,6 +99,7 @@ const VIOLET: ToolStyle = {
   border: "border-violet-500/20",
 };
 
+/** Styles keyed by normalized tool name (lowercase, letters and digits only). */
 const STYLES: Record<string, ToolStyle> = {
   bash: {
     Icon: Terminal,
@@ -197,6 +201,12 @@ const STYLES: Record<string, ToolStyle> = {
   },
 };
 
+/**
+ * Style for a tool name, normalized so `Bash`, `bash`, and `BASH` match the same entry.
+ *
+ * @param toolName - Tool name, possibly empty.
+ * @returns The tool's style, or the violet fallback.
+ */
 export function styleForTool(toolName: string | undefined | null): ToolStyle {
   if (!toolName) return VIOLET;
   const key = toolName.toLowerCase().replace(/[^a-z0-9]/g, "");

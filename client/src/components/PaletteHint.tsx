@@ -90,6 +90,7 @@ export function paletteChordLabel(): string {
   return isMacPlatform() ? "⌘K" : "Ctrl K";
 }
 
+/** Props for {@link PaletteHint}. */
 interface PaletteHintProps {
   /**
    * `absolute` pins the chip inside a `relative` field wrapper (the Sessions

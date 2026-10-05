@@ -67,10 +67,17 @@ import { formatModelName } from "../../lib/format";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
+/**
+ * Space around the plot, in pixels; the bottom and left margins hold the axes, their labels, and
+ * the legend.
+ */
 const MARGIN = { top: 20, right: 24, bottom: 60, left: 52 };
+/** Radius of the bubble for the session with the fewest tokens. */
 const MIN_BUBBLE_R = 4;
+/** Radius of the bubble for the session with the most tokens. */
 const MAX_BUBBLE_R = 32;
 
+/** Bubble color for each session status. */
 const STATUS_COLOR: Record<string, string> = {
   completed: "#22c55e",
   error: "#ef4444",
@@ -78,12 +85,24 @@ const STATUS_COLOR: Record<string, string> = {
   abandoned: "#eab308",
 };
 
+/**
+ * Bubble color for a session status, gray for unknown statuses.
+ *
+ * @param status - Session status.
+ * @returns A hex color.
+ */
 function statusColor(status: string): string {
   return STATUS_COLOR[status] ?? "#6b7280";
 }
 
 // ── Duration formatting ───────────────────────────────────────────────────────
 
+/**
+ * Format a duration for the tooltip: `45s`, `3m 20s`, `3m`, or `1h 5m`.
+ *
+ * @param sec - Duration in seconds.
+ * @returns The formatted duration.
+ */
 function formatDurationSec(sec: number): string {
   if (sec < 60) return `${Math.round(sec)}s`;
   const h = Math.floor(sec / 3600);
@@ -93,6 +112,12 @@ function formatDurationSec(sec: number): string {
   return s > 0 ? `${m}m ${s}s` : `${m}m`;
 }
 
+/**
+ * Format an x-axis tick: `0`, `30s`, `5m`, `2h`, or `2h 30m`.
+ *
+ * @param sec - Tick value in seconds.
+ * @returns The tick label.
+ */
 function fmtXTick(sec: number): string {
   if (sec === 0) return "0";
   if (sec < 60) return `${Math.round(sec)}s`;
@@ -102,6 +127,12 @@ function fmtXTick(sec: number): string {
   return `${m}m`;
 }
 
+/**
+ * Compact token count: `1.2M`, `340K`, or the plain number.
+ *
+ * @param n - Token count.
+ * @returns The formatted count.
+ */
 function fmtTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
@@ -110,12 +141,20 @@ function fmtTokens(n: number): string {
 
 // ── Tooltip ───────────────────────────────────────────────────────────────────
 
+/** Hovered bubble and the pointer position for the tooltip. */
 interface TooltipState {
+  /** Pointer x in viewport coordinates. */
   x: number;
+  /** Pointer y in viewport coordinates. */
   y: number;
+  /** Session under the pointer. */
   item: SessionComplexityItem;
 }
 
+/**
+ * Fixed-position tooltip for a hovered session: name (or id), model, duration, agents, subagents,
+ * and tokens. Flips to the left of the pointer near the right edge of the window.
+ */
 function Tooltip({ state }: { state: TooltipState }) {
   const { t } = useTranslation("workflows");
   const nearRight = state.x > window.innerWidth - 220;
@@ -162,8 +201,10 @@ function Tooltip({ state }: { state: TooltipState }) {
 
 // ── Legend ────────────────────────────────────────────────────────────────────
 
+/** Statuses listed in the legend, in display order. */
 const LEGEND_STATUSES = ["completed", "active", "error", "abandoned"] as const;
 
+/** Status color legend shown under the plot. */
 function Legend() {
   const { t } = useTranslation("workflows");
   return (
@@ -185,6 +226,7 @@ function Legend() {
 
 // ── Empty state ───────────────────────────────────────────────────────────────
 
+/** Placeholder shown when there are no sessions to plot. */
 function EmptyState() {
   const { t } = useTranslation("workflows");
   return (
@@ -210,11 +252,19 @@ function EmptyState() {
 
 // ── Main chart ────────────────────────────────────────────────────────────────
 
+/** Props for {@link SessionComplexityScatter}. */
 export interface SessionComplexityScatterProps {
+  /** Per-session complexity figures from `/api/workflows`. */
   data: SessionComplexityItem[];
+  /** Called with a session id when its bubble is clicked, typically to open the drill-in. */
   onSessionClick?: (id: string) => void;
 }
 
+/**
+ * Session complexity bubble chart on the Workflows page, drawn with D3 and sized to its container:
+ * session duration on the x axis, agent count on the y axis, bubble area by total tokens, and color
+ * by status. Hovering shows a tooltip; clicking a bubble reports its session.
+ */
 export function SessionComplexityScatter({ data, onSessionClick }: SessionComplexityScatterProps) {
   const { t } = useTranslation("workflows");
   const svgRef = useRef<SVGSVGElement>(null);

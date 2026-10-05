@@ -113,8 +113,11 @@ export interface TrayActions {
  * two types must stay in sync by hand if the stats API response shape changes.
  */
 export interface ServerSnapshot {
+  /** Sessions currently active. */
   activeSessions: number;
+  /** Agents currently working. */
   workingAgents: number;
+  /** Events recorded today. */
   eventsToday: number;
 }
 
@@ -161,6 +164,9 @@ function trayImagePath(): string {
  * `Tray#setContextMenu` — a static, pre-assigned menu that Electron shows
  * automatically on click, with no hook for the `refreshSnapshot()` call that
  * needs to run first so the dropdown reflects the very latest counts.
+ *
+ * @param actions - Callbacks the tray menu items trigger.
+ * @returns The tray icon.
  */
 export function createTray(actions: TrayActions): Tray {
   const imagePath = trayImagePath();
@@ -191,6 +197,7 @@ export function createTray(actions: TrayActions): Tray {
     const port = actions.serverPort();
     const portLabel = port ? `🟢  Listening on :${port}` : "🔴  Server not running";
     const snap = actions.getSnapshot();
+    /** Open the dashboard window. */
     const open = (): void => actions.showDashboard();
     const snapshotItems: Electron.MenuItemConstructorOptions[] = snap
       ? [

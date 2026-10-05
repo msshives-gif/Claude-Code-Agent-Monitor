@@ -80,6 +80,10 @@ export type TuiSegment =
   | { kind: "command"; display: string }
   | { kind: "text"; text: string };
 
+/**
+ * Simple wrapper tags the Claude Code TUI injects into user messages, mapped to the segment kind
+ * each renders as.
+ */
 const SIMPLE_TAGS: Record<string, TuiSegment["kind"]> = {
   "local-command-caveat": "caveat",
   "local-command-stdout": "stdout",
@@ -88,27 +92,53 @@ const SIMPLE_TAGS: Record<string, TuiSegment["kind"]> = {
   "persisted-output": "persisted-output",
 };
 
+/**
+ * Tags that together describe a slash-command invocation; adjacent ones are grouped into one
+ * command pill.
+ */
 const COMMAND_TAGS = ["command-name", "command-message", "command-args"] as const;
 
+/**
+ * Quick check for whether a message contains any known TUI tag, so plain messages skip the full
+ * parse.
+ */
 const KNOWN_TAG_RE = new RegExp(
   `<(?:${[...Object.keys(SIMPLE_TAGS), ...COMMAND_TAGS].join("|")})\\b`
 );
 
-// Strip both real ESC-prefixed SGR codes and the bare "[Nm" forms that show up
-// when the ESC byte is dropped during JSON encoding. Only matches when followed
-// by `m` (the SGR terminator), so it does not eat ordinary bracketed text.
+/**
+ * Matches SGR color codes: both real ESC-prefixed codes and the bare `[Nm` form left when the ESC
+ * byte is dropped during JSON encoding. It only matches when followed by `m`, the SGR terminator,
+ * so ordinary bracketed text is left alone.
+ */
 const ANSI_RE = /\[[\d;]*m|\[\d+(?:;\d+)*m/g;
 
+/**
+ * Remove ANSI color codes from text.
+ *
+ * @param text - Text that may contain SGR codes.
+ * @returns The text without them.
+ */
 export function stripAnsi(text: string): string {
   return text.replace(ANSI_RE, "");
 }
 
+/** One matched tag in the input and the segment it becomes. */
 interface MatchSpan {
+  /** Offset where the match starts. */
   start: number;
+  /** Offset just past the match. */
   end: number;
+  /** Segment the matched text renders as. */
   segment: TuiSegment;
 }
 
+/**
+ * Find every simple tag (caveat, stdout, stderr, system reminder, persisted output) in the input.
+ *
+ * @param input - Message text.
+ * @returns Matches with their offsets, in tag order rather than position order.
+ */
 function findSimpleTagMatches(input: string): MatchSpan[] {
   const matches: MatchSpan[] = [];
   for (const [tag, kind] of Object.entries(SIMPLE_TAGS)) {
@@ -125,6 +155,13 @@ function findSimpleTagMatches(input: string): MatchSpan[] {
   return matches;
 }
 
+/**
+ * Find slash-command blocks: one to three adjacent `<command-name>`, `<command-message>`, and
+ * `<command-args>` tags, grouped so a single pill renders whatever order they arrive in.
+ *
+ * @param input - Message text.
+ * @returns One match per command block.
+ */
 function findCommandBlocks(input: string): MatchSpan[] {
   // A command block is one or more <command-name|message|args> tags possibly
   // separated by whitespace. Group them so a single pill renders even when
@@ -154,6 +191,9 @@ function findCommandBlocks(input: string): MatchSpan[] {
  * Walks a message text and splits out recognized TUI/command segments while
  * preserving the surrounding prose as `text` segments. Returns a single
  * `text` segment for inputs that contain no recognized markup.
+ *
+ * @param input - Message text.
+ * @returns Segments in order.
  */
 export function parseTuiSegments(input: string): TuiSegment[] {
   if (!KNOWN_TAG_RE.test(input)) {
@@ -185,7 +225,12 @@ export function parseTuiSegments(input: string): TuiSegment[] {
   return segments.length > 0 ? segments : [{ kind: "text", text: input }];
 }
 
-/** True if any recognized TUI tag would alter the rendering of this text. */
+/**
+ * True if any recognized TUI tag would alter the rendering of this text.
+ *
+ * @param input - Message text.
+ * @returns True when the text contains a known tag.
+ */
 export function hasTuiTags(input: string): boolean {
   return KNOWN_TAG_RE.test(input);
 }

@@ -63,6 +63,7 @@ import { timeAgo } from "../lib/format";
 import { TODO_STATUS_META, taskProgressSegments, taskSourceLabel } from "./todoProgress";
 import { PaginatedLegend } from "./PaginatedLegend";
 
+/** Icon for each task status. */
 const STATUS_ICONS = {
   completed: Check,
   in_progress: LoaderCircle,
@@ -71,6 +72,12 @@ const STATUS_ICONS = {
   unknown: Info,
 } satisfies Record<SessionTodoStatus, typeof Circle>;
 
+/**
+ * Task progress panel on Session Detail: a donut segmented by status with the completion figures,
+ * the current task, done and remaining counts, per-agent progress when subagents own tasks, a note
+ * when the state was reconstructed from partial updates, and the full task list. Renders nothing
+ * when there are no tasks.
+ */
 export function TodoProgressPanel({ snapshot }: { snapshot: SessionTodoSnapshot }) {
   const { t } = useTranslation("sessions");
   if (snapshot.total <= 0) return null;
@@ -224,6 +231,7 @@ export function TodoProgressPanel({ snapshot }: { snapshot: SessionTodoSnapshot 
   );
 }
 
+/** One task row: status icon, text with optional description, and its owning agent. */
 function TaskRow({ item }: { item: SessionTodoItem }) {
   const { t } = useTranslation("sessions");
   const Icon = STATUS_ICONS[item.status];

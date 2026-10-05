@@ -53,11 +53,16 @@
  * ----------------------------------------------------------------------------- */
 
 interface Identified {
+  /** Row id used to match rows across responses. */
   id: string;
   /** Row mutation time — bumped exactly when status and metadata change. */
   updated_at?: string;
   /** Latest durable provider event for the row; unchanged by a status flip. */
   last_activity?: string;
+  /**
+   * Start time; the last fallback for freshness when neither `updated_at` nor `last_activity` is
+   * set.
+   */
   started_at?: string;
 }
 
@@ -65,6 +70,9 @@ interface Identified {
  * Row mutation time first: `updated_at` moves precisely when a status changes,
  * while `last_activity` is event-derived and identical across the two copies of
  * a row caught mid-flip.
+ *
+ * @param record - Row to rate.
+ * @returns Epoch milliseconds of its most telling timestamp, or 0.
  */
 function freshness(record: Identified): number {
   for (const value of [record.updated_at, record.last_activity, record.started_at]) {
@@ -79,6 +87,9 @@ function freshness(record: Identified): number {
  * Concatenate groups, keeping the freshest record per id. First-appearance order
  * is preserved so existing list ordering (working lane before waiting lane) is
  * unchanged; ties keep the earlier group's copy.
+ *
+ * @param groups - Row lists to merge, in display order.
+ * @returns One row per id, the freshest, in first-appearance order.
  */
 export function mergeFreshestById<T extends Identified>(...groups: T[][]): T[] {
   const merged = new Map<string, T>();

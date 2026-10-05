@@ -58,14 +58,23 @@ import { ChevronRight, Zap, Code2, Shield, Bug, FileText, Lightbulb, Info } from
 import type { LucideIcon } from "lucide-react";
 import type { WorkflowPattern, WorkflowPatternsData } from "../../lib/types";
 
+/** Translation function signature used by the pattern description helpers. */
 type TFn = (key: string, options?: Record<string, unknown>) => string;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
+/** Steps shown in a collapsed pattern row before the rest are summarized as `+N`. */
 const MAX_VISIBLE_STEPS = 4;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/**
+ * Pick an icon that hints at what a pattern does, from keywords in its step names: debugging,
+ * security or audit, code review, documentation, or a generic bolt.
+ *
+ * @param steps - Subagent types in order.
+ * @returns A Lucide icon component.
+ */
 function patternIcon(steps: string[]): LucideIcon {
   const joined = steps.join(" ").toLowerCase();
   if (joined.includes("debug")) return Bug;
@@ -78,6 +87,9 @@ function patternIcon(steps: string[]): LucideIcon {
 /**
  * Find the first agent that appears more than once in the sequence (loop indicator).
  * Returns null if every step is unique.
+ *
+ * @param steps - Subagent types in order.
+ * @returns The repeated type, or null.
  */
 function findRepeatedStep(steps: string[]): string | null {
   for (let i = 0; i < steps.length; i++) {
@@ -91,6 +103,10 @@ function findRepeatedStep(steps: string[]): string | null {
  * Build a deterministic, value-dependent narrative for a workflow pattern.
  * Pure rule-based mapping - same input always yields the same output, so the
  * UI never produces hallucinated descriptions for ambiguous patterns.
+ *
+ * @param pattern - Pattern to describe.
+ * @param t - Translation function.
+ * @returns The description, or an empty string for an empty pattern.
  */
 function describePattern(pattern: WorkflowPattern, t: TFn): string {
   const { steps, percentage } = pattern;
@@ -129,6 +145,10 @@ function describePattern(pattern: WorkflowPattern, t: TFn): string {
 /**
  * Pick a suggestion bucket based on chain length and whether a loop exists.
  * Loop wins over length so the user is reminded to confirm intentional loops.
+ *
+ * @param pattern - Pattern to advise on.
+ * @param t - Translation function.
+ * @returns The suggestion text.
  */
 function suggestionForPattern(pattern: WorkflowPattern, t: TFn): string {
   const { steps } = pattern;
@@ -141,6 +161,7 @@ function suggestionForPattern(pattern: WorkflowPattern, t: TFn): string {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
+/** Pill for one step (a subagent type) in a pattern. */
 function StepPill({ label }: { label: string }) {
   return (
     <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium bg-indigo-500/15 text-indigo-300 border border-indigo-500/20 whitespace-nowrap">
@@ -149,6 +170,10 @@ function StepPill({ label }: { label: string }) {
   );
 }
 
+/**
+ * A pattern's steps as pills joined by arrows, showing at most {@link MAX_VISIBLE_STEPS} and a `+N
+ * more` marker for the rest.
+ */
 function StepFlow({ steps }: { steps: string[] }) {
   const { t } = useTranslation("workflows");
   const visible = steps.slice(0, MAX_VISIBLE_STEPS);
@@ -173,6 +198,7 @@ function StepFlow({ steps }: { steps: string[] }) {
   );
 }
 
+/** Right-aligned count and share of sessions for a pattern row. */
 function PatternFrequency({ count, percentage }: { count: number; percentage: number }) {
   const { t } = useTranslation("workflows");
   return (
@@ -185,13 +211,22 @@ function PatternFrequency({ count, percentage }: { count: number; percentage: nu
   );
 }
 
+/** Props for {@link PatternItem}. */
 interface PatternItemProps {
+  /** The pattern to show. */
   pattern: WorkflowPattern;
+  /** 1-based rank in the list. */
   rank: number;
+  /** Whether the row is expanded. */
   isSelected: boolean;
+  /** Toggles the row. */
   onClick: () => void;
 }
 
+/**
+ * One recurring pattern: rank, icon, the step flow, and its frequency. Expanding it shows {@link
+ * PatternDetail}.
+ */
 function PatternItem({ pattern, rank, isSelected, onClick }: PatternItemProps) {
   const { t } = useTranslation("workflows");
   const Icon = patternIcon(pattern.steps);
@@ -240,6 +275,11 @@ function PatternItem({ pattern, rank, isSelected, onClick }: PatternItemProps) {
   );
 }
 
+/**
+ * Expanded view of a pattern: the full step sequence, stats (occurrences, share of sessions, steps,
+ * distinct agents), a plain-language description of what the sequence does, and a suggestion based
+ * on its shape.
+ */
 function PatternDetail({ pattern }: { pattern: WorkflowPattern }) {
   const { t } = useTranslation("workflows");
   const uniqueAgents = new Set(pattern.steps).size;
@@ -306,6 +346,7 @@ function PatternDetail({ pattern }: { pattern: WorkflowPattern }) {
   );
 }
 
+/** Small value-over-label stat inside the pattern detail. */
 function DetailStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="bg-surface-2 border border-border rounded-md px-2.5 py-2">
@@ -315,6 +356,7 @@ function DetailStat({ label, value }: { label: string; value: string }) {
   );
 }
 
+/** Row for sessions that ran without any subagents, with their count and share. */
 function SoloSessionItem({ count, percentage }: { count: number; percentage: number }) {
   const { t } = useTranslation("workflows");
   return (
@@ -337,6 +379,7 @@ function SoloSessionItem({ count, percentage }: { count: number; percentage: num
   );
 }
 
+/** Placeholder shown when no recurring patterns were found. */
 function EmptyPatterns() {
   const { t } = useTranslation("workflows");
   return (
@@ -352,15 +395,29 @@ function EmptyPatterns() {
 
 // ── Public component ──────────────────────────────────────────────────────────
 
+/** Props for {@link WorkflowPatterns}. */
 interface WorkflowPatternsProps {
+  /** Detected subagent sequences and solo-session counts from `/api/workflows`. */
   data: WorkflowPatternsData;
+  /**
+   * Called with a pattern's steps when it is expanded, so the page can highlight related charts.
+   */
   onPatternClick?: (steps: string[]) => void;
 }
 
+/**
+ * Workflow patterns list on the Workflows page: the most common subagent sequences across sessions,
+ * ranked by frequency, plus the solo-session row. One pattern can be expanded at a time; clicking
+ * it again collapses it.
+ */
 export function WorkflowPatterns({ data, onPatternClick }: WorkflowPatternsProps) {
   const { t } = useTranslation("workflows");
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
 
+  /**
+   * Expand a pattern, or collapse it when it is already expanded. Expanding also reports its steps
+   * to the page.
+   */
   const handlePatternClick = (index: number, steps: string[]) => {
     const next = selectedIndex === index ? null : index;
     setSelectedIndex(next);

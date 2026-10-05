@@ -94,8 +94,19 @@ import { CompactionImpact } from "../components/workflows/CompactionImpact";
 import { SessionDrillIn } from "../components/workflows/SessionDrillIn";
 import { WorkflowRunsPanel } from "../components/workflows/WorkflowRunsPanel";
 
+/**
+ * Session status filter for the Workflows page; `active` maps to running sessions on the server.
+ */
 type StatusFilter = "all" | "active" | "completed";
 
+/**
+ * Workflows page (`/workflows`): the workflow-intelligence sections, all computed from
+ * `/api/workflows` for the selected status filter. That covers stats, the orchestration graph, tool
+ * flow, subagent effectiveness, the agent pipeline, patterns, model delegation, error propagation,
+ * concurrency, complexity, compactions, a session drill-in, and Workflow-tool runs. In a Codex-only
+ * scope, the Claude Code-only Workflow-tool runs panel is hidden. Refreshes on WebSocket events
+ * (debounced by 3 seconds), and the data can be exported as JSON.
+ */
 export function Workflows() {
   const { t } = useTranslation("workflows");
   const [dataScope] = useDataScope();
@@ -108,6 +119,7 @@ export function Workflows() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
+  /** Load workflow data for the status filter and record when it finished. */
   const fetchData = useCallback(async () => {
     try {
       setError(null);
@@ -132,6 +144,9 @@ export function Workflows() {
   // Auto-refresh on WebSocket events
   useEffect(() => {
     let debounceTimer: ReturnType<typeof setTimeout>;
+    /**
+     * Refetch 3 seconds after the last WebSocket message, so a burst of events triggers one reload.
+     */
     const handler = (_msg: WSMessage) => {
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(fetchData, 3000);
@@ -143,11 +158,13 @@ export function Workflows() {
     };
   }, [fetchData]);
 
+  /** Refetch now, showing the loading state. */
   const handleRefresh = () => {
     setLoading(true);
     fetchData();
   };
 
+  /** Download the current workflow data as `workflows-YYYY-MM-DD.json`. */
   const handleExport = () => {
     if (!data) return;
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -371,7 +388,10 @@ export function Workflows() {
   );
 }
 
-// ── Section wrapper ──
+/**
+ * Numbered section wrapper with a title, subtitle, and an optional info popover explaining how to
+ * read the chart.
+ */
 function Section({
   number,
   title,
@@ -379,11 +399,15 @@ function Section({
   infoKey,
   children,
 }: {
+  /** Section number shown in the heading. */
   number: number;
+  /** Section title. */
   title: string;
+  /** One-line description under the title. */
   subtitle: string;
   /** Key under workflows.chartInfo.* - drives the structured popover content. */
   infoKey: string;
+  /** Section content. */
   children: React.ReactNode;
 }) {
   return (
@@ -439,6 +463,10 @@ function ChartInfoPopover({ infoKey, title }: { infoKey: string; title: string }
 
   useLayoutEffect(() => {
     if (!open) return;
+    /**
+     * Place the info popover next to its button, flipping above when there is no room below, and
+     * keep it inside the viewport.
+     */
     const update = () => {
       const btn = buttonRef.current;
       const pop = popoverRef.current;
@@ -525,7 +553,7 @@ function ChartInfoPopover({ infoKey, title }: { infoKey: string; title: string }
   );
 }
 
-// ── Page Header ──
+/** Page header: title, status filter, last-updated time, and refresh and export buttons. */
 function PageHeader({
   statusFilter,
   onStatusFilterChange,
@@ -533,10 +561,15 @@ function PageHeader({
   onExport,
   lastUpdated,
 }: {
+  /** Selected status filter. */
   statusFilter: StatusFilter;
+  /** Called with the new filter. */
   onStatusFilterChange: (f: StatusFilter) => void;
+  /** Refetches now. */
   onRefresh: () => void;
+  /** Downloads the data as JSON. */
   onExport: () => void;
+  /** When data last loaded, or null before the first load. */
   lastUpdated: Date | null;
 }) {
   const { t } = useTranslation("workflows");

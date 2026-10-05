@@ -62,6 +62,7 @@ import { assertMutationsEnabled } from "../../policy/tool-guards.js";
 import { JsonObjectSchema } from "../schemas.js";
 import type { ToolContext } from "../../types/tool-context.js";
 
+/** Webhook provider types the tools accept. */
 const WebhookTypeSchema = z.enum([
   "slack",
   "discord",
@@ -80,8 +81,16 @@ const WebhookTypeSchema = z.enum([
   "generic",
 ]);
 
+/** String-to-string map, for headers and provider settings. */
 const StringMapSchema = z.record(z.string());
 
+/**
+ * Register the webhook tools: list providers, targets, and deliveries, and create, update, delete,
+ * and test targets. Tools that change data check that mutations are enabled
+ * (`MCP_DASHBOARD_ALLOW_MUTATIONS`) before calling the dashboard.
+ *
+ * @param context - Shared tool context.
+ */
 export function registerWebhookTools(context: ToolContext): void {
   const { api, config } = context;
   const register = registrarFor(context);

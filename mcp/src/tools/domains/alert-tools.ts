@@ -62,6 +62,7 @@ import { assertMutationsEnabled } from "../../policy/tool-guards.js";
 import { JsonObjectSchema } from "../schemas.js";
 import type { ToolContext } from "../../types/tool-context.js";
 
+/** Alert rule types the tools accept. */
 const AlertRuleTypeSchema = z.enum([
   "token_threshold",
   "event_pattern",
@@ -69,6 +70,13 @@ const AlertRuleTypeSchema = z.enum([
   "status_duration",
 ]);
 
+/**
+ * Register the alert tools: list fired alerts, acknowledge one or all, and create, update, and
+ * delete alert rules. Tools that change data check that mutations are enabled
+ * (`MCP_DASHBOARD_ALLOW_MUTATIONS`) before calling the dashboard.
+ *
+ * @param context - Shared tool context.
+ */
 export function registerAlertTools(context: ToolContext): void {
   const { api, config } = context;
   const register = registrarFor(context);

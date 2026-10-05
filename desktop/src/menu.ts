@@ -93,6 +93,9 @@ export interface MenuActions {
  * Item visibility and roles branch on `process.platform === "darwin"` in a
  * handful of places — see the inline comments on the `File ▸ Open Dashboard`
  * item and the `Window` submenu for why those specific items are macOS-only.
+ *
+ * @param actions - Callbacks the menu items trigger.
+ * @returns The installed menu.
  */
 export function installApplicationMenu(actions: MenuActions): Menu {
   const isMac = process.platform === "darwin";

@@ -87,21 +87,44 @@ import type { DiffHunk, GrepMatch } from "./primitives";
 
 // ───────────────────────── Helpers ─────────────────────────
 
+/**
+ * Value as a string, or an empty string when it is not one.
+ *
+ * @param v - Any value.
+ * @returns The string or `""`.
+ */
 function str(v: unknown): string {
   return typeof v === "string" ? v : "";
 }
 
+/**
+ * Value as a plain object, or null for anything else, including arrays.
+ *
+ * @param v - Any value.
+ * @returns The object or null.
+ */
 function obj(v: unknown): Record<string, unknown> | null {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
 }
 
+/**
+ * Whether a tool name belongs to an MCP server (`mcp__<server>__<tool>`).
+ *
+ * @param toolName - Tool name.
+ * @returns True for MCP tools.
+ */
 function isMcp(toolName: string): boolean {
   return toolName.startsWith("mcp__");
 }
 
 /** Builds a unified-diff hunk from a bare old_string / new_string pair. One
  *  hunk, minimal context - good enough for the input preview before the
- *  actual structuredPatch comes back in the response. */
+ *  actual structuredPatch comes back in the response.
+ *
+ * @param oldStr - Text being replaced.
+ * @param newStr - Replacement text.
+ * @returns One hunk covering the whole change, or none when both are empty.
+ */
 function diffFromStrings(oldStr: string, newStr: string): DiffHunk[] {
   if (!oldStr && !newStr) return [];
   const oldLines = oldStr ? oldStr.split(/\r?\n/) : [];
@@ -121,7 +144,11 @@ function diffFromStrings(oldStr: string, newStr: string): DiffHunk[] {
 }
 
 /** Normalises the `structuredPatch` array that shows up in Edit/NotebookEdit
- *  tool_response into DiffHunk shape. Tolerates missing fields. */
+ *  tool_response into DiffHunk shape. Tolerates missing fields.
+ *
+ * @param value - The tool response's `structuredPatch`.
+ * @returns The hunks, or none when the value is not an array.
+ */
 function parseStructuredPatch(value: unknown): DiffHunk[] {
   if (!Array.isArray(value)) return [];
   const hunks: DiffHunk[] = [];
@@ -144,7 +171,11 @@ function parseStructuredPatch(value: unknown): DiffHunk[] {
 
 /** Best-effort match list from a Grep tool_response. Supports the common
  *  shapes: array of strings, array of {file,line,text}, or an object with
- *  `matches` / `files` keys. */
+ *  `matches` / `files` keys.
+ *
+ * @param value - Grep tool response.
+ * @returns The matches found.
+ */
 function parseGrepMatches(value: unknown): GrepMatch[] {
   if (Array.isArray(value)) return value.map(toMatch).filter(Boolean) as GrepMatch[];
   const o = obj(value);
@@ -157,6 +188,13 @@ function parseGrepMatches(value: unknown): GrepMatch[] {
   return [];
 }
 
+/**
+ * Normalize one Grep result line. Strings in `file:line:text` form are split; other strings become
+ * text-only matches; objects are read field by field.
+ *
+ * @param raw - One result entry.
+ * @returns The match, or null when nothing usable was found.
+ */
 function toMatch(raw: unknown): GrepMatch | null {
   if (typeof raw === "string") {
     const m = raw.match(/^(.+?):(\d+):(.*)$/);
@@ -176,6 +214,13 @@ function toMatch(raw: unknown): GrepMatch | null {
   return match;
 }
 
+/**
+ * Read a list of file paths from a tool result: an array of strings, or an object with a `files` or
+ * `paths` array.
+ *
+ * @param value - Tool result.
+ * @returns The paths, or an empty list.
+ */
 function parseFileList(value: unknown): string[] {
   if (Array.isArray(value)) return value.filter((v): v is string => typeof v === "string");
   const o = obj(value);
@@ -195,7 +240,9 @@ export function ToolInputView({
   toolName,
   input,
 }: {
+  /** Tool name, used to pick a tool-specific view; null for unknown tools. */
   toolName: string | null;
+  /** The tool call's input. */
   input: unknown;
 }): React.ReactNode | null {
   if (!toolName) return null;
@@ -344,7 +391,9 @@ export function ToolResponseView({
   toolName,
   response,
 }: {
+  /** Tool name, used to pick a tool-specific view; null for unknown tools. */
   toolName: string | null;
+  /** The tool call's response. */
   response: unknown;
 }): React.ReactNode | null {
   if (!toolName) return null;

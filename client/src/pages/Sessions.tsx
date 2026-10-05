@@ -97,9 +97,18 @@ import {
 } from "../lib/types";
 import type { Session, DashboardEvent } from "../lib/types";
 
+/** Sessions per page. */
 const PAGE_SIZE = 10;
+/** Sort column sent to the server: start time, duration, or cost. */
 type SessionSort = "time" | "duration" | "price";
 
+/**
+ * Whether a row is a transient placeholder for a Codex TUI process that has not written a session
+ * id yet. Such rows have no detail page.
+ *
+ * @param session - Row to check.
+ * @returns True when `pre_identity_process` is set.
+ */
 function isTransientProcessSession(session: Session): boolean {
   if (!session.metadata) return false;
   try {
@@ -113,6 +122,13 @@ function isTransientProcessSession(session: Session): boolean {
  *  `""` is the "all" pseudo-filter the server treats as no status constraint. */
 const SESSION_FILTERS = ["", "active", "waiting", "completed", "error", "abandoned"] as const;
 
+/**
+ * Sessions page (`/sessions`): a server-paginated, searchable, sortable table of every session.
+ * Supports status, project, and data-scope filters (the status filter is in the URL so links and
+ * the palette can open a narrowed list), task-progress indicators, and live updates throttled to
+ * one reload every 2 seconds. Search input is debounced so typing does not query on every
+ * keystroke.
+ */
 export function Sessions() {
   const navigate = useNavigate();
   const { t } = useTranslation("sessions");
@@ -280,6 +296,10 @@ export function Sessions() {
     // one load per window; the trailing call keeps the list current.
     const THROTTLE_MS = 2_000;
     const throttleRef = { timer: null as ReturnType<typeof setTimeout> | null, lastRun: 0 };
+    /**
+     * Schedule a throttled reload: at most one every 2 seconds, with a trailing call so the list
+     * still catches up after a burst of WebSocket messages.
+     */
     const scheduleLoad = () => {
       if (throttleRef.timer) return; // trailing run already scheduled
       const wait = Math.max(0, THROTTLE_MS - (Date.now() - throttleRef.lastRun));

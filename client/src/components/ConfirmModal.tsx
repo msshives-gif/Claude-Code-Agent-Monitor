@@ -121,6 +121,10 @@ export function ConfirmModal({
     // Prefer Cancel so Enter/activation doesn't immediately destroy data.
     const focusTimer = window.setTimeout(() => cancelRef.current?.focus(), 0);
 
+    /**
+     * Keyboard handling while the dialog is open: Escape cancels, and Tab and Shift+Tab cycle focus
+     * within the dialog.
+     */
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.preventDefault();

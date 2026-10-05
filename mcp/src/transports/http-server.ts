@@ -71,13 +71,23 @@ import * as c from "../ui/colors.js";
  * which protocol it speaks, so a request for a known session id can be
  * rejected if it mismatches the protocol that session was initialized with. */
 interface TransportEntry {
+  /** The session's transport. */
   transport: Transport;
+  /** Which protocol the session uses: the streamable HTTP transport or the legacy SSE transport. */
   type: "streamable" | "sse";
   /** `Date.now()` of the last request routed to this session, used by the
    * idle reaper. Refreshed by the `/mcp` and `/messages` handlers. */
   lastActivityMs: number;
 }
 
+/**
+ * Compare a provided bearer token with the expected one in constant time, so response timing does
+ * not leak how much of the token matched.
+ *
+ * @param provided - Token from the request, if any.
+ * @param expected - Configured token.
+ * @returns True when they match.
+ */
 function tokensMatch(provided: string | undefined, expected: string): boolean {
   if (!provided) return false;
   const providedBuffer = Buffer.from(provided);
@@ -90,6 +100,10 @@ function tokensMatch(provided: string | undefined, expected: string): boolean {
  * Tears down an untracked transport/server pair without letting a teardown
  * error escape into the request path — the client's response is already sent
  * by the time this runs, so the only useful action is to log.
+ *
+ * @param transport - Transport to close.
+ * @param server - Server bound to it.
+ * @param logger - Logger for teardown errors.
  */
 async function closeQuietly(
   transport: Transport,
@@ -106,7 +120,14 @@ async function closeQuietly(
   }
 }
 
-/** Pure helper exported for security regression tests. */
+/**
+ * Pure helper exported for security regression tests.
+ *
+ * @param headers - Request headers; the token may be sent as `Authorization: Bearer <token>` or
+ *   `X-MCP-Token`.
+ * @param expectedToken - Configured token; when unset every request is allowed.
+ * @returns True when the request may proceed.
+ */
 export function isHttpRequestAuthorized(
   headers: Record<string, string | string[] | undefined>,
   expectedToken: string | undefined
@@ -153,6 +174,11 @@ export function isHttpRequestAuthorized(
  * @returns The Express `app`, a `shutdown` closing every tracked transport
  *   before the HTTP server itself, and `reapIdleSessions` — the sweep run on
  *   demand, accepting an explicit `now` so tests and operators can force it.
+ *
+ * @param config - Resolved configuration.
+ * @param buildServerFn - Builds a fresh MCP server for each client session.
+ * @param logger - Logger for requests and sessions.
+ * @param toolCount - Number of registered tools, for the startup banner.
  */
 export async function startHttpServer(
   config: AppConfig,

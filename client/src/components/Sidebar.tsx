@@ -90,10 +90,17 @@ import type { UpdateStatusPayload, WSMessage } from "../lib/types";
 import { Select } from "./Select";
 import { UPDATE_CHECK_EVENT } from "../lib/appEvents";
 
+/**
+ * Type guard for an `update_status` WebSocket payload.
+ *
+ * @param x - Message data.
+ * @returns True when it carries the `git_repo` and `update_available` fields.
+ */
 function isUpdatePayload(x: unknown): x is UpdateStatusPayload {
   return typeof x === "object" && x !== null && "git_repo" in x && "update_available" in x;
 }
 
+/** Primary navigation entries in sidebar order: route, icon, and translation key. */
 const NAV_KEYS = [
   { to: "/", icon: LayoutDashboard, key: "nav:dashboard" },
   { to: "/kanban", icon: Columns3, key: "nav:agentBoard" },
@@ -106,24 +113,54 @@ const NAV_KEYS = [
   { to: "/settings", icon: Settings, key: "nav:settings" },
 ] as const;
 
+/** localStorage key remembering whether the sidebar is collapsed. */
 const STORAGE_KEY = "sidebar-collapsed";
+/**
+ * localStorage key holding the connection-status statistics, so the cumulative counters survive
+ * reloads.
+ */
 const STATS_STORAGE_KEY = "sidebar-connection-stats";
+/** How many recent events the connection status modal keeps and persists. */
 const RECENT_EVENTS_CAP = 8;
+/** UI languages offered by the language switcher. Must match `supportedLngs` in the i18n setup. */
 const SUPPORTED_LANGUAGES = ["en", "zh", "vi", "ko", "es"] as const;
+/** One supported UI language code. */
 type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 
+/** Width of the language menu opened from the collapsed rail, in pixels. */
 const COLLAPSED_LANGUAGE_MENU_WIDTH = 240;
+/** Minimum distance kept between the language menu and the viewport edge, in pixels. */
 const VIEWPORT_GUTTER = 12;
+/** Maximum height of the language menu before it scrolls, in pixels. */
 const LANGUAGE_MENU_MAX_HEIGHT = 288;
 
+/**
+ * Connection statistics persisted to localStorage. The rolling one-minute event buffer behind the
+ * sparkline is deliberately not persisted, since it is only meaningful relative to now.
+ */
 interface PersistedStats {
+  /** Total WebSocket events received. */
   eventCount: number;
+  /**
+   * Highest events-per-second rate seen, kept across reloads so a one-off burst stays visible after
+   * it rolls out of the one-minute window.
+   */
   peakPerSec: number;
+  /**
+   * Type and arrival time (epoch milliseconds) of the most recent event, or null before any event.
+   */
   lastEvent: { type: string; at: number } | null;
+  /** Event counts per message type, as `[type, count]` pairs. */
   typeCount: [string, number][];
+  /** Most recent events, newest last, capped at {@link RECENT_EVENTS_CAP}. */
   recentEvents: { type: string; at: number }[];
 }
 
+/**
+ * Read the persisted collapsed state.
+ *
+ * @returns True when the sidebar was collapsed; false when unset or storage is unavailable.
+ */
 function loadCollapsed(): boolean {
   try {
     return localStorage.getItem(STORAGE_KEY) === "true";
@@ -132,6 +169,12 @@ function loadCollapsed(): boolean {
   }
 }
 
+/**
+ * Read persisted connection statistics, validating each field so a corrupt or outdated entry cannot
+ * break the sidebar.
+ *
+ * @returns The stored statistics, or zeroed statistics when nothing valid is stored.
+ */
 function loadStats(): PersistedStats {
   const empty: PersistedStats = {
     eventCount: 0,
@@ -173,6 +216,13 @@ function loadStats(): PersistedStats {
   }
 }
 
+/**
+ * Map an i18next language code (for example `zh-CN` or `es-419`) to a supported UI language by its
+ * base code.
+ *
+ * @param language - Detected or stored language code.
+ * @returns The matching supported language, or `en` as the fallback.
+ */
 function normalizeLanguage(language: string): SupportedLanguage {
   const base = language.toLowerCase().split("-")[0];
   if (base === "zh" || base === "vi" || base === "en" || base === "ko" || base === "es") {
@@ -181,16 +231,25 @@ function normalizeLanguage(language: string): SupportedLanguage {
   return "en";
 }
 
+/** Props for {@link Sidebar}. */
 interface SidebarProps {
+  /** Live WebSocket state; drives the connection indicator. */
   wsConnected: boolean;
+  /** Whether the sidebar is shown as a narrow icon rail. */
   collapsed: boolean;
+  /** Toggles the collapsed state. */
   onToggle: () => void;
 }
 
+/** Props for {@link CollapsedLanguagePicker}. */
 interface CollapsedLanguagePickerProps {
+  /** Current language. */
   value: SupportedLanguage;
+  /** Languages to offer, each with its native label and a hint. */
   options: Array<{ value: SupportedLanguage; label: string; hint: string }>;
+  /** Accessible label for the trigger button. */
   label: string;
+  /** Called with the chosen language. */
   onChange: (language: SupportedLanguage) => void;
 }
 
@@ -216,6 +275,10 @@ function CollapsedLanguagePicker({
   const menuRef = useRef<HTMLDivElement | null>(null);
   const menuId = useId();
 
+  /**
+   * Place the language menu next to the collapsed rail's trigger, at most 240px wide, opening
+   * upward or downward to fit and clamped inside the viewport.
+   */
   const positionMenu = useCallback(() => {
     const trigger = triggerRef.current;
     if (!trigger) return;
@@ -241,11 +304,13 @@ function CollapsedLanguagePicker({
     if (!open) return;
 
     positionMenu();
+    /** Close the menu on a press outside both the trigger and the menu. */
     const closeOnOutsidePress = (event: MouseEvent) => {
       const target = event.target as Node;
       if (triggerRef.current?.contains(target) || menuRef.current?.contains(target)) return;
       setOpen(false);
     };
+    /** Close the menu on Escape and return focus to the trigger. */
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setOpen(false);
@@ -265,6 +330,11 @@ function CollapsedLanguagePicker({
     };
   }, [open, positionMenu]);
 
+  /**
+   * Pick a language, close the menu, and return focus to the trigger.
+   *
+   * @param language - Chosen language.
+   */
   const chooseLanguage = (language: SupportedLanguage) => {
     onChange(language);
     setOpen(false);
@@ -334,6 +404,16 @@ function CollapsedLanguagePicker({
   );
 }
 
+/**
+ * App sidebar: primary navigation (with overflow chevrons when items are clipped), the language
+ * switcher, the connection indicator, and the update notifier.
+ *
+ * It counts every WebSocket message into ref-based buffers, so live traffic never re-renders the
+ * sidebar. The cumulative counters are written to localStorage at most every 2 seconds and flushed
+ * when the page is hidden. Clicking the connection indicator opens {@link ConnectionStatusModal}.
+ * The update check can be triggered from here or from the command palette; a manual check clears
+ * any earlier dismissal of the update notice.
+ */
 export function Sidebar({ wsConnected, collapsed, onToggle }: SidebarProps) {
   const { t, i18n } = useTranslation();
   const websiteLabel = "sonnguyenhoang.com";
@@ -362,6 +442,10 @@ export function Sidebar({ wsConnected, collapsed, onToggle }: SidebarProps) {
   const recentEventsRef = useRef<Array<{ type: string; at: number }>>([]);
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  /**
+   * Recompute whether nav items are hidden above or below, skipping the state update when nothing
+   * changed.
+   */
   const recomputeNavOverflow = useCallback(() => {
     const el = navRef.current;
     if (!el) return;
@@ -387,6 +471,7 @@ export function Sidebar({ wsConnected, collapsed, onToggle }: SidebarProps) {
     };
   }, [recomputeNavOverflow, collapsed]);
 
+  /** Scroll the nav list vertically by `delta` pixels. */
   const scrollNavBy = useCallback((delta: number) => {
     navRef.current?.scrollBy({ top: delta, behavior: "smooth" });
   }, []);
@@ -401,6 +486,7 @@ export function Sidebar({ wsConnected, collapsed, onToggle }: SidebarProps) {
     recentEventsRef.current = stats.recentEvents;
   }, []);
 
+  /** Write the cumulative connection statistics to localStorage. Storage failures are ignored. */
   const persistStats = useCallback(() => {
     try {
       const payload: PersistedStats = {
@@ -416,6 +502,7 @@ export function Sidebar({ wsConnected, collapsed, onToggle }: SidebarProps) {
     }
   }, []);
 
+  /** Persist the statistics at most once every 2 seconds. */
   const schedulePersist = useCallback(() => {
     if (persistTimerRef.current) return;
     persistTimerRef.current = setTimeout(() => {
@@ -427,6 +514,7 @@ export function Sidebar({ wsConnected, collapsed, onToggle }: SidebarProps) {
   // Flush pending writes when the page is being hidden / unloaded so the very
   // latest events aren't lost to the throttle window.
   useEffect(() => {
+    /** Write any pending statistics immediately, used when the page is hidden or unloaded. */
     const flush = () => {
       if (persistTimerRef.current) {
         clearTimeout(persistTimerRef.current);
@@ -494,6 +582,10 @@ export function Sidebar({ wsConnected, collapsed, onToggle }: SidebarProps) {
     }
   }, [wsConnected]);
 
+  /**
+   * Check for updates on request. Clears any earlier dismissal of the update notice first, so it
+   * can show again if this check still finds an update.
+   */
   const onCheckUpdates = async () => {
     if (checking) return;
     setChecking(true);
@@ -524,6 +616,7 @@ export function Sidebar({ wsConnected, collapsed, onToggle }: SidebarProps) {
   const checkUpdatesRef = useRef(onCheckUpdates);
   checkUpdatesRef.current = onCheckUpdates;
   useEffect(() => {
+    /** Run the update check when the command palette asks for one. */
     const onRequest = () => {
       void checkUpdatesRef.current();
     };
@@ -548,6 +641,11 @@ export function Sidebar({ wsConnected, collapsed, onToggle }: SidebarProps) {
     hint: t(`nav:languageShort.${language}`),
   }));
 
+  /**
+   * Switch the UI language, skipping the change when it is already active.
+   *
+   * @param language - Language to switch to.
+   */
   const changeLanguage = (language: SupportedLanguage) => {
     if (language !== currentLanguage) {
       i18n.changeLanguage(language);
@@ -851,20 +949,41 @@ export function Sidebar({ wsConnected, collapsed, onToggle }: SidebarProps) {
   );
 }
 
+/**
+ * Props for {@link ConnectionStatusModal}. The statistics are passed as refs owned by the sidebar,
+ * so the modal samples them on its own timer instead of re-rendering the sidebar.
+ */
 interface ConnectionStatusModalProps {
+  /** Whether the modal is shown. */
   open: boolean;
+  /** Closes the modal. */
   onClose: () => void;
+  /** Live WebSocket state. */
   wsConnected: boolean;
+  /** Epoch milliseconds when the current connection came up, or null while disconnected. */
   connectedSince: number | null;
+  /** Total events received. */
   eventCountRef: React.MutableRefObject<number>;
+  /** Highest events-per-second rate seen. */
   peakPerSecRef: React.MutableRefObject<number>;
+  /** Most recent event, or null. */
   lastEventRef: React.MutableRefObject<{ type: string; at: number } | null>;
+  /** Arrival times of recent events, used for the one-minute sparkline. */
   eventTimestampsRef: React.MutableRefObject<number[]>;
+  /** Event counts per message type. */
   typeCountRef: React.MutableRefObject<Map<string, number>>;
+  /** Most recent events for the activity list. */
   recentEventsRef: React.MutableRefObject<Array<{ type: string; at: number }>>;
+  /** Clears every statistic, including the persisted copy. */
   onResetStats: () => void;
 }
 
+/**
+ * Connection status modal: connection state, WebSocket endpoint, and uptime; KPIs for total events,
+ * events in the last minute, and peak rate; a one-minute events-per-second sparkline; the top event
+ * types; and recent activity, with a reset button. It re-renders once a second while open so rates
+ * and relative times stay current, stops ticking when closed, and closes on Escape.
+ */
 function ConnectionStatusModal({
   open,
   onClose,
@@ -894,6 +1013,7 @@ function ConnectionStatusModal({
 
   useEffect(() => {
     if (!open) return;
+    /** Close the modal on Escape. */
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") close();
     };
@@ -901,6 +1021,7 @@ function ConnectionStatusModal({
     return () => window.removeEventListener("keydown", handler);
   }, [open, close]);
 
+  /** WebSocket endpoint for this page's origin, using `wss:` on HTTPS. */
   const wsUrl = useMemo(() => {
     if (typeof window === "undefined") return "";
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -1081,13 +1202,17 @@ function ConnectionStatusModal({
   );
 }
 
+/** Titled section inside the connection status modal. */
 function Section({
   title,
   icon: Icon,
   children,
 }: {
+  /** Section heading. */
   title: string;
+  /** Icon shown beside the heading. */
   icon: LucideIcon;
+  /** Section content. */
   children: React.ReactNode;
 }) {
   return (
@@ -1103,6 +1228,7 @@ function Section({
   );
 }
 
+/** Small KPI tile with an uppercase label, a monospace value, and a unit. */
 function KpiTile({ label, value, unit }: { label: string; value: string; unit: string }) {
   return (
     <div className="rounded-lg border border-border bg-surface-2 px-2.5 py-2">
@@ -1117,6 +1243,7 @@ function KpiTile({ label, value, unit }: { label: string; value: string; unit: s
   );
 }
 
+/** Label/value row in the connection details list, optionally monospace for ids and URLs. */
 function DetailRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="flex items-start justify-between gap-3 text-xs">
@@ -1130,15 +1257,24 @@ function DetailRow({ label, value, mono }: { label: string; value: string; mono?
   );
 }
 
+/**
+ * Horizontal bar for one event type in the breakdown. The bar is scaled against the busiest type
+ * (with a 2% minimum so tiny counts stay visible), and the label shows the count and its share of
+ * all events.
+ */
 function TypeBar({
   type,
   count,
   max,
   total,
 }: {
+  /** Event type. */
   type: string;
+  /** Events of this type. */
   count: number;
+  /** Count of the busiest type, which fills the bar. */
   max: number;
+  /** Events of all types, for the share. */
   total: number;
 }) {
   const widthPct = max > 0 ? Math.max(2, (count / max) * 100) : 0;
@@ -1161,13 +1297,20 @@ function TypeBar({
   );
 }
 
+/**
+ * SVG sparkline of events per second over the last minute, with a filled area, scaled to the
+ * busiest second. Drawn muted while disconnected.
+ */
 function Sparkline({
   buckets,
   connected,
   avgLabel,
 }: {
+  /** Events per second for each of the last 60 seconds, oldest first. */
   buckets: number[];
+  /** Live WebSocket state; the line is drawn muted while disconnected. */
   connected: boolean;
+  /** Localized label for the average rate. */
   avgLabel: string;
 }) {
   const W = 320;
@@ -1214,6 +1357,13 @@ function Sparkline({
   );
 }
 
+/**
+ * Bucket event timestamps into per-second counts over a trailing window.
+ *
+ * @param timestamps - Event arrival times in epoch milliseconds.
+ * @param windowSec - Window length in seconds.
+ * @returns `windowSec` counts, oldest first, with the last bucket covering the current second.
+ */
 function bucketEventsPerSecond(timestamps: number[], windowSec: number): number[] {
   const now = Date.now();
   const buckets = new Array<number>(windowSec).fill(0);
@@ -1227,6 +1377,13 @@ function bucketEventsPerSecond(timestamps: number[], windowSec: number): number[
   return buckets;
 }
 
+/**
+ * Localized relative time such as `just now`, `12s ago`, `5m ago`, `3h ago`, or `2d ago`.
+ *
+ * @param timestamp - Epoch milliseconds.
+ * @param t - Translation function.
+ * @returns The relative time label.
+ */
 function formatRelative(
   timestamp: number,
   t: (key: string, opts?: Record<string, unknown>) => string

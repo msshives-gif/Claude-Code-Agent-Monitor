@@ -60,6 +60,13 @@ import { registrarFor } from "../../core/tool-registry.js";
 import { assertMutationsEnabled } from "../../policy/tool-guards.js";
 import type { ToolContext } from "../../types/tool-context.js";
 
+/**
+ * Register the settings tools: update status and checks, the Claude and Codex home directories, and
+ * hook installation. Tools that change data check that mutations are enabled
+ * (`MCP_DASHBOARD_ALLOW_MUTATIONS`) before calling the dashboard.
+ *
+ * @param context - Shared tool context.
+ */
 export function registerSettingsTools(context: ToolContext): void {
   const { api, config } = context;
   const register = registrarFor(context);

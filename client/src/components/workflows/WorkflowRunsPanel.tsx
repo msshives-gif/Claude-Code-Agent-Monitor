@@ -96,8 +96,13 @@ import type {
 } from "../../lib/types";
 import { fmt, formatMs, timeAgo, truncate } from "../../lib/format";
 
+/** Run status filter; `active` maps to running runs on the server. */
 type StatusFilter = "all" | "active" | "completed";
 
+/**
+ * Props for {@link WorkflowRunsPanel}. Either pass `runs` (controlled) or let it fetch with the
+ * filters.
+ */
 interface Props {
   /** Controlled mode: render exactly these runs (no fetch, no live updates). */
   runs?: WorkflowRun[];
@@ -109,6 +114,10 @@ interface Props {
   hideSessionLink?: boolean;
 }
 
+/**
+ * Badge classes for each run status, including the journal's alternative spellings (`working`,
+ * `done`).
+ */
 const STATUS_STYLES: Record<string, string> = {
   running: "bg-amber-500/15 text-amber-400 border-amber-500/30",
   working: "bg-amber-500/15 text-amber-400 border-amber-500/30",
@@ -120,13 +129,21 @@ const STATUS_STYLES: Record<string, string> = {
   failed: "bg-red-500/15 text-red-400 border-red-500/30",
 };
 
+/**
+ * Badge classes for a run status, gray for unknown statuses.
+ *
+ * @param status - Run or agent status.
+ * @returns Class names.
+ */
 function statusClass(status: string): string {
   return STATUS_STYLES[status] || "bg-gray-500/15 text-gray-400 border-gray-500/30";
 }
 
-// Distinct per-phase chip colors, cycled by phase index so every phase
-// (e.g. Scout / Verify / Synthesize, or Explain / Interview / Gotcha) reads
-// as its own color in both the filter row and the result label chips.
+/**
+ * Distinct per-phase chip colors, cycled by phase index so every phase (for example Scout / Verify
+ * / Synthesize, or Explain / Interview / Gotcha) reads as its own color in both the filter row and
+ * the result label chips.
+ */
 const PHASE_PALETTE = [
   "bg-violet-500/15 text-violet-300 border-violet-500/40",
   "bg-sky-500/15 text-sky-300 border-sky-500/40",
@@ -137,6 +154,14 @@ const PHASE_PALETTE = [
   "bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/40",
 ];
 
+/**
+ * Chip color for a phase. Known phases are colored by their position in the run's phase list; a
+ * phase not in the list gets a stable color from a hash of its title.
+ *
+ * @param phaseTitles - The run's phases in order.
+ * @param title - Phase to color.
+ * @returns Class names.
+ */
 function phaseColor(phaseTitles: string[], title: string | null | undefined): string {
   if (!title) return "bg-gray-500/15 text-gray-300 border-gray-500/40";
   const i = phaseTitles.indexOf(title);
@@ -144,6 +169,12 @@ function phaseColor(phaseTitles: string[], title: string | null | undefined): st
   return PHASE_PALETTE[idx % PHASE_PALETTE.length] as string;
 }
 
+/**
+ * Stable 32-bit string hash (Java `hashCode` style).
+ *
+ * @param s - Input string.
+ * @returns The hash, possibly negative.
+ */
 function hashStr(s: string): number {
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
@@ -155,6 +186,9 @@ function hashStr(s: string): number {
  * often a (frequently truncated) JSON blob. Prefer a known content field, then
  * the first substantial quoted string, then a de-JSON'd snippet - so the panel
  * shows a sentence instead of raw `{"angle":"…","findings":[{"claim":"…`.
+ *
+ * @param raw - Result preview from the run journal.
+ * @returns A short readable excerpt.
  */
 export function friendlyPreview(raw: unknown): string {
   if (!raw) return "";
@@ -174,7 +208,12 @@ export function friendlyPreview(raw: unknown): string {
   return s;
 }
 
-/** Full, un-truncated content for the expanded view - pretty-printed if JSON. */
+/**
+ * Full, un-truncated content for the expanded view - pretty-printed if JSON.
+ *
+ * @param raw - Result content.
+ * @returns The full text, pretty-printed when it is JSON.
+ */
 export function fullPreview(raw: unknown): string {
   if (raw == null) return "";
   const s = String(raw);
@@ -185,7 +224,12 @@ export function fullPreview(raw: unknown): string {
   }
 }
 
-/** Join the text blocks of one transcript message into a single string. */
+/**
+ * Join the text blocks of one transcript message into a single string.
+ *
+ * @param m - Transcript message.
+ * @returns The message's text blocks joined, or an empty string.
+ */
 function messageText(m: TranscriptMessage): string {
   return (m.content || [])
     .filter((b) => b.type === "text" && b.text)
@@ -200,9 +244,13 @@ function messageText(m: TranscriptMessage): string {
  * has text carries the returned result. Either is "" when absent (e.g. a
  * schema-mode agent whose final turn is a tool call rather than text) - callers
  * fall back to the journal teaser in that case.
+ *
+ * @param messages - The agent's transcript messages.
  */
 export function extractPromptResult(messages: TranscriptMessage[]): {
+  /** The agent's task prompt: the first user message with text. */
   prompt: string;
+  /** The agent's returned result: the last assistant message with text. */
   result: string;
 } {
   let prompt = "";
@@ -221,12 +269,29 @@ export function extractPromptResult(messages: TranscriptMessage[]): {
 
 /** Per-agent transcript fetch state, keyed `${run_id}::${agentId}`. */
 interface AgentTranscriptState {
+  /** True while the transcript is being fetched. */
   loading: boolean;
+  /** Full task prompt from the transcript. */
   prompt?: string;
+  /** Full result from the transcript. */
   result?: string;
+  /**
+   * True when the transcript could not be loaded; the row falls back to the journal's truncated
+   * preview.
+   */
   error?: boolean;
 }
 
+/**
+ * Panel listing Workflow-tool runs: the fleets launched by the Workflow tool, ingested from their
+ * on-disk run journals because they emit no hooks. Each run shows its status, phases, and agents.
+ * Expanding an agent fetches its full transcript on demand, since the journal only stores truncated
+ * previews.
+ *
+ * Works in two modes. Controlled: renders the given `runs`. Self-fetching: loads up to 200 runs for
+ * the status filter and optional session, and refetches (debounced) when a workflow row changes
+ * over the WebSocket.
+ */
 export function WorkflowRunsPanel({
   runs: controlledRuns,
   statusFilter,
@@ -247,6 +312,11 @@ export function WorkflowRunsPanel({
   const [transcripts, setTranscripts] = useState<Record<string, AgentTranscriptState>>({});
   const inflightRef = useRef<Set<string>>(new Set());
 
+  /**
+   * Fetch one agent's full transcript and extract its prompt and result. Skips duplicates while a
+   * request for the same key is in flight; failures mark the row so it falls back to the journal
+   * preview.
+   */
   const loadTranscript = useCallback(
     async (sessionId: string, runId: string, agentId: string, key: string) => {
       if (inflightRef.current.has(key)) return;
@@ -267,6 +337,7 @@ export function WorkflowRunsPanel({
     []
   );
 
+  /** Fetch runs for the status filter and session. Skipped in controlled mode. */
   const fetchRuns = useCallback(async () => {
     if (controlled) return;
     try {
@@ -294,6 +365,10 @@ export function WorkflowRunsPanel({
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (controlled) return;
+    /**
+     * Refetch 1.5 seconds after the last `workflow_upserted` message, so a burst of journal writes
+     * triggers one reload.
+     */
     const handler = (msg: WSMessage) => {
       if (msg.type !== "workflow_upserted") return;
       if (timerRef.current) clearTimeout(timerRef.current);
@@ -308,6 +383,11 @@ export function WorkflowRunsPanel({
 
   const runs = controlled ? controlledRuns : fetchedRuns;
 
+  /**
+   * Expand or collapse a run.
+   *
+   * @param runId - Run to toggle.
+   */
   const toggle = (runId: string) =>
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -315,8 +395,19 @@ export function WorkflowRunsPanel({
       else next.add(runId);
       return next;
     });
+  /**
+   * Filter a run's results by phase; choosing the active phase again clears the filter.
+   *
+   * @param runId - Run whose results to filter.
+   * @param phase - Phase to show.
+   */
   const setPhase = (runId: string, phase: string) =>
     setPhaseFilter((prev) => ({ ...prev, [runId]: prev[runId] === phase ? null : phase }));
+  /**
+   * Expand or collapse one agent result.
+   *
+   * @param key - Result key, `<run id>::<agent id>`.
+   */
   const toggleResult = (key: string) =>
     setOpenResults((prev) => {
       const next = new Set(prev);

@@ -146,10 +146,16 @@ const LOCAL_DASHBOARD_HOSTS = new Set([
   "host.containers.internal",
   "agent-monitor",
 ]);
+/** Log levels accepted in `MCP_LOG_LEVEL`. */
 const VALID_LOG_LEVELS = new Set<LogLevel>(["debug", "info", "warn", "error"]);
 
 /** Parses `1/true/yes/on` / `0/false/no/off` (case-insensitive); anything
- * else, including `undefined`, resolves to `fallback`. */
+ * else, including `undefined`, resolves to `fallback`.
+ *
+ * @param value - Raw environment value.
+ * @param fallback - Result for missing or unrecognized values.
+ * @returns The parsed flag.
+ */
 function parseBoolean(value: string | undefined, fallback: boolean): boolean {
   if (value === undefined) return fallback;
   const normalized = value.trim().toLowerCase();
@@ -159,7 +165,14 @@ function parseBoolean(value: string | undefined, fallback: boolean): boolean {
 }
 
 /** Parses and clamps an integer env var into `[min, max]`; non-numeric or
- * missing input falls back to `fallback` rather than throwing. */
+ * missing input falls back to `fallback` rather than throwing.
+ *
+ * @param value - Raw environment value.
+ * @param fallback - Result for missing or non-numeric values.
+ * @param min - Lowest allowed value.
+ * @param max - Highest allowed value.
+ * @returns The clamped integer.
+ */
 function parseInteger(
   value: string | undefined,
   fallback: number,
@@ -172,7 +185,12 @@ function parseInteger(
   return Math.min(max, Math.max(min, parsed));
 }
 
-/** Normalizes `MCP_LOG_LEVEL`, falling back to `"info"`. */
+/**
+ * Normalizes `MCP_LOG_LEVEL`, falling back to `"info"`.
+ *
+ * @param value - Raw `MCP_LOG_LEVEL` value.
+ * @returns A valid log level.
+ */
 function parseLogLevel(value: string | undefined): LogLevel {
   const normalized = value?.trim().toLowerCase() as LogLevel | undefined;
   return normalized && VALID_LOG_LEVELS.has(normalized) ? normalized : "info";
@@ -184,6 +202,9 @@ function parseLogLevel(value: string | undefined): LogLevel {
  * target is startup-fatal, not something to paper over.
  * @throws {Error} on an invalid URL, a non-http(s) scheme, or a hostname
  *   outside {@link LOCAL_DASHBOARD_HOSTS}.
+ *
+ * @param raw - Raw `MCP_DASHBOARD_BASE_URL`; defaults to `http://127.0.0.1:4820`.
+ * @returns The validated URL.
  */
 function parseDashboardUrl(raw: string | undefined): URL {
   const value = (raw ?? "http://127.0.0.1:4820").trim();
@@ -209,6 +230,13 @@ function parseDashboardUrl(raw: string | undefined): URL {
   return url;
 }
 
+/**
+ * Read the dashboard API token: `MCP_DASHBOARD_API_TOKEN` or `DASHBOARD_API_TOKEN`, else the file
+ * named by `MCP_DASHBOARD_API_TOKEN_FILE` or `DASHBOARD_API_TOKEN_FILE`.
+ *
+ * @param env - Process environment.
+ * @returns The token, or undefined when none is configured.
+ */
 function readDashboardToken(env: NodeJS.ProcessEnv): string | undefined {
   const direct = env.MCP_DASHBOARD_API_TOKEN?.trim() || env.DASHBOARD_API_TOKEN?.trim();
   if (direct) return direct;
@@ -222,6 +250,14 @@ function readDashboardToken(env: NodeJS.ProcessEnv): string | undefined {
   }
 }
 
+/**
+ * Read a secret from an environment variable, or else from the file named by a second variable.
+ *
+ * @param env - Process environment.
+ * @param directName - Variable holding the secret itself.
+ * @param fileName - Variable holding a path to a file with the secret.
+ * @returns The trimmed secret, or undefined.
+ */
 function readSecret(
   env: NodeJS.ProcessEnv,
   directName: string,
@@ -238,6 +274,15 @@ function readSecret(
   }
 }
 
+/**
+ * Read the dashboard token and refuse to send it over plain HTTP, except to loopback addresses and
+ * the `agent-monitor` container alias.
+ *
+ * @param env - Process environment.
+ * @param dashboardBaseUrl - Dashboard URL the token will be sent to.
+ * @returns The token, or undefined.
+ * @throws When a token is configured for a non-loopback HTTP URL.
+ */
 function parseDashboardToken(env: NodeJS.ProcessEnv, dashboardBaseUrl: URL): string | undefined {
   const token = readDashboardToken(env);
   if (
@@ -253,7 +298,11 @@ function parseDashboardToken(env: NodeJS.ProcessEnv, dashboardBaseUrl: URL): str
 }
 
 /** Normalizes `MCP_TRANSPORT`, falling back to `"stdio"`. This is only the
- * default — `index.ts`'s `resolveTransport` may override it with CLI flags. */
+ * default — `index.ts`'s `resolveTransport` may override it with CLI flags.
+ *
+ * @param value - Raw `MCP_TRANSPORT` value.
+ * @returns `stdio`, `http`, or `repl`.
+ */
 function parseTransport(value: string | undefined): TransportMode {
   const normalized = value?.trim().toLowerCase();
   if (normalized === "http" || normalized === "repl" || normalized === "stdio") return normalized;

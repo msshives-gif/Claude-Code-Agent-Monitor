@@ -167,16 +167,27 @@ export type TabbyPulse =
   | "run_done"
   | null;
 
+/**
+ * Counts shown in Tabby's panel and status line, derived from {@link TabbyState} by {@link
+ * statusOf}.
+ */
 export interface TabbyStatus {
   /** Active + waiting sessions (everything not finished/errored). */
   liveCount: number;
   /** Subset of liveCount currently blocked on user input. */
   waitingCount: number;
+  /** Sessions whose latest known status is error. */
   errorCount: number;
+  /** Whether the dashboard WebSocket is connected. */
   connected: boolean;
 }
 
+/**
+ * Everything Tabby remembers between WebSocket messages. Updated only by {@link reduceTabby}, so
+ * mood changes stay pure and testable.
+ */
 export interface TabbyState {
+  /** Whether the dashboard WebSocket is connected; when false the mood is always `disconnected`. */
   connected: boolean;
   /** Latest status per session id we still care about. "waiting" = active but
    *  blocked on user input; counts as live for the status line. */
@@ -191,10 +202,19 @@ export interface TabbyState {
   thinking: boolean;
 }
 
-// Tunable timing constants (ms).
+/**
+ * How long Tabby stays happy after a Run Agent run finishes cleanly, in milliseconds. The timing
+ * constants below are tunable.
+ */
 export const HAPPY_MS = 4000;
+/**
+ * How long Tabby stays worried after a failure, in milliseconds. Worried outranks every mood except
+ * disconnected.
+ */
 export const WORRIED_MS = 4500;
+/** Silence, while sessions are live, after which Tabby looks stuck: 10 minutes. */
 export const STUCK_MS = 10 * 60_000;
+/** Silence, with nothing live, after which Tabby falls asleep: 3 minutes. */
 export const SLEEP_MS = 3 * 60_000;
 
 /** Event types from the hook ingestion that represent a genuine failure. */
@@ -210,6 +230,13 @@ export const FAILURE_EVENT_TYPES: ReadonlySet<string> = new Set([
   "diagnosticError",
 ]);
 
+/**
+ * Starting state for Tabby: connected, no known sessions, activity stamped at `now`, and no happy
+ * or worried window.
+ *
+ * @param now - Current time in epoch milliseconds.
+ * @returns A fresh state.
+ */
 export function initialTabbyState(now: number): TabbyState {
   return {
     connected: true,
@@ -221,6 +248,12 @@ export function initialTabbyState(now: number): TabbyState {
   };
 }
 
+/**
+ * Count live, waiting, and errored sessions in the state. Waiting sessions also count as live.
+ *
+ * @param state - Tabby state.
+ * @returns The counts plus the connection flag.
+ */
 export function statusOf(state: TabbyState): TabbyStatus {
   let liveCount = 0;
   let waitingCount = 0;
@@ -238,6 +271,10 @@ export function statusOf(state: TabbyState): TabbyStatus {
  * Pure mood resolver. Highest-priority matching state wins. `now` is injected
  * so callers (and tests) control the clock; transient windows (happy/worried)
  * and inactivity windows (stuck/sleeping) are evaluated against it.
+ *
+ * @param state - Current state.
+ * @param now - Current time in epoch milliseconds.
+ * @returns The mood to show.
  */
 export function deriveMood(state: TabbyState, now: number): Mood {
   if (!state.connected) return "disconnected";
@@ -258,6 +295,10 @@ export function deriveMood(state: TabbyState, now: number): Mood {
  * Fold a single WebSocket message into the Tabby state. Returns the next state
  * (new object) and a one-shot pulse describing what happened. Unknown or
  * irrelevant message types pass through unchanged with a `null` pulse.
+ *
+ * @param state - Current state.
+ * @param msg - Incoming WebSocket message.
+ * @param now - Current time in epoch milliseconds.
  */
 export function reduceTabby(
   state: TabbyState,
@@ -383,6 +424,11 @@ export function reduceTabby(
  * live WS deltas that arrive *after* it mounts, so a freshly-loaded page shows
  * "0 live" even when sessions already exist. Merges in non-finished sessions;
  * never clears the error window. Live WS deltas continue to refine this.
+ *
+ * @param state - Current state.
+ * @param rows - Sessions from the REST list.
+ * @param now - Current time in epoch milliseconds.
+ * @returns The state with those sessions tracked.
  */
 export function seedSessions(
   state: TabbyState,
@@ -399,7 +445,12 @@ export function seedSessions(
   return { ...state, sessions, lastActivityAt: now };
 }
 
-/** Drop all errored sessions from tracking (used by "clear alerts"). */
+/**
+ * Drop all errored sessions from tracking (used by "clear alerts").
+ *
+ * @param state - Current state.
+ * @returns The state without errored sessions and without the worried window.
+ */
 export function clearErrors(state: TabbyState): TabbyState {
   const sessions: TabbyState["sessions"] = {};
   for (const [id, s] of Object.entries(state.sessions)) {

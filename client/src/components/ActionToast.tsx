@@ -77,6 +77,7 @@ export function ActionToast() {
 
   useEffect(() => {
     let timer: number | undefined;
+    /** Show the message from an action-toast event, hiding it again after 2.2 seconds. */
     const onToast = (event: Event) => {
       const detail = (event as CustomEvent<string>).detail;
       if (typeof detail !== "string" || !detail) return;

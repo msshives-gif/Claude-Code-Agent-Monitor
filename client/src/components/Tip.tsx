@@ -85,6 +85,7 @@ export function Tip({ raw, children, maxWidth = 320, block = false }: TipProps) 
   const [pos, setPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const tipRef = useRef<HTMLDivElement>(null);
 
+  /** Follow the pointer with the tooltip. */
   const updatePos = useCallback((e: React.MouseEvent) => {
     setPos({ x: e.clientX, y: e.clientY });
   }, []);

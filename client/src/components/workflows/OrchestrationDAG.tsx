@@ -59,64 +59,131 @@ import type { OrchestrationData } from "../../lib/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+/** Props for {@link OrchestrationDAG}. */
 interface OrchestrationDAGProps {
+  /** Aggregated orchestration statistics from `/api/workflows`. */
   data: OrchestrationData;
+  /**
+   * Called with the clicked node's id (for example `main`, `subagent:<type>`, or
+   * `outcome:<status>`) so the page can highlight related charts. Clicking again passes the same
+   * id; the page decides whether that toggles.
+   */
   onNodeClick?: (nodeType: string) => void;
+  /** Id of the node to highlight with a glow ring, or null for none. */
   selectedNode?: string | null;
 }
 
+/**
+ * One node of the orchestration graph, laid out in fixed layers from left to right: sessions, main
+ * agent, subagent types, compactions, and outcomes.
+ */
 interface DAGNode {
+  /**
+   * Stable node id: `sessions`, `main`, `subagent:<type>` (plus `subagent:__overflow` for the
+   * folded remainder), `compaction:total` / `compaction:sessions`, or `outcome:<status>`.
+   */
   id: string;
+  /** Display label, already translated. */
   label: string;
+  /**
+   * Count shown in the node's badge, for example sessions, agents of the type, or agents with that
+   * outcome.
+   */
   count: number;
+  /** Column index, 0 for sessions through 4 for outcomes. */
   layer: number;
+  /**
+   * Node category; picks the gradient, border, text, and badge colors. `nested` is used for the
+   * compaction nodes.
+   */
   kind: "session" | "main" | "subagent" | "nested" | "outcome";
+  /**
+   * Extra figures for the tooltip: completion and error counts for subagent-type nodes, the
+   * subagent type for compaction nodes, and the agent status for outcome nodes.
+   */
   meta?: {
     completed?: number;
     errors?: number;
     subagent_type?: string;
     status?: string;
   };
+  /** Left edge of the node in SVG units, assigned by {@link buildGraph}. */
   x: number;
+  /** Top edge of the node in SVG units, assigned by {@link buildGraph}. */
   y: number;
+  /** Node width in SVG units. */
   width: number;
+  /** Node height in SVG units. */
   height: number;
 }
 
+/** One directed edge between two graph nodes. Stroke width scales with `weight`. */
 interface DAGEdge {
+  /** Id of the node the edge starts from. */
   source: string;
+  /** Id of the node the edge points to. */
   target: string;
+  /** How many delegations or transitions the edge represents. */
   weight: number;
+  /** Resolved start node, filled in during layout so edges can be drawn without lookups. */
   sourceNode?: DAGNode;
+  /** Resolved end node, filled in during layout. */
   targetNode?: DAGNode;
 }
 
+/**
+ * Translation function signature used by the imperative tooltip helpers, which run outside React.
+ */
 type TFn = (key: string, options?: Record<string, unknown>) => string;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
+/** Node width in SVG units. */
 const NODE_W = 136;
+/** Node height in SVG units. */
 const NODE_H = 44;
+/** Corner radius of node rectangles. */
 const NODE_RX = 8;
+/** Horizontal gap between layers. */
 const LAYER_GAP = 80;
+/** Vertical gap between nodes in the same layer. */
 const NODE_V_GAP = 8;
+/** Left and right padding of the drawing. */
 const PADDING_X = 8;
+/** Top padding, leaving room for the layer labels. */
 const PADDING_TOP = 44;
+/** Bottom padding, leaving room for the legend. */
 const PADDING_BOTTOM = 40;
+/**
+ * Most subagent-type nodes shown before the rest are folded into a single overflow node, so the
+ * graph stays readable with many agent types.
+ */
 const MAX_SUBAGENT_NODES = 7;
+/** Stroke width of the heaviest edge. */
 const MAX_EDGE_STROKE = 10;
+/** Stroke width of the lightest edge. */
 const MIN_EDGE_STROKE = 1.5;
+/** Width of the count badge drawn on each node. */
 const BADGE_W = 28;
+/** Height of the count badge. */
 const BADGE_H = 14;
 
 // Layer labels are now computed via i18n inside the component
 
+/**
+ * Fill, stroke, and text colors for outcome nodes by agent status; unknown statuses fall back to a
+ * neutral palette in {@link outcomeColorSet}.
+ */
 const OUTCOME_COLORS: Record<string, { fill: string; stroke: string; text: string }> = {
   completed: { fill: "#052e16", stroke: "#16a34a", text: "#4ade80" },
   error: { fill: "#1f0808", stroke: "#dc2626", text: "#f87171" },
   abandoned: { fill: "#1c1a04", stroke: "#ca8a04", text: "#facc15" },
 };
 
+/**
+ * SVG gradient definitions for each node kind, emitted into `<defs>` once per render and referenced
+ * by id from the node fills.
+ */
 const KIND_GRADIENTS: Record<
   DAGNode["kind"],
   { id: string; stops: Array<{ offset: string; color: string }> }
@@ -160,6 +227,12 @@ const KIND_GRADIENTS: Record<
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/**
+ * Whether the orchestration data has nothing to draw.
+ *
+ * @param data - Orchestration statistics.
+ * @returns True when there are no sessions, main agents, subagent types, or outcomes.
+ */
 function isEmpty(data: OrchestrationData): boolean {
   return (
     data.sessionCount === 0 &&
@@ -169,24 +242,52 @@ function isEmpty(data: OrchestrationData): boolean {
   );
 }
 
+/**
+ * Completion rate as a whole percentage string.
+ *
+ * @param completed - Completed count.
+ * @param total - Total count.
+ * @returns For example `83%`, or `-` when `total` is 0.
+ */
 function successRate(completed: number, total: number): string {
   if (total === 0) return "-";
   return `${Math.round((completed / total) * 100)}%`;
 }
 
+/**
+ * Colors for an outcome node.
+ *
+ * @param status - Agent status of the outcome.
+ * @returns The status palette, or a neutral palette for unknown statuses.
+ */
 function outcomeColorSet(status: string) {
   return OUTCOME_COLORS[status] ?? { fill: "#1a1a28", stroke: "#363650", text: "#9ca3af" };
 }
 
 // ── Layout builder ────────────────────────────────────────────────────────────
 
+/**
+ * Turn orchestration statistics into a positioned layered graph. Builds the five layers (sessions,
+ * main agent, the busiest subagent types with an overflow node beyond {@link MAX_SUBAGENT_NODES},
+ * compactions, and outcomes), maps the server's delegation edges onto node ids, and adds structural
+ * fallback edges so no subagent or outcome is left disconnected. Each layer is centered vertically,
+ * and the drawing height is capped at 520.
+ *
+ * @param data - Orchestration statistics.
+ * @param t - Translation function for node labels.
+ * @returns The nodes with coordinates, the edges, and the SVG size needed to fit them.
+ */
 function buildGraph(
   data: OrchestrationData,
   t: (key: string, options?: Record<string, unknown>) => string
 ): {
+  /** Positioned nodes. */
   nodes: DAGNode[];
+  /** Edges with their weights. */
   edges: DAGEdge[];
+  /** Total SVG width needed for every layer. */
   svgWidth: number;
+  /** Total SVG height needed for the tallest layer, capped at 520. */
   svgHeight: number;
 } {
   const rawNodes: Omit<DAGNode, "x" | "y">[] = [];
@@ -352,6 +453,10 @@ function buildGraph(
   const edgeSet = new Set<string>();
   const rawEdges: DAGEdge[] = [];
 
+  /**
+   * Add an edge once per source and target pair, resolving both nodes; edges to unknown nodes are
+   * skipped.
+   */
   const addEdge = (source: string, target: string, weight: number) => {
     const key = `${source}→${target}`;
     if (edgeSet.has(key)) return;
@@ -439,6 +544,13 @@ function buildGraph(
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
+/**
+ * Agent orchestration graph on the Workflows page, drawn with D3 into an SVG: sessions flow into
+ * the main agent, which delegates to subagent types, through compactions, to final outcomes. Edge
+ * thickness reflects volume. Hovering a node shows an imperatively built tooltip (so hover never
+ * re-renders React) anchored above the node and flipped below when there is no room; clicking
+ * reports the node id. Shows an empty state when there is nothing to draw.
+ */
 export function OrchestrationDAG({ data, onNodeClick, selectedNode }: OrchestrationDAGProps) {
   const { t } = useTranslation("workflows");
   const svgRef = useRef<SVGSVGElement>(null);
@@ -452,6 +564,10 @@ export function OrchestrationDAG({ data, onNodeClick, selectedNode }: Orchestrat
     if (tip) tip.style.opacity = "0";
   }, []);
 
+  /**
+   * Fill the tooltip for a node and anchor it above the node, flipping below when there is no room
+   * and clamping it inside the viewport.
+   */
   const showTipForNode = useCallback(
     (node: DAGNode, anchorEl: SVGGElement) => {
       const tip = tipRef.current;
@@ -494,8 +610,10 @@ export function OrchestrationDAG({ data, onNodeClick, selectedNode }: Orchestrat
     t("orchestration.layers.outcomes"),
   ];
 
+  /** Laid-out graph for the current data. */
   const graph = useMemo(() => buildGraph(data, t), [data, t]);
 
+  /** Report a node click with the node's id. */
   const handleNodeClick = useCallback(
     (node: DAGNode) => {
       onNodeClick?.(node.id);
@@ -876,6 +994,16 @@ export function OrchestrationDAG({ data, onNodeClick, selectedNode }: Orchestrat
 // ── Tooltip DOM builder ───────────────────────────────────────────────────────
 // Builds the tooltip's content imperatively to avoid React state on hover.
 
+/**
+ * Fill the tooltip element with a node's details: label, layer name, description, and count; for
+ * subagent types also the completed, error, and abandoned counts and the success rate; the subagent
+ * type for compaction nodes; and the status for outcome nodes. Built with DOM calls so hovering
+ * does not touch React state.
+ *
+ * @param el - Tooltip container; its children are replaced.
+ * @param node - Hovered node.
+ * @param t - Translation function.
+ */
 function buildDAGTooltipContent(el: HTMLDivElement, node: DAGNode, t: TFn) {
   // Clear existing children
   while (el.firstChild) el.removeChild(el.firstChild);
@@ -1017,6 +1145,12 @@ function describeNode(node: DAGNode, t: TFn): { layer: string; description: stri
 
 // ── Utility functions ─────────────────────────────────────────────────────────
 
+/**
+ * Border color for a node kind.
+ *
+ * @param kind - Node kind.
+ * @returns A hex color.
+ */
 function borderColorForKind(kind: DAGNode["kind"]): string {
   switch (kind) {
     case "session":
@@ -1032,6 +1166,12 @@ function borderColorForKind(kind: DAGNode["kind"]): string {
   }
 }
 
+/**
+ * Label text color for a node kind.
+ *
+ * @param kind - Node kind.
+ * @returns A hex color.
+ */
 function textColorForKind(kind: DAGNode["kind"]): string {
   switch (kind) {
     case "session":
@@ -1047,6 +1187,13 @@ function textColorForKind(kind: DAGNode["kind"]): string {
   }
 }
 
+/**
+ * Badge background for a node kind. Outcome nodes use their status stroke color at 20% opacity.
+ *
+ * @param kind - Node kind.
+ * @param status - Outcome status, for outcome nodes.
+ * @returns A CSS color.
+ */
 function badgeBgForKind(kind: DAGNode["kind"], status?: string): string {
   if (kind === "outcome" && status) {
     return outcomeColorSet(status).stroke + "33";
@@ -1065,6 +1212,12 @@ function badgeBgForKind(kind: DAGNode["kind"], status?: string): string {
   }
 }
 
+/**
+ * Compact count for node badges: `1.2M`, `3.4k`, or a rounded integer.
+ *
+ * @param n - Count.
+ * @returns The formatted count.
+ */
 function fmtCount(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
@@ -1073,6 +1226,7 @@ function fmtCount(n: number): string {
 
 // ── Legend data ───────────────────────────────────────────────────────────────
 
+/** Legend entries below the graph: one swatch per node kind plus the outcome colors. */
 const LEGEND_ITEMS = [
   { label: "Sessions", color: "#312e81", border: "#6366f1" },
   { label: "Main Agent", color: "#1e3a5f", border: "#3b82f6" },

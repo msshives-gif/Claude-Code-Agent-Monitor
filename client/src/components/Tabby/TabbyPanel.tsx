@@ -72,17 +72,29 @@ import {
 } from "lucide-react";
 import type { TabbyStatus } from "./brain";
 
+/** Props for {@link TabbyPanel}. */
 interface TabbyPanelProps {
+  /** Live counts Tabby derived from the event stream. */
   status: TabbyStatus;
+  /** Whether Tabby's speech is muted. */
   muted: boolean;
+  /** Toggles mute. */
   onToggleMute: () => void;
+  /** Clears the alert badge. */
   onClearAlerts: () => void;
+  /** Navigates to an app route. */
   onNavigate: (route: string) => void;
   /** Returns an answer to display, or null when the query was handed off. */
   onAsk: (query: string) => string | null;
+  /** Closes the panel. */
   onClose: () => void;
 }
 
+/**
+ * Tabby's expanded panel: live status chips (live, waiting, and errored), quick links to Run
+ * Claude, Activity, Sessions, and errored sessions, mute and clear-alerts buttons, and an ask box.
+ * Typed questions are answered inline, or handed off to the Run page when they need Claude.
+ */
 export function TabbyPanel({
   status,
   muted,
@@ -95,6 +107,10 @@ export function TabbyPanel({
   const [query, setQuery] = useState("");
   const [answer, setAnswer] = useState<string | null>(null);
 
+  /**
+   * Submit a question: show the inline answer, or nothing when it was handed off to the Run page
+   * (the container then navigates and closes the panel).
+   */
   const submit = (e: FormEvent) => {
     e.preventDefault();
     const result = onAsk(query);
@@ -216,18 +232,24 @@ export function TabbyPanel({
   );
 }
 
+/** Tailwind classes for a status chip's border and background, value text, and icon. */
 interface Tone {
+  /** Border and background classes. */
   wrap: string;
+  /** Value text class. */
   value: string;
+  /** Icon color class. */
   icon: string;
 }
 
+/** Fallback tone, also passed by callers for zero counts. */
 const TONE_MUTED: Tone = {
   wrap: "border-border bg-surface-1",
   value: "text-gray-300",
   icon: "text-gray-500",
 };
 
+/** Chip tones by name. */
 const TONES: Record<string, Tone> = {
   accent: { wrap: "border-accent/30 bg-accent/10", value: "text-gray-100", icon: "text-accent" },
   amber: {
@@ -239,15 +261,23 @@ const TONES: Record<string, Tone> = {
   muted: TONE_MUTED,
 };
 
+/**
+ * Status chip with an icon, a label, and a count. Callers pass the `muted` tone when the count is
+ * zero; an unknown tone also falls back to it.
+ */
 function StatChip({
   icon: Icon,
   label,
   value,
   tone,
 }: {
+  /** Icon component. */
   icon: LucideIcon;
+  /** Short label. */
   label: string;
+  /** Count to show. */
   value: number;
+  /** Tone name; `muted` for zero counts. */
   tone: string;
 }): ReactNode {
   const t = TONES[tone] ?? TONE_MUTED;
@@ -262,15 +292,20 @@ function StatChip({
   );
 }
 
+/** Compact icon-and-label button in the panel's action row. */
 function ActionButton({
   icon: Icon,
   label,
   onClick,
   disabled,
 }: {
+  /** Icon component. */
   icon: LucideIcon;
+  /** Button label. */
   label: string;
+  /** Called on click. */
   onClick: () => void;
+  /** Disables the button. */
   disabled?: boolean;
 }) {
   return (

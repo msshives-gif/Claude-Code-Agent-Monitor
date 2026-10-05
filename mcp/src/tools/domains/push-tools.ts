@@ -60,6 +60,10 @@ import { registrarFor } from "../../core/tool-registry.js";
 import { assertMutationsEnabled } from "../../policy/tool-guards.js";
 import type { ToolContext } from "../../types/tool-context.js";
 
+/**
+ * A browser push subscription as produced by `PushManager.subscribe`, with size limits on every
+ * field.
+ */
 const PushSubscriptionSchema = z.object({
   endpoint: z.string().url().max(8192),
   expirationTime: z.number().nullable().optional(),
@@ -69,6 +73,13 @@ const PushSubscriptionSchema = z.object({
   }),
 });
 
+/**
+ * Register the web-push tools: get the VAPID public key, subscribe and unsubscribe a browser, and
+ * send a notification. Tools that change data check that mutations are enabled
+ * (`MCP_DASHBOARD_ALLOW_MUTATIONS`) before calling the dashboard.
+ *
+ * @param context - Shared tool context.
+ */
 export function registerPushTools(context: ToolContext): void {
   const { api, config } = context;
   const register = registrarFor(context);

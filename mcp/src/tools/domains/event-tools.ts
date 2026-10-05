@@ -68,6 +68,8 @@ import type { ToolContext } from "../../types/tool-context.js";
  * where a tool can inject data into the dashboard's real-time pipeline
  * (websocket broadcast + alert evaluation), useful for testing hook
  * behavior without a live Claude Code session.
+ *
+ * @param context - Shared tool context.
  */
 export function registerEventTools(context: ToolContext): void {
   const { api, config } = context;

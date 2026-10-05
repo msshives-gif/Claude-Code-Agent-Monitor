@@ -72,9 +72,13 @@ import { log } from "./logger";
  * moved at least once — a fresh install lets Electron pick the OS default
  * placement rather than forcing `(0, 0)`. */
 interface WindowState {
+  /** Window width in pixels. */
   width: number;
+  /** Window height in pixels. */
   height: number;
+  /** Left edge; omitted to let the OS place the window. */
   x?: number;
+  /** Top edge; omitted to let the OS place the window. */
   y?: number;
 }
 
@@ -136,6 +140,8 @@ function loadState(): WindowState {
  * would silently discard the user's last real resize/move. Failures (e.g.
  * a read-only `userData` dir) are logged, not thrown — losing the saved
  * geometry is cosmetic, not fatal.
+ *
+ * @param win - Window whose bounds to save.
  */
 function saveState(win: BrowserWindow): void {
   if (win.isDestroyed() || win.isMinimized()) return;
@@ -195,6 +201,7 @@ export function createDashboardWindow(targetUrl: string): BrowserWindow {
 
   // Persist size/position on resize/move (debounced via the close handler too).
   let saveTimer: NodeJS.Timeout | null = null;
+  /** Save the window bounds 400 ms after the last move or resize. */
   const debounced = () => {
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(() => saveState(win), 400);

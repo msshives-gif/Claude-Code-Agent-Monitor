@@ -70,6 +70,12 @@ import type { CompactionImpactData } from "../../lib/types";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/**
+ * Compact token count: `1.2B`, `3.4M`, `5.6K`, or the plain number.
+ *
+ * @param n - Token count.
+ * @returns The formatted count.
+ */
 function fmtTokens(n: number): string {
   if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -93,24 +99,46 @@ function toHistogram(perSession: CompactionImpactData["perSession"]): Array<{
 
 // ── Chart constants ───────────────────────────────────────────────────────────
 
+/**
+ * Space around the histogram plot, in pixels; the bottom and left margins hold the axes and their
+ * labels.
+ */
 const MARGIN = { top: 18, right: 16, bottom: 46, left: 48 };
+/** Histogram height in pixels; the width follows the container. */
 const CHART_HEIGHT = 200;
 
 // ── D3 renderer ───────────────────────────────────────────────────────────────
 
+/** One histogram bar. */
 interface HistogramBucket {
+  /** Number of compactions (the x value). */
   count: number;
+  /** How many sessions compacted exactly that many times (the bar height). */
   sessions: number;
 }
 
+/** Axis labels and hover handlers for {@link renderHistogram}. */
 interface HistogramOpts {
+  /** X-axis label. */
   x: string;
+  /** Y-axis label. */
   y: string;
+  /** Called when the pointer enters a bar. */
   onHover: (e: MouseEvent, d: HistogramBucket) => void;
+  /** Called as the pointer moves over a bar, to move the tooltip. */
   onMove: (e: MouseEvent) => void;
+  /** Called when the pointer leaves a bar. */
   onLeave: () => void;
 }
 
+/**
+ * Draw the compactions-per-session histogram with D3 into the SVG, sized to its container width.
+ * Clears the SVG first, so it can be called on every data change.
+ *
+ * @param svg - Target SVG element.
+ * @param histo - Bars to draw.
+ * @param opts - Axis labels and hover handlers.
+ */
 function renderHistogram(svg: SVGSVGElement, histo: HistogramBucket[], opts: HistogramOpts): void {
   const container = svg.parentElement;
   const width = container ? container.clientWidth : 400;
@@ -274,13 +302,19 @@ function renderHistogram(svg: SVGSVGElement, histo: HistogramBucket[], opts: His
 
 // ── Stat box ──────────────────────────────────────────────────────────────────
 
+/** Props for {@link StatBox}. */
 interface StatBoxProps {
+  /** Metric name. */
   label: string;
+  /** Formatted value. */
   value: string;
+  /** Optional secondary line under the label. */
   sub?: string;
+  /** Tailwind text class for the value; defaults to the accent color. */
   accent?: string;
 }
 
+/** Large value tile in the compaction summary row. */
 function StatBox({ label, value, sub, accent = "text-accent" }: StatBoxProps) {
   return (
     <div className="flex flex-col gap-1 bg-surface-3 border border-border rounded-xl px-4 py-3.5 flex-1 min-w-0">
@@ -295,10 +329,19 @@ function StatBox({ label, value, sub, accent = "text-accent" }: StatBoxProps) {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
+/** Props for {@link CompactionImpact}. */
 export interface CompactionImpactProps {
+  /** Compaction statistics from `/api/workflows`. */
   data: CompactionImpactData;
 }
 
+/**
+ * Compaction impact section on the Workflows page: total compactions, sessions affected, average
+ * compactions per affected session, and the peak for a single session; a histogram of how many
+ * sessions compacted 1, 2, 3, and more times; and a plain-language summary with the share of
+ * sessions affected and, when known, the tokens freed. Shows an empty state when no session has
+ * compacted.
+ */
 export function CompactionImpact({ data }: CompactionImpactProps) {
   const { t } = useTranslation("workflows");
   const svgRef = useRef<SVGSVGElement>(null);

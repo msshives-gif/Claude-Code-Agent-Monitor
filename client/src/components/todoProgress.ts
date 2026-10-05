@@ -72,6 +72,10 @@
 
 import type { SessionTodoSnapshot, SessionTodoStatus, SessionTodoSummary } from "../lib/types";
 
+/**
+ * Display metadata for each task status: chart color, text and background classes, and translation
+ * key, shared by every task-progress view.
+ */
 export const TODO_STATUS_META: Record<
   SessionTodoStatus,
   {
@@ -119,6 +123,12 @@ export const TODO_STATUS_META: Record<
   },
 };
 
+/**
+ * Counts per status in display order, for the donut and the summary grid.
+ *
+ * @param progress - Summary or snapshot.
+ * @returns One segment per status with its count.
+ */
 export function taskProgressSegments(progress: SessionTodoSummary | SessionTodoSnapshot) {
   return [
     { status: "completed" as const, value: progress.completed },
@@ -129,6 +139,14 @@ export function taskProgressSegments(progress: SessionTodoSummary | SessionTodoS
   ].filter((segment) => segment.value > 0);
 }
 
+/**
+ * Readable name for the tool that produced the task state, such as `Codex update_plan`, `Claude
+ * TodoWrite`, or `Claude TaskUpdate`.
+ *
+ * @param sourceTool - Tool name, or null.
+ * @param fallbackLabel - Label when the tool is unknown.
+ * @returns The display name.
+ */
 export function taskSourceLabel(sourceTool: string | null | undefined, fallbackLabel: string) {
   if (!sourceTool) return fallbackLabel;
   if (sourceTool === "update_plan") return "Codex update_plan";
@@ -137,6 +155,13 @@ export function taskSourceLabel(sourceTool: string | null | undefined, fallbackL
   return sourceTool;
 }
 
+/**
+ * Accessible label such as `3 of 5 complete`.
+ *
+ * @param progress - Summary or snapshot.
+ * @param completeWord - Localized word for complete.
+ * @returns The label.
+ */
 export function taskProgressAriaLabel(
   progress: SessionTodoSummary | SessionTodoSnapshot,
   completeWord = "complete"

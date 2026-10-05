@@ -64,12 +64,20 @@ import type { TranscriptContent } from "../../lib/types";
 import { CodeBlock } from "./CodeBlock";
 import { styleForTool } from "./toolStyle";
 
+/** Props for {@link ToolCallBlock}. */
 interface ToolCallBlockProps {
+  /** The tool call from the transcript. */
   toolUse: TranscriptContent;
+  /** The matching tool result, or null while it has not arrived. */
   toolResult?: TranscriptContent | null;
 }
 
-/** Detect a likely language from a file path's extension. */
+/**
+ * Detect a likely language from a file path's extension.
+ *
+ * @param path - File path.
+ * @returns A highlighter language name, or `plain` when the extension is unknown.
+ */
 function langFromPath(path: string): string {
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
   const map: Record<string, string> = {
@@ -99,7 +107,13 @@ function langFromPath(path: string): string {
   return map[ext] ?? "plain";
 }
 
-/** Build a one-line summary of the tool call to show in the collapsed header. */
+/**
+ * Build a one-line summary of the tool call to show in the collapsed header.
+ *
+ * @param toolUse - The tool call.
+ * @returns A short summary such as the file path or command, or null when the input is missing or
+ *   truncated.
+ */
 function buildSummary(toolUse: TranscriptContent): string | null {
   const input = toolUse.input;
   if (!input || typeof input !== "object" || "_truncated" in input) return null;
@@ -115,7 +129,12 @@ function buildSummary(toolUse: TranscriptContent): string | null {
   return null;
 }
 
-/** Render the input pane with tool-aware formatting. */
+/**
+ * Render the input pane with tool-aware formatting.
+ *
+ * @param toolUse - The tool call.
+ * @returns The input pane, or null when there is no input.
+ */
 function renderInput(toolUse: TranscriptContent) {
   const input = toolUse.input;
   if (!input) return null;
@@ -241,7 +260,12 @@ function renderInput(toolUse: TranscriptContent) {
   return <CodeBlock code={JSON.stringify(obj, null, 2)} lang="json" label="Input" />;
 }
 
-/** Render the result pane: detect diff/json/text. */
+/**
+ * Render the result pane: detect diff/json/text.
+ *
+ * @param toolResult - The tool result.
+ * @param toolName - Tool that produced it, which picks the view.
+ */
 function renderResult(toolResult: TranscriptContent, toolName: string) {
   const text = toolResult.output ?? "";
   if (text.length === 0) return <div className="text-xs text-gray-500 italic px-1">(empty)</div>;
@@ -269,6 +293,10 @@ function renderResult(toolResult: TranscriptContent, toolName: string) {
   return <CodeBlock code={text} lang={lang} label={label} tone={isError ? "danger" : "default"} />;
 }
 
+/**
+ * Collapsible card for one tool call in a transcript: tool icon and name, a one-line summary, and
+ * the result status. Expanding shows the full input and result. Errors use a red style.
+ */
 export function ToolCallBlock({ toolUse, toolResult }: ToolCallBlockProps) {
   const [expanded, setExpanded] = useState(false);
 

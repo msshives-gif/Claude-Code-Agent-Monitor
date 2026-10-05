@@ -79,14 +79,25 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { tabbyPrefs, type TabbyPos } from "./prefs";
 import type { PointerEvent as ReactPointerEvent } from "react";
 
-// Avatar footprint + edge gap, in px. SIZE matches CatAvatar's default size.
+/** Avatar width and height in pixels. Matches `CatAvatar`'s default size. */
 export const TABBY_SIZE = 60;
+/** Gap kept between the avatar and the viewport edges, in pixels. */
 export const TABBY_MARGIN = 16;
+/**
+ * Pointer travel in pixels before a press becomes a drag, so a plain click still opens the panel.
+ */
 const DRAG_THRESHOLD = 5;
 
+/** Viewport width, with a fallback for non-browser environments such as tests. */
 const vw = () => (typeof window !== "undefined" ? window.innerWidth : 1024);
+/** Viewport height, with a fallback for non-browser environments such as tests. */
 const vh = () => (typeof window !== "undefined" ? window.innerHeight : 768);
 
+/**
+ * Resting position for a first visit: docked to the right edge, vertically centered.
+ *
+ * @returns The default position.
+ */
 function defaultPos(): TabbyPos {
   // Bottom-right corner: the one resting spot that never overlaps page
   // content (a vertically-centered default sat on top of activity feeds and
@@ -94,7 +105,12 @@ function defaultPos(): TabbyPos {
   return { side: "right", y: 1 };
 }
 
-/** Resting top-left screen coords for a docked position. */
+/**
+ * Resting top-left screen coords for a docked position.
+ *
+ * @param pos - Docked side and vertical fraction.
+ * @returns Screen coordinates of the avatar's top-left corner.
+ */
 function restingScreen(pos: TabbyPos) {
   const avail = Math.max(0, vh() - TABBY_SIZE - 2 * TABBY_MARGIN);
   const left = pos.side === "left" ? TABBY_MARGIN : vw() - TABBY_SIZE - TABBY_MARGIN;
@@ -102,22 +118,47 @@ function restingScreen(pos: TabbyPos) {
   return { left, top };
 }
 
+/**
+ * Where to draw Tabby and the pointer handlers that make it draggable, returned by {@link
+ * useTabbyPosition}.
+ */
 export interface TabbyPlacement {
   /** Avatar top-left, in screen px. */
   left: number;
+  /** Avatar top edge, in screen pixels. */
   top: number;
+  /** Avatar width and height, in pixels. */
   size: number;
+  /** Edge the avatar is docked to; the panel opens toward the other side. */
   side: "left" | "right";
   /** True when the avatar sits in the lower half - flyouts open upward. */
   openUp: boolean;
+  /**
+   * True while the avatar is being dragged. Tabby hides its panel and speech bubble meanwhile so
+   * they do not chase the cursor.
+   */
   dragging: boolean;
+  /** Starts tracking a press and captures the pointer so moves keep arriving outside the avatar. */
   onPointerDown: (e: ReactPointerEvent) => void;
+  /** Moves the avatar once the press has travelled past the drag threshold. */
   onPointerMove: (e: ReactPointerEvent) => void;
+  /**
+   * Ends the press. After a drag, docks to the nearer side and saves the position; after a plain
+   * press, does nothing so the click handler can run.
+   */
   onPointerUp: (e: ReactPointerEvent) => void;
   /** Returns true (once) if a drag just ended, so the click handler can skip. */
   consumeDrag: () => boolean;
 }
 
+/**
+ * Draggable, edge-docked placement for Tabby. The resting position is stored as a side (left or
+ * right) plus a vertical fraction of the viewport, so it survives window resizes and is persisted
+ * through `tabbyPrefs`. While dragging, the avatar follows the pointer exactly; on release it snaps
+ * to the nearer edge.
+ *
+ * @returns Coordinates, docking side, drag state, and pointer handlers.
+ */
 export function useTabbyPosition(): TabbyPlacement {
   const [pos, setPos] = useState<TabbyPos>(() => tabbyPrefs.getPos() ?? defaultPos());
   const [drag, setDrag] = useState<{ left: number; top: number } | null>(null);
@@ -132,6 +173,7 @@ export function useTabbyPosition(): TabbyPlacement {
   const liveRef = useRef<{ left: number; top: number } | null>(null);
 
   useEffect(() => {
+    /** Re-derive the resting coordinates when the window resizes. */
     const onResize = () => force((n) => n + 1);
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
@@ -140,6 +182,10 @@ export function useTabbyPosition(): TabbyPlacement {
   const resting = restingScreen(pos);
   const screen = drag ?? resting;
 
+  /**
+   * Start tracking a primary-button press and capture the pointer so moves keep arriving even when
+   * it leaves the avatar.
+   */
   const onPointerDown = useCallback(
     (e: ReactPointerEvent) => {
       if (e.button !== undefined && e.button !== 0) return;
@@ -156,6 +202,10 @@ export function useTabbyPosition(): TabbyPlacement {
     [screen.left, screen.top]
   );
 
+  /**
+   * Follow the pointer once it has moved past the drag threshold, so small jitters still count as a
+   * click.
+   */
   const onPointerMove = useCallback((e: ReactPointerEvent) => {
     const start = startRef.current;
     if (!start) return;
@@ -172,6 +222,7 @@ export function useTabbyPosition(): TabbyPlacement {
     setDrag({ left, top });
   }, []);
 
+  /** Release the pointer. After a drag, dock to the nearer side and save the position. */
   const onPointerUp = useCallback((e: ReactPointerEvent) => {
     try {
       (e.currentTarget as Element).releasePointerCapture?.(e.pointerId);
@@ -194,6 +245,10 @@ export function useTabbyPosition(): TabbyPlacement {
     movedRef.current = false;
   }, []);
 
+  /**
+   * Report whether the last press was a drag, and reset the flag, so the click handler can ignore
+   * the click that ends a drag.
+   */
   const consumeDrag = useCallback(() => {
     const was = draggedRef.current;
     draggedRef.current = false;

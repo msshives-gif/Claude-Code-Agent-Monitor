@@ -145,9 +145,11 @@ const SESSION_RESULT_LIMIT = 6;
 /** How many rows PageUp/PageDown travel. */
 const PAGE_JUMP = 6;
 
+/** A command as listed in the palette, with its fuzzy-match result. */
 interface PaletteItem extends PaletteCommand {
   /** Character positions in `label` that matched, for underlining. */
   indices: number[];
+  /** Fuzzy-match score used to rank items within their group. */
   score: number;
 }
 
@@ -168,6 +170,8 @@ function readNotificationsEnabled(): boolean {
  * Write it back in the same shape, preserving the per-event flags. Enabling also
  * has to ask the browser for permission — a stored `true` with permission denied
  * is a toggle that lies.
+ *
+ * @param enabled - New value of the browser-notification master switch.
  */
 function writeNotificationsEnabled(enabled: boolean): void {
   try {
@@ -252,6 +256,7 @@ export function CommandPalette() {
   // — that is the point of a global launcher — but never when Alt is also held,
   // so browser-native combos keep working.
   useEffect(() => {
+    /** Cmd/Ctrl+K toggles the palette (Alt combinations are ignored). */
     const onKey = (e: KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
       if (e.key.toLowerCase() !== "k") return;
@@ -301,6 +306,7 @@ export function CommandPalette() {
 
   useEffect(() => subscribeToSoundPrefs(() => setSoundEnabledState(getSoundPrefs().enabled)), []);
 
+  /** Search text without surrounding whitespace. */
   const term = useMemo(() => query.trim(), [query]);
 
   // ── Debounced server-side session search ──────────────────────────────────
@@ -490,6 +496,12 @@ export function CommandPalette() {
     tabbyMuted,
   ]);
 
+  /**
+   * Items to list. With no query: recently used commands, the pages, and the current page's
+   * actions. With a query: every command scored by fuzzy match, plus server-ranked session results
+   * for exactly that query. Items are sorted by group first, so the list keeps a stable shape, then
+   * by score.
+   */
   const items = useMemo<PaletteItem[]>(() => {
     if (!open) return [];
     // Only show session results that answer what is typed right now.
@@ -569,6 +581,10 @@ export function CommandPalette() {
     }
   }, [activeIndex, open]);
 
+  /**
+   * Run a command and remember it in the recently used list. Session results are not remembered,
+   * because their ids stop resolving once a session is pruned.
+   */
   const runItem = useCallback((item: PaletteItem) => {
     // Sessions are transient rows; remembering one would fill the MRU list with
     // ids that stop resolving as soon as the session is pruned.
@@ -610,7 +626,15 @@ export function CommandPalette() {
     [items, activeIndex]
   );
 
+  /**
+   * Keyboard handling: arrow keys move the selection (wrapping around), Page Up/Down and Home/End
+   * jump, Tab and Shift+Tab move between groups, Enter runs the selected item, and Escape closes.
+   */
   const onKeyDown = (e: React.KeyboardEvent) => {
+    /**
+     * Select an item by index, wrapping around the ends, and switch to keyboard mode so the pointer
+     * does not steal the selection.
+     */
     const move = (next: number) => {
       e.preventDefault();
       pointerActive.current = false;

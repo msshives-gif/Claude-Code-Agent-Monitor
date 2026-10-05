@@ -113,6 +113,8 @@ export function isOpenAtLogin(): boolean {
  *   - **macOS** — registers via the modern `SMAppService` API and starts the
  *     app hidden (see the `openAsHidden` comment below).
  * No-op on Linux, where Electron has no supported mechanism.
+ *
+ * @param enabled - Whether the app should open at login.
  */
 export function setOpenAtLogin(enabled: boolean): void {
   if (!supported()) return;

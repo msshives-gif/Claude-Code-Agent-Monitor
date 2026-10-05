@@ -124,12 +124,17 @@ export function MultiSelect({
   const searchRef = useRef<HTMLInputElement | null>(null);
   const dialogId = useId();
 
+  /** Options whose label contains the search text, case-insensitively. */
   const filteredOptions = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
     if (!normalizedQuery) return options;
     return options.filter((option) => option.label.toLocaleLowerCase().includes(normalizedQuery));
   }, [options, query]);
 
+  /**
+   * Trigger label: the "all" label when nothing is selected, the option's label for one, or a count
+   * for several.
+   */
   const selectedLabel = useMemo(() => {
     if (value.length === 0) return allLabel;
     if (value.length === 1)
@@ -139,6 +144,7 @@ export function MultiSelect({
 
   useEffect(() => {
     if (!open) return;
+    /** Close when a press lands outside the component. */
     const onPointerDown = (event: PointerEvent) => {
       if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
     };
@@ -154,12 +160,14 @@ export function MultiSelect({
     searchRef.current?.focus();
   }, [open]);
 
+  /** Close the dropdown, clear the search, and return focus to the trigger. */
   const close = () => {
     setOpen(false);
     setQuery("");
     triggerRef.current?.focus();
   };
 
+  /** Add or remove one value from the selection. */
   const toggle = (optionValue: string) => {
     onChange(
       value.includes(optionValue)

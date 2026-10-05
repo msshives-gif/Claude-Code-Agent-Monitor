@@ -82,6 +82,8 @@ import { registerPushTools } from "./domains/push-tools.js";
  * `transports/tool-collector.ts`'s `collectAllTools` independently
  * re-implements the same registrations for REPL mode (no live server), so
  * the two files must be kept in sync by hand when a tool changes.
+ *
+ * @param context - Shared tool context passed to every domain.
  */
 export function registerAllTools(context: ToolContext): void {
   registerObservabilityTools(context);

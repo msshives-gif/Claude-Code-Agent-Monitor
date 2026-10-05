@@ -204,18 +204,26 @@ export const COMMAND_GROUP_ORDER: readonly CommandGroup[] = [
   "actions",
 ];
 
+/** One runnable command in the command palette. */
 export interface PaletteCommand {
   /** Stable across renders and locales — it is what the MRU list persists. */
   id: string;
+  /** Text shown in the list and matched by the fuzzy search, already translated. */
   label: string;
   /** Secondary line: the route, the owning page, or a state summary. */
   detail?: string;
   /** Extra text matched against but never shown (route paths, synonyms). */
   keywords?: string[];
+  /** Group the command is listed under. */
   group: CommandGroup;
+  /** Icon shown before the label. */
   icon: LucideIcon;
   /** Live on/off state, rendered as a pill for toggle commands. */
   state?: string;
+  /**
+   * Performs the command when it is chosen. Every command except session rows is also remembered in
+   * the recently used list.
+   */
   run: () => void;
 }
 
@@ -223,19 +231,31 @@ export interface PaletteCommand {
 export interface PaletteContext {
   /** Translate with an explicit `ns:key` (the palette uses several namespaces). */
   t: (key: string, options?: Record<string, unknown>) => string;
+  /** Navigate to an in-app route. */
   navigate: (to: string) => void;
   /** Current pathname, so page-scoped commands can be filtered in. */
   pathname: string;
+  /** Copy a link to the current view to the clipboard. */
   copyLink: () => void;
+  /** Current UI language code. */
   language: string;
+  /** Switch the UI language. */
   setLanguage: (language: string) => void;
+  /** Whether sound cues are on. */
   soundEnabled: boolean;
+  /** Turn sound cues on or off. */
   setSoundEnabled: (enabled: boolean) => void;
+  /** Whether Tabby is shown. */
   tabbyEnabled: boolean;
+  /** Show or hide Tabby. */
   setTabbyEnabled: (enabled: boolean) => void;
+  /** Current product scope (Claude-compatible, Codex, or both). */
   providerScope: ProviderScope;
+  /** Change the product scope for the whole app. */
   setProviderScope: (scope: ProviderScope) => void;
+  /** Run the update check, owned by the sidebar. */
   checkForUpdates: () => void;
+  /** Clear the palette's recently used commands. */
   clearRecents: () => void;
   /**
    * Ids the current page has registered with the shortcut registry. Page
@@ -252,15 +272,25 @@ export interface PaletteContext {
   projects: string[];
   /** Known data sources (machines), for scoping without visiting Settings. */
   sources: { id: string; label: string }[];
+  /** Current data scope (which machines and products are shown). */
   scope: DataScope;
+  /** Change the data scope. */
   setScope: (scope: DataScope) => void;
+  /** Whether browser notifications are on. */
   notificationsEnabled: boolean;
+  /** Turn browser notifications on or off. */
   setNotificationsEnabled: (enabled: boolean) => void;
+  /** Sound volume, from 0 to 1. */
   soundVolume: number;
+  /** Set the sound volume. */
   setSoundVolume: (volume: number) => void;
+  /** Whether Tabby is muted. */
   tabbyMuted: boolean;
+  /** Mute or unmute Tabby. */
   setTabbyMuted: (muted: boolean) => void;
+  /** Go back in browser history. */
   goBack: () => void;
+  /** Go forward in browser history. */
   goForward: () => void;
 }
 
@@ -498,17 +528,27 @@ const SESSION_FILTER_COMMANDS: { status: string; labelKey: string }[] = [
   { status: "abandoned", labelKey: "sessions:filterAbandoned" },
 ];
 
+/**
+ * UI languages the palette offers switch commands for. Must match `supportedLngs` in the i18n
+ * setup.
+ */
 const LANGUAGES = ["en", "zh", "vi", "ko", "es"] as const;
 
+/** Product scopes the palette offers, in display order. */
 const PROVIDER_SCOPES: ProviderScope[] = ["both", "claude", "codex"];
 
 /**
  * Build every non-session command. Session results are appended by the palette
  * itself because they are fetched, not enumerated.
+ *
+ * @param ctx - App state and actions the commands read and call.
+ * @returns Every command, in catalog order.
  */
 export function buildPaletteCommands(ctx: PaletteContext): PaletteCommand[] {
   const { t, navigate } = ctx;
+  /** Command handler that navigates to a route. */
   const go = (to: string) => () => navigate(to);
+  /** Localized on/off state pill for toggle commands. */
   const onOff = (enabled: boolean) => t(enabled ? "nav:palette.on" : "nav:palette.off");
 
   const pages: PaletteCommand[] = PAGE_COMMANDS.map((page) => ({

@@ -63,6 +63,8 @@ import type { ToolContext } from "../../types/tool-context.js";
 /**
  * Registers remote-source tools against `/api/remote-sources/*`.
  * List is read-only; sync tools require the mutations policy gate.
+ *
+ * @param context - Shared tool context.
  */
 export function registerRemoteTools(context: ToolContext): void {
   const { api, config } = context;

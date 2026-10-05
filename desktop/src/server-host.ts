@@ -120,6 +120,10 @@ import { log } from "./logger";
  * The patch is installed exactly once before we require the server module.
  */
 let nativeModulesPatched = false;
+/**
+ * Make the server's `better-sqlite3` requires resolve to the desktop app's copy, which is built for
+ * Electron's ABI. Patches Node's module resolution once; every other module resolves normally.
+ */
 function ensureNativeModulesPatched(): void {
   if (nativeModulesPatched) return;
   nativeModulesPatched = true;
@@ -152,9 +156,14 @@ function ensureNativeModulesPatched(): void {
   log.info("native module redirect installed", { betterSqlite3: desktopBetterSqlite });
 }
 
+/**
+ * Handle to the dashboard server the desktop app uses, whether it started the server or adopted one
+ * already running.
+ */
 export interface ServerHandle {
   /** Origin (e.g. `http://127.0.0.1:4820`) used by the window. */
   url: string;
+  /** TCP port the server listens on. */
   port: number;
   /** True when the server is owned by us (and we should stop it on quit). */
   ownedByUs: boolean;
@@ -172,8 +181,14 @@ export interface ServerHandle {
  * hand-written contract between the two.
  */
 interface ServerModule {
+  /** Builds the Express app. */
   createApp: () => unknown;
+  /** Starts listening on the port and resolves with the HTTP server. */
   startServer: (app: unknown, port: number) => Promise<http.Server>;
+  /**
+   * Starts the server's background work: one-time legacy backfill and token repair, liveness
+   * reaping, and the recurring watchers and sweeps.
+   */
   startBackgroundServices: () => void;
 }
 
@@ -187,6 +202,14 @@ interface ServerModule {
  * Guarded so a "Restart Server" does not double-register schedulers/watchers.
  */
 let backgroundServicesStarted = false;
+/**
+ * Start the background services of a server this app owns, once. Also installs the Claude Code
+ * hooks, so a user who only installed the desktop app gets events flowing without running the
+ * installer from a checkout. Failures are logged and do not stop the window from opening.
+ *
+ * @param appRoot - Root of the bundled app.
+ * @param serverModule - The loaded server module.
+ */
 function bootstrapOwnedServer(appRoot: string, serverModule: ServerModule): void {
   if (backgroundServicesStarted) return;
   backgroundServicesStarted = true;
@@ -233,7 +256,9 @@ export interface ServerSnapshot {
   eventsToday: number;
 }
 
+/** Most recent stats snapshot for the tray menu, or null before the first successful fetch. */
 let lastSnapshot: ServerSnapshot | null = null;
+/** Timer for snapshot polling, or null when polling has not started. */
 let snapshotTimer: ReturnType<typeof setInterval> | null = null;
 
 /** Synchronous accessor for the tray menu's build step — always returns the
@@ -246,6 +271,10 @@ export function getServerSnapshot(): ServerSnapshot | null {
  * Fetch a fresh snapshot from the running server's stats API. Resolves to
  * `null` on any error (server not up yet, non-200, malformed JSON) so the
  * poller can simply keep the previous cached value.
+ *
+ * @param port - Port of the local server.
+ * @param timeoutMs - Request timeout; defaults to 2.5 seconds.
+ * @returns The snapshot, or null on any failure.
  */
 function fetchSnapshotOverHttp(port: number, timeoutMs = 2500): Promise<ServerSnapshot | null> {
   // Server expects tz_offset in minutes (Date#getTimezoneOffset) to compute
@@ -295,7 +324,12 @@ function fetchSnapshotOverHttp(port: number, timeoutMs = 2500): Promise<ServerSn
   });
 }
 
-/** Poll once now and update the cache. Safe to call on demand (e.g. menu open). */
+/**
+ * Poll once now and update the cache. Safe to call on demand (e.g. menu open).
+ *
+ * @param port - Port of the local server, or null when no server is running (the call is then a
+ *   no-op).
+ */
 export async function refreshServerSnapshot(port: number | null): Promise<void> {
   if (!port) return;
   const snap = await fetchSnapshotOverHttp(port);
@@ -306,9 +340,13 @@ export async function refreshServerSnapshot(port: number | null): Promise<void> 
  * Begin polling the server's stats endpoint so the tray menu always reflects
  * recent state. Idempotent — a second call (e.g. after "Restart Server") is a
  * no-op. The timer is unref'd so it never keeps the event loop alive on quit.
+ *
+ * @param getPort - Returns the server's current port, or null while none is running.
+ * @param intervalMs - Poll interval; defaults to 4 seconds.
  */
 export function startSnapshotPolling(getPort: () => number | null, intervalMs = 4000): void {
   if (snapshotTimer) return;
+  /** Fetch a fresh snapshot for whatever port the server currently uses. */
   const tick = (): void => {
     void refreshServerSnapshot(getPort());
   };
@@ -373,11 +411,16 @@ function resolveAppRoot(): string {
  *
  * Used both for startup port selection (`pickFreePort`) and for deciding
  * whether to adopt an already-running server (`startEmbeddedServer`).
+ *
+ * @param port - Port to classify.
+ * @param timeoutMs - Timeout for the connection and health request; defaults to 1.5 seconds.
+ * @returns `free`, `healthy`, or `busy`.
  */
 async function probePort(port: number, timeoutMs = 1500): Promise<"healthy" | "busy" | "free"> {
   // 1. Is anything listening? Try to connect.
   const reachable = await new Promise<boolean>((resolve) => {
     const socket = net.createConnection({ host: "127.0.0.1", port });
+    /** Settle the probe once and close the socket. */
     const done = (v: boolean) => {
       socket.destroy();
       resolve(v);
@@ -451,6 +494,10 @@ async function pickFreePort(): Promise<number> {
  * usable — Express's `listen()` callback fires as soon as the socket is
  * bound, which can be before the app has finished any async initialization
  * that gates `/api/health`.
+ *
+ * @param port - Port the server was just bound to.
+ * @param timeoutMs - How long to wait; defaults to 30 seconds.
+ * @throws {Error} When the server does not report healthy in time.
  */
 async function waitForHealthy(port: number, timeoutMs = HEALTH_TIMEOUT_MS): Promise<void> {
   const deadline = Date.now() + timeoutMs;

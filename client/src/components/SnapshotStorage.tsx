@@ -17,8 +17,15 @@ import { api, type SnapshotPruneResult, type SnapshotStorage as Storage } from "
 import { Checkbox } from "./Checkbox";
 import { fmt } from "../lib/format";
 
+/** Bytes in one gibibyte; the size cap is entered in GB and converted with this. */
 const GIB = 1024 ** 3;
 
+/**
+ * Human-readable size from bytes up to terabytes, with two decimals from GB up.
+ *
+ * @param bytes - Size in bytes.
+ * @returns The formatted size.
+ */
 export function formatStorageBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -27,8 +34,18 @@ export function formatStorageBytes(bytes: number): string {
   return `${(bytes / 1024 ** 4).toFixed(2)} TB`;
 }
 
+/**
+ * Prune form state. Numbers are kept as typed strings; empty or non-positive values mean no limit.
+ */
 type Criteria = { maxAgeDays: string; maxGb: string; orphans: boolean };
 
+/**
+ * Turn the prune form into request criteria, omitting limits that are empty or not positive and
+ * converting GB to bytes.
+ *
+ * @param criteria - Form state.
+ * @returns Criteria for the prune request.
+ */
 function toRequest(criteria: Criteria) {
   const days = parseFloat(criteria.maxAgeDays);
   const gb = parseFloat(criteria.maxGb);
@@ -39,11 +56,22 @@ function toRequest(criteria: Criteria) {
   };
 }
 
+/**
+ * Transcript snapshot storage section in Settings. Shows storage per provider and the retention
+ * policy from the environment. Offers a manual compression pass and a two-step prune: Preview runs
+ * a dry run and lists what would be removed, then Prune asks for a second click and sends the
+ * confirmation token. Any change to the criteria clears the confirmation, so the user cannot apply
+ * a plan they have not previewed.
+ */
 export function SnapshotStorage({
   storage,
   onChanged,
 }: {
+  /**
+   * Storage report from `/api/settings/info`; undefined on servers that predate snapshot storage.
+   */
   storage: Storage | undefined;
+  /** Called after compressing or pruning so the parent can refresh the report. */
   onChanged: () => void | Promise<void>;
 }) {
   const { t } = useTranslation("settings");
@@ -64,6 +92,10 @@ export function SnapshotStorage({
   const hasCriteria = Object.keys(request).length > 0;
   const previewMatches = preview?.key === requestKey;
 
+  /**
+   * Change the prune criteria, which also cancels any pending confirmation and clears the result
+   * banner.
+   */
   const update = (patch: Partial<Criteria>) => {
     setCriteria((prev) => ({ ...prev, ...patch }));
     setConfirming(false);
@@ -71,6 +103,7 @@ export function SnapshotStorage({
   };
 
   type Outcome = string | { message: string; isError: boolean } | null;
+  /** Run one action with a busy state, showing its outcome or error in the banner. */
   const run = async (kind: "compress" | "preview" | "prune", fn: () => Promise<Outcome>) => {
     setBusy(kind);
     setBanner(null);
@@ -90,6 +123,10 @@ export function SnapshotStorage({
     }
   };
 
+  /**
+   * Compress eligible snapshots now and report how many were compressed and how much space was
+   * saved, plus any that were skipped or failed.
+   */
   const handleCompress = () =>
     run("compress", async () => {
       const res = await api.settings.snapshots.compress();
@@ -118,6 +155,7 @@ export function SnapshotStorage({
       return { message: parts.join(" "), isError: res.compressed === 0 };
     });
 
+  /** Dry-run the prune with the current criteria and show the plan. */
   const handlePreview = () =>
     run("preview", async () => {
       const plan = await api.settings.snapshots.prune({ ...request, dry_run: true });
@@ -126,6 +164,10 @@ export function SnapshotStorage({
       return null;
     });
 
+  /**
+   * Apply the prune. The first click only asks for confirmation; the second sends the prune with
+   * its confirmation token and refreshes the storage report.
+   */
   const handlePrune = () => {
     if (!confirming) {
       setConfirming(true);

@@ -100,6 +100,8 @@ export function loadRecentCommands(): string[] {
  * Move `id` to the front of the MRU list.
  *
  * @returns The new list, so callers can update state without a second read.
+ *
+ * @param id - Command id that just ran.
  */
 export function rememberCommand(id: string): string[] {
   const next = [id, ...loadRecentCommands().filter((entry) => entry !== id)].slice(0, RECENT_LIMIT);

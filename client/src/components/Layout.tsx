@@ -112,6 +112,7 @@ export function Layout({ wsConnected }: LayoutProps) {
   const { t } = useTranslation("nav");
   const [collapsed, setCollapsed] = useState(loadCollapsed);
 
+  /** Collapse or expand the sidebar and remember the choice in localStorage. */
   const toggle = useCallback(() => {
     setCollapsed((prev) => {
       const next = !prev;

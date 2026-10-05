@@ -131,8 +131,11 @@ import { MarkdownContent } from "./MarkdownContent";
 import { fmt, formatModelName } from "../../lib/format";
 import { parseTuiSegments, stripAnsi, hasTuiTags, type TuiSegment } from "./tuiSegments";
 
+/** Props for {@link MessageList}. */
 interface MessageListProps {
+  /** Transcript messages, oldest first. */
   messages: TranscriptMessage[];
+  /** Show the loading state instead of the list. */
   loading: boolean;
 }
 
@@ -155,7 +158,12 @@ function TranscriptImage({ src, alt }: { src: string; alt: string }) {
   );
 }
 
-/** Build a map from tool_use id → tool_result for matching */
+/**
+ * Build a map from tool_use id → tool_result for matching
+ *
+ * @param messages - Transcript messages.
+ * @returns Tool results keyed by the id of the call they answer.
+ */
 function buildToolResultMap(messages: TranscriptMessage[]): Map<string, TranscriptContent> {
   const map = new Map<string, TranscriptContent>();
   for (const msg of messages) {
@@ -169,17 +177,32 @@ function buildToolResultMap(messages: TranscriptMessage[]): Map<string, Transcri
   return map;
 }
 
-/** Detect if text is skill loading content (starts with "Base directory for this skill:") */
+/**
+ * Detect if text is skill loading content (starts with "Base directory for this skill:")
+ *
+ * @param text - User message text.
+ * @returns True when it is a skill's injected instructions rather than something the user typed.
+ */
 function isSkillContent(text: string): boolean {
   return text.startsWith("Base directory for this skill:");
 }
 
-/** Detect if text is a task notification (contains <task-notification> tag) */
+/**
+ * Detect if text is a task notification (contains <task-notification> tag)
+ *
+ * @param text - User message text.
+ * @returns True when it is a background task notification.
+ */
 function isTaskNotification(text: string): boolean {
   return text.includes("<task-notification>") || text.includes("<task-id>");
 }
 
-/** Format a timestamp as compact local time (e.g. "14:23:01"). */
+/**
+ * Format a timestamp as compact local time (e.g. "14:23:01").
+ *
+ * @param iso - ISO timestamp.
+ * @returns The local time of day.
+ */
 function formatLocalTime(iso: string): string {
   try {
     return new Date(iso).toLocaleTimeString();
@@ -251,7 +274,13 @@ function CaveatBlock({ text }: { text: string }) {
   );
 }
 
-/** Render a single segment produced by parseTuiSegments. */
+/**
+ * Render a single segment produced by parseTuiSegments.
+ *
+ * @param seg - Parsed segment.
+ * @param key - React key.
+ * @returns The rendered segment.
+ */
 function renderSegment(seg: TuiSegment, key: number): React.ReactNode {
   switch (seg.kind) {
     case "command":
@@ -307,11 +336,17 @@ function CollapsibleBlock({
   bgClass,
   textClass,
 }: {
+  /** Text inside the block. */
   text: string;
+  /** Icon shown in the header. */
   icon: React.ReactNode;
+  /** Header title. */
   title: string;
+  /** Border color class. */
   borderClass: string;
+  /** Background color class. */
   bgClass: string;
+  /** Text color class. */
   textClass: string;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -341,6 +376,11 @@ function CollapsibleBlock({
   );
 }
 
+/**
+ * Renders a transcript as chat turns: user prompts, assistant text, collapsible thinking blocks,
+ * tool calls with their results, and system notices. Thinking blocks start collapsed and are
+ * tracked by message index.
+ */
 export function MessageList({ messages, loading }: MessageListProps) {
   const [expandedThinking, setExpandedThinking] = useState<Set<number>>(() => new Set());
 

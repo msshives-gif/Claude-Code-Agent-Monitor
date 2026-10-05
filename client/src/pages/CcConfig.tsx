@@ -130,6 +130,14 @@ import type {
   CcStatusline,
 } from "../lib/api";
 
+/**
+ * Type guard for the tabs whose artifacts can be created, edited, and deleted from the dashboard.
+ * Every other tab is read-only (plugins, marketplaces, MCP, hooks, and settings are changed with
+ * the CLI), except keybindings, which has its own inline editor.
+ *
+ * @param tab - Tab to check.
+ * @returns True for skills, agents, commands, output styles, and memory.
+ */
 function isMutable(
   tab: TabKey
 ): tab is "skills" | "agents" | "commands" | "outputStyles" | "memory" {
@@ -142,12 +150,23 @@ function isMutable(
   );
 }
 
+/**
+ * Map a mutable tab to the artifact type the `/api/cc-config/file` routes expect. Only output
+ * styles differ (`outputStyles` tab, `output-styles` type).
+ *
+ * @param tab - A tab accepted by {@link isMutable}.
+ * @returns The matching {@link CcArtifactType}.
+ */
 function tabToArtifactType(
   tab: "skills" | "agents" | "commands" | "outputStyles" | "memory"
 ): CcArtifactType {
   return tab === "outputStyles" ? "output-styles" : tab;
 }
 
+/**
+ * Tabs of the Claude Code half of Agent Config. The current tab is mirrored into the URL so the
+ * command palette can deep-link to any of them.
+ */
 type TabKey =
   | "overview"
   | "skills"
@@ -162,9 +181,13 @@ type TabKey =
   | "settings"
   | "memory";
 
+/** One entry in the tab bar. */
 interface TabDef {
+  /** Tab identifier, also used as the URL value. */
   key: TabKey;
+  /** Lucide icon shown before the label. */
   icon: typeof Sparkles;
+  /** Translation key (in the `ccConfig` namespace) for the tab label. */
   i18nKey: string;
 }
 
@@ -184,6 +207,7 @@ const TAB_KEYS = [
   "outputStyles",
 ] as const;
 
+/** Tab bar entries in display order. */
 const TABS: TabDef[] = [
   { key: "overview", icon: Boxes, i18nKey: "tabs.overview" },
   { key: "skills", icon: Sparkles, i18nKey: "tabs.skills" },
@@ -199,23 +223,42 @@ const TABS: TabDef[] = [
   { key: "outputStyles", icon: Palette, i18nKey: "tabs.outputStyles" },
 ];
 
+/**
+ * Everything the explorer has fetched, one slot per data source. A null slot means not loaded yet
+ * and renders a skeleton; all slots are refetched together.
+ */
 interface PageState {
+  /** Locations and per-kind counts for the Overview tab and the tab badges. */
   overview: CcOverview | null;
+  /** Skills in the selected scope. */
   skills: CcMdItem[] | null;
+  /** Subagent definitions in the selected scope. */
   agents: CcMdItem[] | null;
+  /** Slash commands in the selected scope. */
   commands: CcMdItem[] | null;
+  /** Output styles in the selected scope. */
   outputStyles: CcMdItem[] | null;
+  /** Installed plugins and the install manifest they were read from. */
   plugins: CcPluginsResponse | null;
+  /** Registered plugin marketplaces. */
   marketplaces: CcMarketplacesResponse | null;
+  /** Configured MCP servers, user-level and project-scoped. */
   mcp: CcMcpResponse | null;
+  /** Hook bindings for each settings layer. */
   hooks: CcHookSource[] | null;
+  /** Parsed `keybindings.json`. */
   keybindings: CcKeybindings | null;
+  /** Raw contents of each settings layer. */
   settings: CcSettingsSource[] | null;
+  /** `CLAUDE.md` files and auto-memory files. */
   memory: CcMemoryItem[] | null;
+  /** Statusline configuration and scripts. */
   statusline: CcStatusline | null;
+  /** Scripts in the hooks directory. */
   hookScripts: CcHookScripts | null;
 }
 
+/** Initial {@link PageState}: nothing loaded. */
 const EMPTY_STATE: PageState = {
   overview: null,
   skills: null,
@@ -233,6 +276,11 @@ const EMPTY_STATE: PageState = {
   hookScripts: null,
 };
 
+/**
+ * State of the create/edit modal, or null when closed. `create` starts from a template in a chosen
+ * default scope; `edit` loads the existing file. `project` is set for auto-memory files, which live
+ * under a specific project's memory directory.
+ */
 type EditorState =
   | {
       mode: "create";
@@ -251,6 +299,10 @@ type EditorState =
     }
   | null;
 
+/**
+ * Artifact awaiting delete confirmation, or null when no confirmation is open. `project` is set for
+ * auto-memory files.
+ */
 type ConfirmDeleteState = {
   type: CcArtifactType;
   scope: "user" | "project" | "auto-memory";
@@ -259,8 +311,24 @@ type ConfirmDeleteState = {
   project?: string; // set for type === "auto-memory"
 } | null;
 
+/**
+ * Transient success or error message shown in the bottom-right corner; auto-dismissed after 5
+ * seconds.
+ */
 type Toast = { kind: "success" | "error"; message: string } | null;
 
+/**
+ * Agent Config page. Switches between the Claude Code explorer below and the Codex workspace
+ * (`CodexConfigExplorer`).
+ *
+ * The Claude Code explorer fetches every config surface in parallel for the selected scope (all,
+ * user, or project): skills, agents, commands, output styles, plugins, marketplaces, MCP servers,
+ * hooks, keybindings, settings, memory, statusline, and hook scripts. It refetches automatically,
+ * debounced by 250 ms, whenever the server broadcasts `cc_config_changed`, which covers both
+ * dashboard edits and external file edits. Skills, agents, commands, output styles, `CLAUDE.md`,
+ * and auto-memory files can be created, edited, and deleted here; every write or delete is backed
+ * up server-side first, and the backups are browsable from the header.
+ */
 export function CcConfig() {
   const { t } = useTranslation("ccConfig");
   const [provider, setProvider] = useState<"claude" | "codex">("claude");
@@ -290,6 +358,10 @@ export function CcConfig() {
     return () => clearTimeout(id);
   }, [toast]);
 
+  /**
+   * Fetch every config surface in parallel for the selected scope and replace the page state,
+   * recording when it finished.
+   */
   const fetchAll = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -382,6 +454,7 @@ export function CcConfig() {
     void fetchAll();
   });
 
+  /** Open a file in the read-only viewer, loading its contents. */
   const openViewer = useCallback(async (path: string) => {
     setViewer({ path, data: null, error: null });
     try {
@@ -393,6 +466,11 @@ export function CcConfig() {
     }
   }, []);
 
+  /**
+   * Open the editor to create an artifact, starting from the localized template for its type. The
+   * default scope follows the scope filter (project when filtering by project, otherwise user)
+   * unless one is given.
+   */
   const openCreate = useCallback(
     (type: CcArtifactType, overrideScope?: "user" | "project") => {
       const tplKey = `edit.templates.${type}`;
@@ -404,6 +482,7 @@ export function CcConfig() {
     [scope, t]
   );
 
+  /** Open the editor for an existing artifact. */
   const openEdit = useCallback(
     (type: CcArtifactType, item: { scope: "user" | "project"; name: string; filePath: string }) => {
       setEditor({
@@ -417,6 +496,7 @@ export function CcConfig() {
     []
   );
 
+  /** Ask for confirmation before deleting an artifact. */
   const openDelete = useCallback(
     (
       type: CcArtifactType,
@@ -443,6 +523,7 @@ export function CcConfig() {
     [t]
   );
 
+  /** Open the editor for an auto-memory file. Ignored for items without a project or file name. */
   const openEditAuto = useCallback((item: CcMemoryItem) => {
     if (!item.project || !item.name) return;
     setEditor({
@@ -455,6 +536,10 @@ export function CcConfig() {
     });
   }, []);
 
+  /**
+   * Ask for confirmation before deleting an auto-memory file. Ignored for items without a project
+   * or file name.
+   */
   const openDeleteAuto = useCallback((item: CcMemoryItem) => {
     if (!item.project || !item.name) return;
     setConfirmDelete({
@@ -466,12 +551,21 @@ export function CcConfig() {
     });
   }, []);
 
+  /**
+   * Write an artifact from the editor, then close the editor, show a toast naming the backup when
+   * one was taken, and refetch.
+   */
   const handleSave = useCallback(
     async (args: {
+      /** Kind of artifact. */
       type: CcArtifactType;
+      /** Layer to write into. */
       targetScope: "user" | "project" | "auto-memory";
+      /** Artifact name; undefined for singleton files such as `CLAUDE.md`. */
       name: string | undefined;
+      /** Full file contents. */
       content: string;
+      /** Project slug, for auto-memory files. */
       project?: string;
     }) => {
       const result: CcMutationResult = await api.ccConfig.write({
@@ -493,6 +587,10 @@ export function CcConfig() {
     [fetchAll, t]
   );
 
+  /**
+   * Delete the confirmed artifact, close the dialog, show a toast with the backup path, and
+   * refetch.
+   */
   const handleDelete = useCallback(async () => {
     if (!confirmDelete) return;
     try {
@@ -616,18 +714,35 @@ export function CcConfig() {
 
 // ── Header ────────────────────────────────────────────────────────────
 
+/** Props for the Agent Config {@link Header}. */
 interface HeaderProps {
+  /** Which explorer is shown. */
   provider: "claude" | "codex";
+  /** Switches between the Claude Code and Codex explorers. */
   onProviderChange: (provider: "claude" | "codex") => void;
+  /** True while a fetch is in flight; spins the refresh icon. */
   loading: boolean;
+  /** When the last successful fetch finished, shown as a time. */
   lastUpdated: Date | null;
+  /** Selected scope filter. */
   scope: CcScope;
+  /** Called when the scope filter changes. */
   onScopeChange: (s: CcScope) => void;
+  /** Refetches everything. */
   onRefresh: () => void;
+  /** Opens the backups modal. */
   onOpenBackups: () => void;
+  /**
+   * Live WebSocket state, which tells the user whether external file edits will show up
+   * automatically.
+   */
   wsConnected: boolean;
 }
 
+/**
+ * Agent Config header: title, the Claude Code / Codex toggle, the scope filter, last-updated time
+ * with a live indicator, and the refresh and backups buttons.
+ */
 function Header({
   provider,
   onProviderChange,
@@ -706,11 +821,14 @@ function Header({
   );
 }
 
+/** Pill toggle between the Claude Code and Codex explorers; Codex carries a BETA tag. */
 function ProviderToggle({
   value,
   onChange,
 }: {
+  /** Selected explorer. */
   value: "claude" | "codex";
+  /** Called with the chosen explorer. */
   onChange: (value: "claude" | "codex") => void;
 }) {
   const { t } = useTranslation("ccConfig");
@@ -735,6 +853,7 @@ function ProviderToggle({
   );
 }
 
+/** Segmented control for the scope filter: all, user (`~/.claude`), or project (`./.claude`). */
 function ScopeToggle({ value, onChange }: { value: CcScope; onChange: (s: CcScope) => void }) {
   const { t } = useTranslation("ccConfig");
   const opts: { v: CcScope; label: string }[] = [
@@ -763,12 +882,20 @@ function ScopeToggle({ value, onChange }: { value: CcScope; onChange: (s: CcScop
 
 // ── Tabs ──────────────────────────────────────────────────────────────
 
+/** Props for {@link Tabs}. */
 interface TabsProps {
+  /** Active tab. */
   current: TabKey;
+  /** Called when a tab is clicked. */
   onSelect: (k: TabKey) => void;
+  /** Per-kind counts shown as badges; omitted until the overview has loaded. */
   counts?: CcOverview["counts"];
 }
 
+/**
+ * Horizontally scrollable tab bar with count badges. Shows left and right scroll arrows only when
+ * there is hidden overflow in that direction, recomputed on scroll and on resize.
+ */
 function Tabs({ current, onSelect, counts }: TabsProps) {
   const { t } = useTranslation("ccConfig");
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -812,12 +939,24 @@ function Tabs({ current, onSelect, counts }: TabsProps) {
     }
   }, [current]);
 
+  /**
+   * Scroll the tab bar by most of its visible width, at least 200px.
+   *
+   * @param dir - Direction: 1 for right, -1 for left.
+   */
   const scrollByButton = (dir: 1 | -1) => {
     const el = scrollRef.current;
     if (!el) return;
     el.scrollBy({ left: dir * Math.max(200, el.clientWidth * 0.6), behavior: "smooth" });
   };
 
+  /**
+   * Badge count for a tab: user plus project counts where the overview splits them, or null when
+   * there is no count.
+   *
+   * @param key - Tab to count.
+   * @returns The count, or null.
+   */
   const countFor = (key: TabKey): number | null => {
     if (!counts) return null;
     switch (key) {
@@ -921,30 +1060,48 @@ function Tabs({ current, onSelect, counts }: TabsProps) {
 
 // ── Tab panel switch ──────────────────────────────────────────────────
 
+/** Props for {@link TabPanel}: the fetched data plus every callback a tab may need. */
 interface TabPanelProps {
+  /** Tab to render. */
   tab: TabKey;
+  /** All fetched data. */
   data: PageState;
+  /** Search text; each list filters by it. */
   search: string;
+  /** Switches tab, used by the Overview tiles. */
   onTabChange: (tab: TabKey) => void;
+  /** Opens a file in the read-only viewer. */
   onOpenFile: (path: string) => void;
+  /** Opens the editor for an existing artifact. */
   onEdit: (
     type: CcArtifactType,
     item: { scope: "user" | "project"; name: string; filePath: string }
   ) => void;
+  /** Asks for confirmation to delete an artifact. */
   onDelete: (
     type: CcArtifactType,
     scope: "user" | "project",
     name: string | undefined,
     path: string
   ) => void;
+  /** Opens the editor to create the missing user or project `CLAUDE.md`. */
   onCreateMemory: (scope: "user" | "project") => void;
+  /** Opens the editor for an auto-memory file. */
   onEditAuto: (item: CcMemoryItem) => void;
+  /** Asks for confirmation to delete an auto-memory file. */
   onDeleteAuto: (item: CcMemoryItem) => void;
+  /** Opens the editor to create a new auto-memory file in a project. */
   onCreateAuto: (project: string) => void;
+  /** Called after keybindings are saved, to refetch. */
   onKeybindingsSaved: () => void;
+  /** Shows a toast. */
   onToast: (toast: NonNullable<Toast>) => void;
 }
 
+/**
+ * Render the panel for the active tab, passing it the slice of {@link PageState} and callbacks it
+ * needs.
+ */
 function TabPanel({
   tab,
   data,
@@ -1056,8 +1213,10 @@ function TabPanel({
 
 // ── Overview ──────────────────────────────────────────────────────────
 
-// Tone palette - each tone is { iconBg, iconText, border, accentBar }.
-// Used by both root rows and summary stat tiles for a consistent color story.
+/**
+ * Color tones for the Overview's root rows and summary tiles. Each tone maps to icon, accent bar,
+ * focus ring, and hover border classes in {@link TONES}, so related tiles share a consistent color.
+ */
 type Tone =
   | "sky"
   | "emerald"
@@ -1071,6 +1230,10 @@ type Tone =
   | "teal"
   | "slate"
   | "rose";
+/**
+ * Tailwind classes for each {@link Tone}: icon background and color, left accent bar, focus ring,
+ * and hover border.
+ */
 const TONES: Record<
   Tone,
   { iconBg: string; iconText: string; bar: string; ring: string; hoverBorder: string }
@@ -1161,14 +1324,22 @@ const TONES: Record<
   },
 };
 
+/**
+ * Overview tab: the key filesystem roots the explorer reads (Claude home, project `.claude`
+ * directory, project root, and `.claude.json`), then a grid of clickable summary tiles with
+ * per-scope counts that jump to the matching tab.
+ */
 function OverviewPanel({
   overview,
   onTabChange,
 }: {
+  /** Overview data, or null while loading. */
   overview: CcOverview | null;
+  /** Switches tab when a summary tile is clicked. */
   onTabChange: (tab: TabKey) => void;
 }) {
   const { t } = useTranslation("ccConfig");
+  /** Stable tab-switch callback for the summary tiles. */
   const gotoTab = useCallback((nextTab: TabKey) => onTabChange(nextTab), [onTabChange]);
   if (!overview) return <SkeletonRows n={4} />;
   const { roots, counts } = overview;
@@ -1299,17 +1470,31 @@ function OverviewPanel({
   );
 }
 
+/** Props for {@link SummaryStat}. */
 interface SummaryStatProps {
+  /** Color tone of the tile. */
   tone: Tone;
+  /** Icon shown in the tile. */
   icon: typeof Sparkles;
+  /** Tile label. */
   label: string;
+  /** Click handler. Without one the tile is not interactive. */
   onClick?: () => void;
-  // Either a single value, OR a user/project pair (which is summed for the headline number).
+  /**
+   * Single headline value. Pass either this or a `user` / `project` pair, which is summed for the
+   * headline and shown as a breakdown underneath.
+   */
   value?: number;
+  /** User-scope count; pair with `project`. */
   user?: number;
+  /** Project-scope count; pair with `user`. */
   project?: number;
 }
 
+/**
+ * Overview summary tile: icon, label, and a headline count, with a user/project breakdown when both
+ * counts are given. Clickable when `onClick` is set.
+ */
 function SummaryStat({ tone, icon: Icon, label, onClick, value, user, project }: SummaryStatProps) {
   const { t } = useTranslation("ccConfig");
   const T = TONES[tone];
@@ -1353,15 +1538,20 @@ function SummaryStat({ tone, icon: Icon, label, onClick, value, user, project }:
   );
 }
 
+/** One labelled filesystem path on the Overview tab, with a color-coded accent bar and icon. */
 function RootRow({
   icon: Icon,
   tone,
   label,
   value,
 }: {
+  /** Icon shown in the row. */
   icon: typeof FolderTree;
+  /** Color tone. */
   tone: Tone;
+  /** Row label. */
   label: string;
+  /** Filesystem path. */
   value: string;
 }) {
   const T = TONES[tone];
@@ -1386,24 +1576,39 @@ function RootRow({
 
 // ── MD-item generic list (skills/agents/commands/output-styles) ───────
 
+/** Props for {@link MdItemList}. */
 interface MdItemListProps {
+  /** Items to list, or null while loading. */
   items: CcMdItem[] | null;
+  /** Search text matched against the name and frontmatter `name` / `description`. */
   search: string;
+  /** Opens an item's file in the read-only viewer. */
   onOpen: (path: string) => void;
+  /** Opens the editor for an item. */
   onEdit: (
     type: CcArtifactType,
     item: { scope: "user" | "project"; name: string; filePath: string }
   ) => void;
+  /** Asks for confirmation to delete an item. */
   onDelete: (
     type: CcArtifactType,
     scope: "user" | "project",
     name: string | undefined,
     path: string
   ) => void;
+  /** Which tab the list belongs to, which decides the artifact type for edits and deletes. */
   kind: "skills" | "agents" | "commands" | "outputStyles";
 }
 
+/**
+ * Searchable list of markdown artifacts (skills, agents, commands, or output styles), one {@link
+ * MdItemCard} per item. Shows a skeleton while loading and an empty state when nothing matches.
+ */
 function MdItemList({ items, search, onOpen, onEdit, onDelete, kind }: MdItemListProps) {
+  /**
+   * Items whose name or frontmatter `name` / `description` contains the search text; null while
+   * loading.
+   */
   const filtered = useMemo(() => {
     if (!items) return null;
     const q = search.toLowerCase();
@@ -1436,22 +1641,33 @@ function MdItemList({ items, search, onOpen, onEdit, onDelete, kind }: MdItemLis
   );
 }
 
+/** Props for {@link MdItemCard}. */
 interface MdItemCardProps {
+  /** The artifact to show. */
   item: CcMdItem;
+  /** Opens the file in the read-only viewer. */
   onOpen: (p: string) => void;
+  /** Opens the editor for this artifact. */
   onEdit: (
     type: CcArtifactType,
     item: { scope: "user" | "project"; name: string; filePath: string }
   ) => void;
+  /** Asks for confirmation to delete this artifact. */
   onDelete: (
     type: CcArtifactType,
     scope: "user" | "project",
     name: string | undefined,
     path: string
   ) => void;
+  /** Which tab the card belongs to. */
   kind: "skills" | "agents" | "commands" | "outputStyles";
 }
 
+/**
+ * Card for one markdown artifact: name, scope badge, `model` from frontmatter when set, and the
+ * frontmatter description (or the start of the body when there is none), with view, edit, and
+ * delete actions. Skills are directories, so their file path is the `SKILL.md` inside.
+ */
 function MdItemCard({ item, onOpen, onEdit, onDelete, kind }: MdItemCardProps) {
   const { t } = useTranslation("ccConfig");
   const artifactType: CcArtifactType = kind === "outputStyles" ? "output-styles" : kind;
@@ -1519,6 +1735,10 @@ function MdItemCard({ item, onOpen, onEdit, onDelete, kind }: MdItemCardProps) {
 
 // ── Plugins ───────────────────────────────────────────────────────────
 
+/**
+ * Plugins tab: an explainer on installing plugins with the CLI, the install manifest path (flagged
+ * when missing), and a card per installed plugin filtered by key.
+ */
 function PluginsPanel({ data, search }: { data: CcPluginsResponse | null; search: string }) {
   const { t } = useTranslation("ccConfig");
   if (!data) return <SkeletonRows n={4} />;
@@ -1552,6 +1772,12 @@ function PluginsPanel({ data, search }: { data: CcPluginsResponse | null; search
   );
 }
 
+/**
+ * Card for one installed plugin: name, version, marketplace, and enabled state; a missing install
+ * path is flagged; badges count the skills, agents, commands, output styles, and hooks it
+ * contributes; manifest metadata (description, author, homepage, license) when the plugin has a
+ * `plugin.json`.
+ */
 function PluginCard({ plugin: p }: { plugin: CcPlugin }) {
   const { t } = useTranslation("ccConfig");
   const meta = p.contributes?.pluginJson;
@@ -1710,10 +1936,20 @@ function PluginCard({ plugin: p }: { plugin: CcPlugin }) {
 
 // ── MCP servers ───────────────────────────────────────────────────────
 
+/**
+ * MCP tab: an explainer with the `claude mcp` commands, then user-level and project-scoped servers
+ * in separate sections, filtered by name.
+ */
 function McpPanel({ data, search }: { data: CcMcpResponse | null; search: string }) {
   const { t } = useTranslation("ccConfig");
   if (!data) return <SkeletonRows n={3} />;
   const all = [...data.user, ...data.projectScoped];
+  /**
+   * Servers whose name contains the search text.
+   *
+   * @param arr - Servers to filter.
+   * @returns The matching servers.
+   */
   const filter = (arr: CcMcpServer[]) =>
     arr.filter((s) => !search || s.name.toLowerCase().includes(search.toLowerCase()));
   return (
@@ -1760,6 +1996,11 @@ function McpPanel({ data, search }: { data: CcMcpResponse | null; search: string
   );
 }
 
+/**
+ * Card for one MCP server: name, transport, and the config file it came from, plus the command and
+ * args for stdio servers or the URL for HTTP servers. Environment variables and headers are listed
+ * by name only, never by value.
+ */
 function McpCard({ server }: { server: CcMcpServer }) {
   const { t } = useTranslation("ccConfig");
   return (
@@ -1812,6 +2053,7 @@ function McpCard({ server }: { server: CcMcpServer }) {
   );
 }
 
+/** Label/value row used in the MCP and hook cards. */
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex gap-2">
@@ -1823,15 +2065,23 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 // ── Hooks ─────────────────────────────────────────────────────────────
 
+/**
+ * Hooks tab: an explainer, then each settings layer's hooks grouped by event with matcher, command,
+ * and timeout, followed by the scripts found in the hooks directory, each openable in the viewer.
+ */
 function HooksPanel({
   sources,
   scripts,
   search,
   onOpen,
 }: {
+  /** Hook configuration per settings layer, or null while loading. */
   sources: CcHookSource[] | null;
+  /** Scripts in the hooks directory, or null when not loaded. */
   scripts: CcHookScripts | null;
+  /** Search text matched against hook event names. */
   search: string;
+  /** Opens a file in the viewer. */
   onOpen: (p: string) => void;
 }) {
   const { t } = useTranslation("ccConfig");
@@ -1952,10 +2202,12 @@ function HooksPanel({
 
 // ── Settings ──────────────────────────────────────────────────────────
 
-// The settings that the TUI's `/config` editor manages, in display order.
-// Surfaced as a resolved at-a-glance summary so the user sees what `/config`
-// set (model, verbose, theme, …) without hunting through the raw JSON files.
-// Keys map 1:1 to settings.json keys per https://code.claude.com/docs/en/settings.
+/**
+ * The settings that the TUI's `/config` editor manages, in display order. Surfaced as a resolved
+ * at-a-glance summary so the user sees what `/config` set (model, verbose, theme, and so on)
+ * without hunting through the raw JSON files. Keys map 1:1 to settings.json keys per
+ * https://code.claude.com/docs/en/settings.
+ */
 const CONFIG_OPTION_GROUPS: { title: string; keys: { key: string; label: string }[] }[] = [
   {
     title: "Model & reasoning",
@@ -2058,13 +2310,20 @@ function CurrentConfigPanel({ sources }: { sources: CcSettingsSource[] }) {
   );
 }
 
+/**
+ * Settings tab: an explainer, the resolved `/config` summary, the statusline block when configured,
+ * and one block per settings layer (user, project, and project-local).
+ */
 function SettingsPanel({
   sources,
   statusline,
   onOpen,
 }: {
+  /** Settings layers, or null while loading. */
   sources: CcSettingsSource[] | null;
+  /** Statusline configuration, or null when not loaded. */
   statusline: CcStatusline | null;
+  /** Opens a file in the viewer. */
   onOpen: (p: string) => void;
 }) {
   const { t } = useTranslation("ccConfig");
@@ -2096,6 +2355,10 @@ function SettingsPanel({
   );
 }
 
+/**
+ * Statusline section of the Settings tab: the configured statusline type and command, and the
+ * statusline scripts found on disk with previews.
+ */
 function StatuslineBlock({ data, onOpen }: { data: CcStatusline; onOpen: (p: string) => void }) {
   const { t } = useTranslation("ccConfig");
   return (
@@ -2149,11 +2412,17 @@ function StatuslineBlock({ data, onOpen }: { data: CcStatusline; onOpen: (p: str
   );
 }
 
+/**
+ * One settings layer: scope badge and file path, then its keys as a readable list, with a toggle to
+ * show the raw JSON and a button to open the file. A missing file is shown as such.
+ */
 function SettingsBlock({
   source,
   onOpen,
 }: {
+  /** Settings layer to show. */
   source: CcSettingsSource;
+  /** Opens the settings file in the viewer. */
   onOpen: (p: string) => void;
 }) {
   const { t } = useTranslation("ccConfig");
@@ -2197,6 +2466,7 @@ function SettingsBlock({
   );
 }
 
+/** Render a parsed settings object as a two-column key/value list. */
 function SettingsKeyValueList({ data }: { data: Record<string, unknown> | null | undefined }) {
   if (!data || typeof data !== "object") {
     return <div className="p-3 text-xs text-gray-500">-</div>;
@@ -2222,6 +2492,11 @@ function SettingsKeyValueList({ data }: { data: Record<string, unknown> | null |
   );
 }
 
+/**
+ * Render one settings value by type: a true/false chip for booleans, monospace text for numbers and
+ * strings, and formatted JSON for objects and arrays. `null` and `undefined` show as an italic
+ * `null`.
+ */
 function SettingsValue({ value }: { value: unknown }) {
   if (value === null || value === undefined)
     return <span className="text-[11px] text-gray-600 italic">null</span>;
@@ -2277,28 +2552,43 @@ function SettingsValue({ value }: { value: unknown }) {
 
 // ── Memory ────────────────────────────────────────────────────────────
 
+/** Props for {@link MemoryPanel}. */
 interface MemoryPanelProps {
+  /** Memory items, or null while loading. */
   items: CcMemoryItem[] | null;
+  /** Search text matched against names, previews, and project slugs. */
   search: string;
+  /** Opens a file in the read-only viewer. */
   onOpen: (p: string) => void;
+  /** Opens the editor for a `CLAUDE.md`. */
   onEdit: (
     type: CcArtifactType,
     item: { scope: "user" | "project"; name: string; filePath: string }
   ) => void;
+  /** Asks for confirmation to delete a `CLAUDE.md`. */
   onDelete: (
     type: CcArtifactType,
     scope: "user" | "project",
     name: string | undefined,
     path: string
   ) => void;
+  /** Creates the missing user or project `CLAUDE.md`. */
   onCreate: (scope: "user" | "project") => void;
+  /** Opens the editor for an auto-memory file. */
   onEditAuto: (item: CcMemoryItem) => void;
+  /** Asks for confirmation to delete an auto-memory file. */
   onDeleteAuto: (item: CcMemoryItem) => void;
+  /** Creates a new auto-memory file in a project. */
   onCreateAuto: (project: string) => void;
 }
 
-// Strip a leading markdown heading then take a short snippet — used when a
-// per-fact memory file has no frontmatter description.
+/**
+ * Short description for a memory file: its frontmatter `description`, or, when it has none, the
+ * start of the body with a leading markdown heading stripped, cut to 200 characters.
+ *
+ * @param m - Memory item.
+ * @returns The description text.
+ */
 function memoryDescription(m: CcMemoryItem): string {
   return (
     m.frontmatter?.description ||
@@ -2309,9 +2599,14 @@ function memoryDescription(m: CcMemoryItem): string {
   );
 }
 
-// Reduce a markdown link target (as written inside MEMORY.md, e.g.
-// `./feedback_x.md#section` or `feedback_x.md`) to the bare filename we can
-// match against a fact file's `name`. Tolerant of URL-encoding and anchors.
+/**
+ * Reduce a markdown link target as written inside `MEMORY.md` (for example
+ * `./feedback_x.md#section` or `feedback_x.md`) to the bare file name, so it can be matched against
+ * a fact file's `name`. Drops anchors and directories and tolerates URL encoding.
+ *
+ * @param target - Link target from the index.
+ * @returns The bare file name.
+ */
 function normalizeMemoryTarget(target: string): string {
   let v = target.trim();
   const hash = v.indexOf("#");
@@ -2326,10 +2621,17 @@ function normalizeMemoryTarget(target: string): string {
   return v.trim();
 }
 
-// Render a MEMORY.md preview with its `[label](target.md)` markdown links
-// turned into clickable buttons. Everything else is emitted verbatim so the
-// surrounding <pre> keeps the original index layout. Clicking a link asks the
-// parent to jump to (scroll + highlight) the matching fact file.
+/**
+ * Render a `MEMORY.md` preview with its `[label](target.md)` markdown links turned into clickable
+ * buttons. Everything else is emitted verbatim so the surrounding `<pre>` keeps the original index
+ * layout. Clicking a link asks the parent to jump to (scroll to and highlight) the matching fact
+ * file.
+ *
+ * @param preview - Index file text.
+ * @param onJump - Called with the raw link target.
+ * @param jumpTitle - Tooltip for the link buttons.
+ * @returns One node per line.
+ */
 function renderMemoryIndex(
   preview: string,
   onJump: (target: string) => void,
@@ -2370,6 +2672,11 @@ function renderMemoryIndex(
   });
 }
 
+/**
+ * Memory tab. The top section lists the user and project `CLAUDE.md` files, with create prompts for
+ * any that are missing (hidden while searching). Below, auto-memory files are grouped by project,
+ * each group collapsible and expanded automatically while a search is active.
+ */
 function MemoryPanel({
   items,
   search,
@@ -2385,6 +2692,10 @@ function MemoryPanel({
 
   const q = search.trim().toLowerCase();
 
+  /**
+   * Split memory items into the two `CLAUDE.md` files and the auto-memory files, filter both by the
+   * search text, group auto-memory files by project, and note which `CLAUDE.md` scopes are missing.
+   */
   const { primary, autoFiltered, groups, missingScopes } = useMemo(() => {
     const list = items ?? [];
     const primaryItems = list.filter(
@@ -2393,6 +2704,12 @@ function MemoryPanel({
     );
     const autoItems = list.filter((m) => m.scope === "auto-memory");
 
+    /**
+     * Whether an auto-memory file matches the search text (name, project, frontmatter, or preview).
+     *
+     * @param m - Auto-memory file.
+     * @returns True when it matches or there is no search text.
+     */
     const matchesAuto = (m: CcMemoryItem) => {
       if (!q) return true;
       const blob = [m.name, m.project, m.frontmatter?.description, m.frontmatter?.name, m.preview]
@@ -2544,16 +2861,32 @@ function MemoryPanel({
   );
 }
 
+/** Props for {@link MemoryProjectGroup}. */
 interface MemoryProjectGroupProps {
+  /** Project slug the group belongs to. */
   project: string;
+  /** Auto-memory files in the project. */
   files: CcMemoryItem[];
+  /** Opens a file in the read-only viewer. */
   onOpen: (p: string) => void;
+  /** Opens the editor for a file. */
   onEditAuto: (item: CcMemoryItem) => void;
+  /** Asks for confirmation to delete a file. */
   onDeleteAuto: (item: CcMemoryItem) => void;
+  /** Creates a new memory file in this project. */
   onCreateAuto: (project: string) => void;
+  /**
+   * Initial open state; it is re-applied when it changes, so a search expands groups and clearing
+   * it collapses them again.
+   */
   defaultOpen: boolean;
 }
 
+/**
+ * Collapsible group of one project's auto-memory files. Index files (`MEMORY.md`, `INDEX-*.md`)
+ * render first with their links clickable; clicking one scrolls to and briefly highlights the
+ * matching fact file below.
+ */
 function MemoryProjectGroup({
   project,
   files,
@@ -2586,8 +2919,10 @@ function MemoryProjectGroup({
     []
   );
 
+  /** Key used to find a fact file's row when an index link is clicked. */
   const rowKey = useCallback((m: CcMemoryItem) => m.name || normalizeMemoryTarget(m.file), []);
 
+  /** Scroll to the fact file an index link points at and highlight it for 2.2 seconds. */
   const handleJump = useCallback(
     (target: string) => {
       const name = normalizeMemoryTarget(target);
@@ -2688,14 +3023,19 @@ function MemoryProjectGroup({
   );
 }
 
+/** Props shared by the auto-memory rows and their action buttons. */
 interface MemoryAutoItemProps {
+  /** Auto-memory file the row shows. */
   item: CcMemoryItem;
+  /** Opens the file in the read-only viewer. */
   onOpen: (p: string) => void;
+  /** Opens the editor for the file. */
   onEditAuto: (item: CcMemoryItem) => void;
+  /** Asks for confirmation to delete the file. */
   onDeleteAuto: (item: CcMemoryItem) => void;
 }
 
-// Compact View / Edit / Delete button cluster shared by index + fact rows.
+/** Compact view, edit, and delete button cluster shared by the index cards and fact rows. */
 function MemoryAutoActions({ item, onOpen, onEditAuto, onDeleteAuto }: MemoryAutoItemProps) {
   const { t } = useTranslation("ccConfig");
   return (
@@ -2725,6 +3065,10 @@ function MemoryAutoActions({ item, onOpen, onEditAuto, onDeleteAuto }: MemoryAut
   );
 }
 
+/**
+ * Card for a memory index file, rendering its preview with clickable links via {@link
+ * renderMemoryIndex}.
+ */
 function MemoryIndexCard({
   item,
   onOpen,
@@ -2756,6 +3100,11 @@ function MemoryIndexCard({
   );
 }
 
+/**
+ * Row for one memory fact file: name, description from {@link memoryDescription}, and size, with
+ * actions. Highlighted briefly after a jump from an index link; `rowRef` registers the row so the
+ * jump can find it.
+ */
 function MemoryFactRow({
   item,
   onOpen,
@@ -2801,11 +3150,18 @@ function MemoryFactRow({
 
 // ── Marketplaces ──────────────────────────────────────────────────────
 
+/**
+ * Marketplaces tab: an explainer with the add command, the registry file path, and a card per
+ * registered marketplace (source, install location, last update, plugin count, and owner), filtered
+ * by name.
+ */
 function MarketplacesPanel({
   data,
   search,
 }: {
+  /** Registered marketplaces, or null while loading. */
   data: CcMarketplacesResponse | null;
+  /** Search text matched against names. */
   search: string;
 }) {
   const { t } = useTranslation("ccConfig");
@@ -2895,15 +3251,24 @@ function MarketplacesPanel({
 
 // ── Keybindings ───────────────────────────────────────────────────────
 
+/**
+ * Keybindings tab: read-only view of the bindings grouped by context, with an inline editor. Edits
+ * work on a deep copy, are validated locally the same way the server validates them, and are saved
+ * through `api.ccConfig.writeKeybindings`, which backs up the file first.
+ */
 function KeybindingsPanel({
   data,
   search,
   onSaved,
   onToast,
 }: {
+  /** Parsed keybindings, or null while loading. */
   data: CcKeybindings | null;
+  /** Search text matched against contexts, keys, and actions. */
   search: string;
+  /** Called after a successful save, to refetch. */
   onSaved: () => void;
+  /** Shows a toast. */
   onToast: (toast: NonNullable<Toast>) => void;
 }) {
   const { t } = useTranslation("ccConfig");
@@ -2912,6 +3277,7 @@ function KeybindingsPanel({
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
+  /** Enter edit mode with a deep copy of the bindings, so edits never touch the fetched data. */
   const startEdit = useCallback(() => {
     const groups = data?.groups ?? [];
     // Deep clone so edits never mutate the fetched data.
@@ -2922,17 +3288,38 @@ function KeybindingsPanel({
     setEditing(true);
   }, [data]);
 
+  /** Leave edit mode and discard the draft. */
   const cancelEdit = useCallback(() => {
     setEditing(false);
     setDraft([]);
     setErr(null);
   }, []);
 
+  /**
+   * Rename a context in the draft.
+   *
+   * @param gi - Index of the context.
+   * @param value - New context name.
+   */
   const updateContext = (gi: number, value: string) =>
     setDraft((d) => d.map((g, i) => (i === gi ? { ...g, context: value } : g)));
+  /**
+   * Remove a context and its bindings from the draft.
+   *
+   * @param gi - Index of the context.
+   */
   const removeContext = (gi: number) => setDraft((d) => d.filter((_, i) => i !== gi));
+  /** Add an empty context with one empty binding. */
   const addContext = () =>
     setDraft((d) => [...d, { context: "", bindings: [{ key: "", action: "" }] }]);
+  /**
+   * Change a binding's key or action in the draft.
+   *
+   * @param gi - Index of the context.
+   * @param bi - Index of the binding.
+   * @param field - Field to change.
+   * @param value - New value.
+   */
   const updateBinding = (gi: number, bi: number, field: "key" | "action", value: string) =>
     setDraft((d) =>
       d.map((g, i) =>
@@ -2941,15 +3328,31 @@ function KeybindingsPanel({
           : g
       )
     );
+  /**
+   * Remove one binding from the draft.
+   *
+   * @param gi - Index of the context.
+   * @param bi - Index of the binding.
+   */
   const removeBinding = (gi: number, bi: number) =>
     setDraft((d) =>
       d.map((g, i) => (i === gi ? { ...g, bindings: g.bindings.filter((_, j) => j !== bi) } : g))
     );
+  /**
+   * Add an empty binding to a context.
+   *
+   * @param gi - Index of the context.
+   */
   const addBinding = (gi: number) =>
     setDraft((d) =>
       d.map((g, i) => (i === gi ? { ...g, bindings: [...g.bindings, { key: "", action: "" }] } : g))
     );
 
+  /**
+   * Validate and save the draft. Mirrors the server's checks for instant feedback: every context
+   * needs a name, contexts must be unique, and each binding needs a key and action with no
+   * duplicate keys within a context.
+   */
   const handleSave = useCallback(async () => {
     const groups: CcKeybindingGroup[] = draft.map((g) => ({
       context: g.context.trim(),
@@ -3176,6 +3579,10 @@ function KeybindingsPanel({
 
 // ── Shared atoms ──────────────────────────────────────────────────────
 
+/**
+ * Color-coded scope badge: sky for user, emerald for project, violet for project-local, and neutral
+ * for anything else (shown as-is).
+ */
 function ScopeBadge({ scope }: { scope: string }) {
   const { t } = useTranslation("ccConfig");
   const color =
@@ -3199,6 +3606,10 @@ function ScopeBadge({ scope }: { scope: string }) {
   );
 }
 
+/**
+ * Icon button that copies a value (usually a path) to the clipboard and shows a check for 1.5
+ * seconds. Does nothing when the clipboard is unavailable.
+ */
 function CopyButton({ value }: { value: string }) {
   const { t } = useTranslation("ccConfig");
   const [copied, setCopied] = useState(false);
@@ -3221,6 +3632,7 @@ function CopyButton({ value }: { value: string }) {
   );
 }
 
+/** Empty state shown when a list has no matching items. */
 function Empty() {
   const { t } = useTranslation("ccConfig");
   return (
@@ -3230,6 +3642,11 @@ function Empty() {
   );
 }
 
+/**
+ * Pulsing placeholder rows shown while a tab's data loads.
+ *
+ * @param props.n - Number of rows.
+ */
 function SkeletonRows({ n }: { n: number }) {
   return (
     <div className="space-y-2">
@@ -3240,6 +3657,12 @@ function SkeletonRows({ n }: { n: number }) {
   );
 }
 
+/**
+ * Human-readable file size in B, KB, or MB with one decimal.
+ *
+ * @param bytes - Size in bytes.
+ * @returns The formatted size.
+ */
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -3248,11 +3671,17 @@ function formatBytes(bytes: number): string {
 
 // ── File viewer modal ─────────────────────────────────────────────────
 
+/**
+ * Read-only modal showing one file's contents, with its path, size, a truncation notice, and a
+ * copy-path button. Closes on Escape or a backdrop click.
+ */
 function FileViewer({
   state,
   onClose,
 }: {
+  /** File path plus its loaded contents or load error. */
   state: { path: string; data: CcFileResponse | null; error: string | null };
+  /** Closes the viewer. */
   onClose: () => void;
 }) {
   const { t } = useTranslation("ccConfig");
@@ -3311,9 +3740,16 @@ function FileViewer({
 
 // ── Editor modal (create + edit) ──────────────────────────────────────
 
+/** Props for {@link EditorModal}. */
 interface EditorModalProps {
+  /** What to create or edit. */
   state: NonNullable<EditorState>;
+  /** Closes the modal without saving. */
   onClose: () => void;
+  /**
+   * Persists the content. Receives the artifact type, the target scope, the name (for creates), the
+   * content, and the project for auto-memory files.
+   */
   onSave: (args: {
     type: CcArtifactType;
     targetScope: "user" | "project" | "auto-memory";
@@ -3323,6 +3759,11 @@ interface EditorModalProps {
   }) => Promise<void>;
 }
 
+/**
+ * Modal editor for creating or editing an artifact. Edit mode loads the current file first; create
+ * mode starts from a template and asks for a name and a target scope (auto-memory files get a `.md`
+ * extension when the user omits one). Save errors are shown inline, and Escape closes it.
+ */
 function EditorModal({ state, onClose, onSave }: EditorModalProps) {
   const { t } = useTranslation("ccConfig");
   const isCreate = state.mode === "create";
@@ -3363,6 +3804,10 @@ function EditorModal({ state, onClose, onSave }: EditorModalProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  /**
+   * Save the editor contents. Creating a non-memory artifact requires a name; errors are shown
+   * inline.
+   */
   const handleSave = useCallback(async () => {
     setSaving(true);
     setError(null);
@@ -3520,12 +3965,20 @@ function EditorModal({ state, onClose, onSave }: EditorModalProps) {
 
 // ── Confirm-delete modal ──────────────────────────────────────────────
 
+/** Props for {@link ConfirmDeleteModal}. */
 interface ConfirmDeleteModalProps {
+  /** Artifact to delete. */
   state: NonNullable<ConfirmDeleteState>;
+  /** Closes the dialog without deleting. */
   onCancel: () => void;
+  /** Performs the delete; the dialog stays busy until it settles. */
   onConfirm: () => Promise<void>;
 }
 
+/**
+ * Confirmation dialog for deleting an artifact. Names the file and notes that a backup is taken
+ * first. Escape cancels, and the confirm button stays disabled while the delete is in flight.
+ */
 function ConfirmDeleteModal({ state, onCancel, onConfirm }: ConfirmDeleteModalProps) {
   const { t } = useTranslation("ccConfig");
   const [busy, setBusy] = useState(false);
@@ -3538,6 +3991,7 @@ function ConfirmDeleteModal({ state, onCancel, onConfirm }: ConfirmDeleteModalPr
     return () => window.removeEventListener("keydown", onKey);
   }, [onCancel]);
 
+  /** Run the delete, keeping the dialog busy until it settles. */
   const handleConfirm = useCallback(async () => {
     setBusy(true);
     try {
@@ -3592,6 +4046,7 @@ function ConfirmDeleteModal({ state, onCancel, onConfirm }: ConfirmDeleteModalPr
 
 // ── Toast (5s auto-dismiss) ───────────────────────────────────────────
 
+/** Bottom-right toast for a success or error message, with a dismiss button. */
 function ToastNotice({ toast, onDismiss }: { toast: NonNullable<Toast>; onDismiss: () => void }) {
   const isErr = toast.kind === "error";
   return (
@@ -3623,13 +4078,22 @@ function ToastNotice({ toast, onDismiss }: { toast: NonNullable<Toast>; onDismis
 
 // ── Read-only explainer banner ─────────────────────────────────────────
 
+/** Props for {@link ExplainerBanner}. */
 interface ExplainerBannerProps {
+  /** Banner heading. */
   title: string;
+  /** Explanation of why the section is read-only here and where it is managed. */
   body: string;
+  /** Heading above the command list. */
   howTo: string;
+  /** CLI commands to manage the section, each with an optional note. */
   commands: { cmd: string; note: string }[];
 }
 
+/**
+ * Amber banner on read-only tabs explaining that the section is managed by the Claude Code CLI,
+ * with copyable commands for doing it.
+ */
 function ExplainerBanner({ title, body, howTo, commands }: ExplainerBannerProps) {
   return (
     <div className="rounded-lg border border-amber-500/30 bg-amber-500/[0.04] px-4 py-3">
@@ -3658,6 +4122,7 @@ function ExplainerBanner({ title, body, howTo, commands }: ExplainerBannerProps)
 
 // ── Inline copyable command ────────────────────────────────────────────
 
+/** One copyable shell command with an optional note. Copy feedback lasts 1.5 seconds. */
 function CommandSnippet({ command, label }: { command: string; label?: string }) {
   const { t } = useTranslation("ccConfig");
   const [copied, setCopied] = useState(false);
@@ -3690,6 +4155,10 @@ function CommandSnippet({ command, label }: { command: string; label?: string })
 
 // ── Backups modal ──────────────────────────────────────────────────────
 
+/**
+ * Modal listing every backup the explorer has written before a write or delete. Each row shows a
+ * copyable restore command; nothing is restored automatically. Closes on Escape.
+ */
 function BackupsModal({ onClose }: { onClose: () => void }) {
   const { t } = useTranslation("ccConfig");
   const [items, setItems] = useState<CcBackup[] | null>(null);
@@ -3755,6 +4224,11 @@ function BackupsModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+/**
+ * One backup: scope, type, name, time, size, the backup path, and a copyable `mv` command that
+ * restores it. Restore is deliberately left to the user so the dashboard never silently overwrites
+ * the current version.
+ */
 function BackupRow({ backup }: { backup: CcBackup }) {
   const { t } = useTranslation("ccConfig");
   // Heuristic restore: rename the backup back to the active path. We don't
@@ -3785,10 +4259,17 @@ function BackupRow({ backup }: { backup: CcBackup }) {
   );
 }
 
-// Best-effort: derive the active path the backup would restore to. We strip
-// the trailing `.<ISO>.bak` segment from the basename and put the result back
-// under the right active subdir. If the format doesn't match, fall back to
-// "(unknown)" - the user can still copy the backup path itself.
+/**
+ * Best-effort guess at the path a backup would restore to, for the restore command. Strips the
+ * trailing `.<timestamp>.bak` from the backup's name and maps the backup directory back to its
+ * active location: `<root>/cc-config-backups/<type>/` maps to `<root>/<type>/`, and the `memory`
+ * and `auto-memory` backup directories map to their parent directory. Returns the placeholder
+ * `<active path>` when the layout is not recognized; the user can still copy the backup path
+ * itself.
+ *
+ * @param b - Backup entry.
+ * @returns The active path, or `<active path>`.
+ */
 function deriveActivePath(b: CcBackup): string {
   // Strip ".<ISO>.bak" suffix from the basename.
   const m = b.name.match(/^(.+?)\.[^.]+\.bak$/);
@@ -3811,7 +4292,13 @@ function deriveActivePath(b: CcBackup): string {
   return "<active path>";
 }
 
-// Quote for POSIX shells: wrap in single quotes, escape any embedded single quotes.
+/**
+ * Quote a string for POSIX shells: returned as-is when it only contains safe path characters,
+ * otherwise wrapped in single quotes with embedded single quotes escaped.
+ *
+ * @param s - String to quote.
+ * @returns A shell-safe word.
+ */
 function shellEscape(s: string): string {
   if (/^[A-Za-z0-9_/.@:=+,-]+$/.test(s)) return s;
   return `'${s.replace(/'/g, `'\\''`)}'`;

@@ -65,11 +65,19 @@ import path from "node:path";
 import type { AppConfig } from "../config/app-config.js";
 import { Logger } from "../core/logger.js";
 
+/** HTTP methods the client issues. */
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+/** Largest single file accepted for an import upload (50 MiB), checked before anything is sent. */
 const MAX_UPLOAD_FILE_BYTES = 50 * 1024 * 1024;
+/** Largest total size accepted for one import upload (100 MiB). */
 const MAX_UPLOAD_TOTAL_BYTES = 100 * 1024 * 1024;
+/**
+ * Largest binary response, such as a transcript image, read into memory (10 MiB). Checked against
+ * `Content-Length` and again while streaming.
+ */
 const MAX_BINARY_RESPONSE_BYTES = 10 * 1024 * 1024;
 
+/** Per-request options for the dashboard API client. */
 interface RequestOptions {
   /** Query params; `undefined`/`null` values are omitted, not stringified. */
   query?: Record<string, string | number | boolean | Array<string | number | boolean> | undefined>;
@@ -79,9 +87,13 @@ interface RequestOptions {
   idempotent?: boolean;
 }
 
+/** Optional fields for constructing an {@link ApiError}. */
 interface ApiErrorOptions {
+  /** HTTP status, when the request reached the server. */
   status?: number;
+  /** Machine-readable error code. */
   code?: string;
+  /** Extra structured details from the server's error body. */
   details?: unknown;
 }
 
@@ -92,11 +104,13 @@ interface ApiErrorOptions {
  * instead of collapsing to a generic internal error.
  */
 export class ApiError extends Error {
+  /** HTTP status, when the request reached the server. */
   status?: number;
   /** Forwarded from the dashboard's error envelope, a synthesized
    * `HTTP_<status>`, or this client's own code (`INVALID_PATH`, `TIMEOUT`,
    * `REQUEST_FAILED`, `UNREACHABLE_STATE`). */
   code?: string;
+  /** Extra structured details from the server's error body, if any. */
   details?: unknown;
 
   constructor(message: string, options: ApiErrorOptions = {}) {
@@ -109,14 +123,23 @@ export class ApiError extends Error {
 }
 
 /** True for a DOM/Node `AbortError` from {@link DashboardApiClient.request}'s
- * per-attempt timeout controller. */
+ * per-attempt timeout controller.
+ *
+ * @param error - Any thrown value.
+ * @returns True when it is an abort error.
+ */
 function isAbortError(error: unknown): boolean {
   return (
     typeof error === "object" && error !== null && "name" in error && error.name === "AbortError"
   );
 }
 
-/** Statuses treated as transient/retryable: 408, 429, or any 5xx. */
+/**
+ * Statuses treated as transient/retryable: 408, 429, or any 5xx.
+ *
+ * @param status - HTTP status code.
+ * @returns True when the request may be retried.
+ */
 function isRetryableStatus(status: number): boolean {
   return status === 408 || status === 429 || status >= 500;
 }
@@ -141,29 +164,63 @@ export class DashboardApiClient {
     private readonly logger: Logger
   ) {}
 
-  /** GET — idempotent, eligible for automatic retry. */
+  /**
+   * GET — idempotent, eligible for automatic retry.
+   *
+   * @param path - Dashboard API path, which must start with `/api/`.
+   * @param options - Query parameters; GET requests never carry a body.
+   * @returns The parsed JSON response.
+   * @throws {ApiError} When every attempt fails.
+   */
   async get<T>(path: string, options: Omit<RequestOptions, "body"> = {}): Promise<T> {
     return this.request<T>("GET", path, { ...options, idempotent: true });
   }
 
-  /** POST — never retried; used for creates and mutation-gated actions. */
+  /**
+   * POST — never retried; used for creates and mutation-gated actions.
+   *
+   * @param path - Dashboard API path, which must start with `/api/`.
+   * @param options - Query parameters and JSON body.
+   * @returns The parsed JSON response.
+   * @throws {ApiError} When the request fails.
+   */
   async post<T>(path: string, options: RequestOptions = {}): Promise<T> {
     return this.request<T>("POST", path, options);
   }
 
-  /** PUT — full upsert semantics (e.g. pricing rules); never retried. */
+  /**
+   * PUT — full upsert semantics (e.g. pricing rules); never retried.
+   *
+   * @param path - Dashboard API path, which must start with `/api/`.
+   * @param options - Query parameters and JSON body.
+   * @returns The parsed JSON response.
+   * @throws {ApiError} When the request fails.
+   */
   async put<T>(path: string, options: RequestOptions = {}): Promise<T> {
     return this.request<T>("PUT", path, options);
   }
 
-  /** PATCH — partial update; never retried. */
+  /**
+   * PATCH — partial update; never retried.
+   *
+   * @param path - Dashboard API path, which must start with `/api/`.
+   * @param options - Query parameters and JSON body.
+   * @returns The parsed JSON response.
+   * @throws {ApiError} When the request fails.
+   */
   async patch<T>(path: string, options: RequestOptions = {}): Promise<T> {
     return this.request<T>("PATCH", path, options);
   }
 
   /** DELETE — never retried, because a lost successful response must not
    * trigger a second destructive/config mutation. A JSON body is supported
-   * because the Claude/Codex config deletion endpoints use one. */
+   * because the Claude/Codex config deletion endpoints use one.
+   *
+   * @param path - Dashboard API path, which must start with `/api/`.
+   * @param options - Query parameters and optional JSON body.
+   * @returns The parsed JSON response.
+   * @throws {ApiError} When the request fails.
+   */
   async delete<T>(path: string, options: RequestOptions = {}): Promise<T> {
     return this.request<T>("DELETE", path, options);
   }
@@ -172,6 +229,13 @@ export class DashboardApiClient {
    * POST multipart files from the MCP host filesystem. Used only for the
    * dashboard's provider-aware history upload endpoint, with no retries so a
    * lost response can never duplicate a mutation.
+   *
+   * @param requestPath - Upload endpoint path under `/api/`.
+   * @param filePaths - Files on the MCP host to send; each is checked against the 50 MiB per-file
+   *   and 100 MiB total limits before anything is uploaded.
+   * @param fields - Extra form fields sent with the files.
+   * @returns The parsed JSON response.
+   * @throws {ApiError} When a limit is exceeded or the request fails.
    */
   async postFiles<T>(
     requestPath: string,
@@ -235,7 +299,14 @@ export class DashboardApiClient {
     }
   }
 
-  /** GET a binary response as a base64 payload with its content type. */
+  /**
+   * GET a binary response as a base64 payload with its content type.
+   *
+   * @param requestPath - Dashboard API path under `/api/`.
+   * @param query - Query parameters.
+   * @returns The content type, base64 data, and byte length.
+   * @throws {ApiError} When the response exceeds 10 MiB or the request fails.
+   */
   async getBinary(
     requestPath: string,
     query: RequestOptions["query"] = {}
@@ -310,6 +381,11 @@ export class DashboardApiClient {
    * hard client-side allowlist independent of the dashboard's own routing.
    * @throws {ApiError} code `INVALID_PATH` if the resolved pathname doesn't
    *   start with `/api/`.
+   *
+   * @param path - Path relative to the dashboard base URL.
+   * @param query - Query parameters; `undefined` and `null` values are skipped and arrays become
+   *   repeated parameters.
+   * @returns The full request URL.
    */
   private buildUrl(path: string, query?: RequestOptions["query"]): URL {
     const url = new URL(path, this.config.dashboardBaseUrl);
@@ -343,6 +419,11 @@ export class DashboardApiClient {
    * other throw becomes `REQUEST_FAILED`.
    * @throws {ApiError} on any non-2xx response, timeout, or network failure
    *   surviving the retry loop.
+   *
+   * @param method - HTTP method.
+   * @param path - Dashboard API path under `/api/`.
+   * @param options - Query, body, and whether the request is idempotent (retry-eligible).
+   * @returns The parsed JSON response.
    */
   private async request<T>(method: HttpMethod, path: string, options: RequestOptions): Promise<T> {
     const maxAttempts = options.idempotent ? this.config.retryCount + 1 : 1;
@@ -416,7 +497,13 @@ export class DashboardApiClient {
   /** Never retries on the last attempt; always retries an abort/timeout;
    * for an {@link ApiError} with a status, retries only if
    * {@link isRetryableStatus}; any other exception type is treated as
-   * transient too. */
+   * transient too.
+   *
+   * @param error - Error from the attempt.
+   * @param attempt - 1-based number of the attempt that failed.
+   * @param maxAttempts - Total attempts allowed.
+   * @returns True when another attempt should be made.
+   */
   private shouldRetry(error: unknown, attempt: number, maxAttempts: number): boolean {
     if (attempt >= maxAttempts) return false;
     if (isAbortError(error)) return true;
@@ -428,7 +515,14 @@ export class DashboardApiClient {
 
   /** Builds an {@link ApiError} from a non-ok response, preferring the
    * dashboard's `{ error: { code, message } }` envelope when present,
-   * falling back to a generic `HTTP_<status>`. */
+   * falling back to a generic `HTTP_<status>`.
+   *
+   * @param method - HTTP method of the failed request.
+   * @param url - Request URL, for the message.
+   * @param status - Response status.
+   * @param body - Parsed response body, possibly the dashboard's error envelope.
+   * @returns The normalized error.
+   */
   private toApiError(method: HttpMethod, url: URL, status: number, body: unknown): ApiError {
     const fallbackMessage = `${method} ${url.pathname} failed with HTTP ${status}`;
 
@@ -450,7 +544,12 @@ export class DashboardApiClient {
     return new ApiError(fallbackMessage, { status, code: `HTTP_${status}`, details: body });
   }
 
-  /** Parses `input` as JSON, returning the raw string unchanged if invalid. */
+  /**
+   * Parses `input` as JSON, returning the raw string unchanged if invalid.
+   *
+   * @param input - Raw response text.
+   * @returns The parsed JSON, or the raw text when it is not valid JSON.
+   */
   private tryParseJson(input: string): unknown {
     try {
       return JSON.parse(input);
@@ -459,7 +558,12 @@ export class DashboardApiClient {
     }
   }
 
-  /** Normalizes any thrown value to a loggable string message. */
+  /**
+   * Normalizes any thrown value to a loggable string message.
+   *
+   * @param error - Any thrown value.
+   * @returns A readable message.
+   */
   private getErrorMessage(error: unknown): string {
     if (error instanceof Error) return error.message;
     if (typeof error === "string") return error;

@@ -60,8 +60,16 @@ import { registrarFor } from "../../core/tool-registry.js";
 import { assertMutationsEnabled } from "../../policy/tool-guards.js";
 import type { ToolContext } from "../../types/tool-context.js";
 
+/** Providers whose history can be imported. */
 const ProviderSchema = z.enum(["claude", "codex"]);
 
+/**
+ * Register the history import tools: get the import guide, rescan the default folder, import a
+ * folder path, upload files, and restore an export. Tools that change data check that mutations are
+ * enabled (`MCP_DASHBOARD_ALLOW_MUTATIONS`) before calling the dashboard.
+ *
+ * @param context - Shared tool context.
+ */
 export function registerImportTools(context: ToolContext): void {
   const { api, config } = context;
   const register = registrarFor(context);

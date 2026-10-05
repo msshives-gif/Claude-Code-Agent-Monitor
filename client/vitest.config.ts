@@ -9,9 +9,13 @@ import { resolve } from "node:path";
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 
-// Mirror vite.config.ts: inject the repo-root project version as `__APP_VERSION__`
-// so components that render it (e.g. the sidebar footer) behave the same in tests.
-// Fail-safe resolution (root -> client -> placeholder) matches vite.config.ts.
+/**
+ * Resolve the version injected as `__APP_VERSION__` in tests, mirroring `vite.config.ts` so
+ * components that render it (such as the sidebar footer) behave the same as in the app. Same
+ * fail-safe order: repo root, then client, then a placeholder.
+ *
+ * @returns The version string.
+ */
 function resolveAppVersion(): string {
   for (const rel of ["../package.json", "package.json"]) {
     try {
@@ -23,6 +27,7 @@ function resolveAppVersion(): string {
   }
   return "0.0.0";
 }
+/** Version injected as `__APP_VERSION__` in tests. */
 const APP_VERSION = resolveAppVersion();
 
 export default defineConfig({

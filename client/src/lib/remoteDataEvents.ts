@@ -57,6 +57,9 @@ import type { ImportProgressMessage, RemoteSourceStatusPayload, WSMessage } from
 /**
  * True when a WebSocket message means remote-imported data may have changed and
  * pages should refetch API data (not merely show a sync spinner).
+ *
+ * @param msg - WebSocket message.
+ * @returns True when pages should refetch.
  */
 export function isRemoteDataRefreshMessage(msg: WSMessage): boolean {
   if (msg.type === "remote_data.updated") return true;

@@ -9,14 +9,16 @@ import { resolve } from "node:path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// The dashboard's displayed version is the canonical project version from the
-// repo-root package.json (the version CI cuts releases from), injected at build
-// time as the `__APP_VERSION__` global so the UI footer always shows the real
-// version instead of a hardcoded string. Vite runs from the client dir, so the
-// root manifest is normally one level up; fall back to the client manifest, and
-// finally a placeholder, so the build never fails when the root file is absent
-// (e.g. a Docker stage that only copies client/). The global is declared in
-// `client/src/vite-env.d.ts`.
+/**
+ * Resolve the version shown in the UI footer. It is the canonical project version from the
+ * repo-root `package.json` (the version CI cuts releases from), injected at build time as the
+ * `__APP_VERSION__` global so the footer never shows a hardcoded string. Vite runs from the client
+ * directory, so the root manifest is normally one level up. It falls back to the client manifest,
+ * then a placeholder, so the build never fails when the root file is absent (for example a Docker
+ * stage that only copies `client/`). The global is declared in `client/src/vite-env.d.ts`.
+ *
+ * @returns The version string.
+ */
 function resolveAppVersion(): string {
   for (const rel of ["../package.json", "package.json"]) {
     try {
@@ -28,19 +30,21 @@ function resolveAppVersion(): string {
   }
   return "0.0.0";
 }
+/** Version injected as `__APP_VERSION__`. */
 const APP_VERSION = resolveAppVersion();
 
-// Honour DASHBOARD_PORT so the proxy follows when `npm run dev:server` is
-// moved off the default 4820 (e.g. when an SSH `LocalForward` already holds
-// 4820 on `127.0.0.1` and `::1`). The dev server reads the same env var from
-// `server/index.js`, so a single `DASHBOARD_PORT=4821 npm run dev` keeps
-// both sides in lockstep.
-//
-// We also target `127.0.0.1` rather than `localhost`: when several listeners
-// exist on the same port across IP families (loopback-specific SSH binds vs.
-// Node's wildcard listen), macOS routes connections by socket specificity,
-// so `localhost` can resolve into the wrong process. An explicit IPv4 loopback
-// is what the embedded server in production binds to anyway.
+/**
+ * Port of the dashboard server the dev proxy forwards to. Honors `DASHBOARD_PORT`, so the proxy
+ * follows when `npm run dev:server` is moved off the default 4820 (for example when an SSH
+ * `LocalForward` already holds 4820 on `127.0.0.1` and `::1`). The dev server reads the same
+ * variable from `server/index.js`, so a single `DASHBOARD_PORT=4821 npm run dev` keeps both sides
+ * in step.
+ *
+ * The proxy targets `127.0.0.1` rather than `localhost`: when several listeners share a port across
+ * IP families (loopback-specific SSH binds and Node's wildcard listen), macOS routes connections by
+ * socket specificity, so `localhost` can reach the wrong process. An explicit IPv4 loopback is also
+ * what the embedded production server binds to.
+ */
 const DASHBOARD_PORT = parseInt(process.env.DASHBOARD_PORT || "4820", 10);
 
 export default defineConfig({

@@ -119,6 +119,8 @@ export function requestUpdateCheck(): void {
  * A palette command that toggles a preference or copies a link closes the
  * palette and then, visibly, does nothing — which reads as broken even when it
  * worked. Navigation is its own feedback; everything else needs this.
+ *
+ * @param message - Text to show in the action toast.
  */
 export function announceAction(message: string): void {
   window.dispatchEvent(new CustomEvent(ACTION_TOAST_EVENT, { detail: message }));

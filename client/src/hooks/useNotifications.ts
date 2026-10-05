@@ -61,6 +61,7 @@ import { eventBus } from "../lib/eventBus";
 import { subscribeToPush } from "../lib/push";
 import type { WSMessage, Session, Agent, DashboardEvent } from "../lib/types";
 
+/** localStorage key for notification preferences, shared with the Settings page. */
 const NOTIF_KEY = "agent-monitor-notifications";
 
 /** User's browser-notification preferences, persisted to `localStorage` under
@@ -69,9 +70,13 @@ interface NotifPrefs {
   /** Master switch; when false, no notification types fire regardless of the
    *  per-event flags below. */
   enabled: boolean;
+  /** Notify when a new session starts. */
   onNewSession: boolean;
+  /** Notify when a session ends in an error. */
   onSessionError: boolean;
+  /** Notify when a session completes. */
   onSessionComplete: boolean;
+  /** Notify when a subagent is spawned. */
   onSubagentSpawn: boolean;
 }
 

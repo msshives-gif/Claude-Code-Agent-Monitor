@@ -65,6 +65,8 @@ import type { ToolContext } from "../../types/tool-context.js";
  * (upsert/delete/reset) require {@link assertMutationsEnabled}. Costs are
  * priced as of the usage date (session start date), not today's rate, so
  * historical costs stay correct across a promotional-rate cutover.
+ *
+ * @param context - Shared tool context.
  */
 export function registerPricingTools(context: ToolContext): void {
   const { api, config } = context;

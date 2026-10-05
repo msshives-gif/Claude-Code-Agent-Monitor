@@ -58,6 +58,12 @@ import { z } from "zod";
 import { registrarFor } from "../../core/tool-registry.js";
 import type { ToolContext } from "../../types/tool-context.js";
 
+/**
+ * Register the read-only session detail tools: session and event facets, session stats, transcript
+ * listing and reading, and transcript images.
+ *
+ * @param context - Shared tool context.
+ */
 export function registerSessionDetailTools(context: ToolContext): void {
   const { api } = context;
   const register = registrarFor(context);

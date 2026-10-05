@@ -120,6 +120,10 @@ export interface OrphanWatchOptions {
  * parent (tini as PID 1 inside a container, a launcher that execs away) has
  * ppid 1 from birth while perfectly healthy, and a Linux orphan under a
  * subreaper is reparented to that subreaper rather than to PID 1.
+ *
+ * @param initialPpid - Parent process id at startup.
+ * @param currentPpid - Parent process id now.
+ * @returns True when the parent changed.
  */
 export function isOrphaned(initialPpid: number, currentPpid: number): boolean {
   return currentPpid !== initialPpid;
@@ -129,6 +133,9 @@ export function isOrphaned(initialPpid: number, currentPpid: number): boolean {
  * Watch for the host process disappearing and run `shutdown()` exactly once
  * when it does, then exit. Safe to call only in stdio mode; the returned
  * handle lets signal handlers skip a duplicate teardown.
+ *
+ * @param options - What to watch and what to do when the host goes away.
+ * @returns A handle that stops watching.
  */
 export function watchForOrphanedHost(options: OrphanWatchOptions): OrphanWatch {
   const {

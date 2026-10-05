@@ -78,6 +78,8 @@ import type { AppConfig } from "../config/app-config.js";
  * (list/get/health/stats/analytics/export) never call this.
  * @throws {Error} naming `MCP_DASHBOARD_ALLOW_MUTATIONS=true` if
  *   `config.allowMutations` is `false`.
+ *
+ * @param config - Resolved configuration.
  */
 export function assertMutationsEnabled(config: AppConfig): void {
   if (!config.allowMutations) {

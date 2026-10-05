@@ -61,13 +61,26 @@ import type { ToolFlowData } from "../../lib/types";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
+/**
+ * Space around the Sankey diagram, in pixels. The wide left and right margins hold the tool name
+ * labels outside the first and last columns.
+ */
 const MARGIN = { top: 24, right: 140, bottom: 24, left: 140 };
+/** Width of each Sankey node bar, in pixels. */
 const NODE_WIDTH = 14;
+/** Vertical gap between nodes in the same column, in pixels. */
 const NODE_PADDING = 18;
+/** Smallest node height, so rarely used tools stay visible and hoverable. */
 const MIN_NODE_HEIGHT = 6;
+/** Opacity of links at rest. */
 const LINK_OPACITY_DEFAULT = 0.15;
+/** Opacity of a link while it is hovered. */
 const LINK_OPACITY_HOVER = 0.45;
 
+/**
+ * Fixed colors for the built-in Claude Code tools, so each tool keeps the same color across charts.
+ * Other tools use {@link COLOR_DEFAULT}.
+ */
 const TOOL_COLORS: Record<string, string> = {
   Read: "#3b82f6",
   Write: "#22c55e",
@@ -77,54 +90,95 @@ const TOOL_COLORS: Record<string, string> = {
   Glob: "#ec4899",
   Agent: "#6366f1",
 };
+/** Color for tools without a fixed color (MCP tools, custom tools). */
 const COLOR_DEFAULT = "#64748b";
 
+/**
+ * Color for a Sankey node, ignoring the internal `_source` / `_target` suffix.
+ *
+ * @param name - Node id.
+ * @returns The tool's fixed color or the default.
+ */
 function toolColor(name: string): string {
   // Strip the _source / _target suffix we add internally
   const base = name.replace(/_(source|target)$/, "");
   return TOOL_COLORS[base] ?? COLOR_DEFAULT;
 }
 
+/**
+ * Display name for a Sankey node: the node id without the internal `_source` / `_target` suffix.
+ *
+ * @param name - Node id.
+ * @returns The tool name.
+ */
 function toolLabel(name: string): string {
   return name.replace(/_(source|target)$/, "");
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+/** Extra fields stored on each Sankey node. */
 interface NodeExtra {
+  /**
+   * Node id: the tool name, or the tool name with `_source` / `_target` when the tool appears on
+   * both sides.
+   */
   id: string;
 }
 
+/** Extra fields stored on each Sankey link. */
 interface LinkExtra {
+  /** Unique link id, used as the React/D3 key and for gradient ids. */
   uid: string;
 }
 
+/** A laid-out Sankey node. */
 type SNode = SankeyNode<NodeExtra, LinkExtra>;
+/** A laid-out Sankey link. */
 type SLink = SankeyLink<NodeExtra, LinkExtra>;
+/** The laid-out Sankey graph. */
 type SGraph = SankeyGraph<NodeExtra, LinkExtra>;
 
+/** Tooltip data for a hovered tool node. */
 interface NodeTipPayload {
+  /** Discriminator. */
   kind: "node";
+  /** Node id, localized for display when the tooltip is built. */
   rawName: string;
+  /** Total calls of this tool. */
   count: number;
+  /** This tool's share of all tool calls, from 0 to 1. */
   shareOfTotal: number;
 }
 
+/** Tooltip data for a hovered transition link. */
 interface LinkTipPayload {
+  /** Discriminator. */
   kind: "link";
+  /** Tool that ran first. */
   source: string;
+  /** Tool that ran next. */
   target: string;
+  /** How many times this transition happened. */
   count: number;
+  /** This transition's share of everything leaving `source`, from 0 to 1. */
   shareOfSource: number;
+  /** This transition's share of everything entering `target`, from 0 to 1. */
   shareOfTarget: number;
 }
 
+/** Tooltip data for a node or a link. */
 type TipPayload = NodeTipPayload | LinkTipPayload;
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
+/** Props for {@link ToolExecutionFlow}. */
 interface ToolExecutionFlowProps {
+  /** Tool-to-tool transition counts from `/api/workflows`. */
   data: ToolFlowData;
+  /**
+   * Accepted for API compatibility but currently not applied; the server already scopes the data.
+   */
   filterAgentType?: string | null;
 }
 
@@ -141,7 +195,9 @@ interface ToolExecutionFlowProps {
  * - A node that appears on BOTH sides gets `_source` / `_target` copies.
  */
 function buildSankeyInput(data: ToolFlowData): {
+  /** Unique Sankey nodes. */
   nodes: NodeExtra[];
+  /** Sankey links; every value is at least 1 so d3-sankey never draws a zero-height link. */
   links: Array<{ source: string; target: string; value: number; uid: string }>;
 } {
   const { transitions } = data;
@@ -185,6 +241,12 @@ function buildSankeyInput(data: ToolFlowData): {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
+/**
+ * Tool execution flow on the Workflows page: a d3-sankey diagram of which tool tends to run right
+ * after which, sized to the container width. Hovering a link brightens it, and hovering a node or
+ * link shows an imperatively built tooltip with counts and shares. Shows an empty state when there
+ * are no transitions.
+ */
 export function ToolExecutionFlow({
   data,
   filterAgentType: _filterAgentType,
@@ -220,10 +282,12 @@ export function ToolExecutionFlow({
 
   const totalUsage = data.toolCounts.reduce((s, c) => s + c.count, 0);
 
+  /** Hide the tooltip. */
   const hideTip = useCallback(() => {
     const tip = tipRef.current;
     if (tip) tip.style.opacity = "0";
   }, []);
+  /** Localized name for the built-in tools; other tool names are shown as-is. */
   const localizeToolLabel = useCallback(
     (name: string) => {
       const lower = name.toLowerCase();
@@ -244,6 +308,10 @@ export function ToolExecutionFlow({
     [t]
   );
 
+  /**
+   * Fill the tooltip for a node or link and anchor it next to the hovered element, kept inside the
+   * container.
+   */
   const showTip = useCallback(
     (payload: TipPayload, anchorEl: SVGGraphicsElement) => {
       const tip = tipRef.current;
@@ -546,12 +614,25 @@ export function ToolExecutionFlow({
 
 // ── Tooltip DOM builder ───────────────────────────────────────────────────────
 
+/**
+ * Format a 0 to 1 share as a percentage with one decimal.
+ *
+ * @param v - Share.
+ * @returns For example `12.5%`, `<1%` for tiny shares, or `-` for 0.
+ */
 function fmtPct(v: number): string {
   if (v <= 0) return "-";
   if (v < 0.01) return "<1%";
   return `${(v * 100).toFixed(1)}%`;
 }
 
+/**
+ * Append a label/value row to a tooltip element.
+ *
+ * @param parent - Tooltip container.
+ * @param label - Row label.
+ * @param value - Row value.
+ */
 function appendTipRow(parent: HTMLElement, label: string, value: string) {
   const row = document.createElement("div");
   row.style.cssText =
@@ -567,8 +648,19 @@ function appendTipRow(parent: HTMLElement, label: string, value: string) {
   parent.appendChild(row);
 }
 
+/** Translation function signature used by the imperative tooltip builder. */
 type TFn = (key: string, options?: Record<string, unknown>) => string;
 
+/**
+ * Fill the tooltip element for a hovered node (the tool's total calls and share of all calls) or
+ * link (transition count, and its share of the source's outgoing and the target's incoming flow).
+ * Built with DOM calls so hovering does not touch React state.
+ *
+ * @param el - Tooltip container; its children are replaced.
+ * @param payload - What is hovered.
+ * @param localizeToolLabel - Maps a node id to its display name.
+ * @param t - Translation function.
+ */
 function buildToolFlowTooltip(
   el: HTMLDivElement,
   payload: TipPayload,
@@ -643,6 +735,7 @@ function buildToolFlowTooltip(
 
 // ── Legend ────────────────────────────────────────────────────────────────────
 
+/** Legend entries: the built-in tools with fixed colors. */
 const LEGEND_ITEMS: Array<{ key: string; color: string }> = [
   { key: "read", color: "#3b82f6" },
   { key: "write", color: "#22c55e" },
@@ -654,6 +747,7 @@ const LEGEND_ITEMS: Array<{ key: string; color: string }> = [
   { key: "other", color: "#64748b" },
 ];
 
+/** Color legend shown under the Sankey diagram. */
 function Legend() {
   const { t } = useTranslation("errors");
   return (

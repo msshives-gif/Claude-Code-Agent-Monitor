@@ -75,28 +75,52 @@ export class Logger {
   constructor(private readonly minLevel: LogLevel) {}
 
   /** Per-call tracing, e.g. tool invocation start/completion; silent unless
-   * `MCP_LOG_LEVEL=debug`. */
+   * `MCP_LOG_LEVEL=debug`.
+   *
+   * @param message - Log message.
+   * @param meta - Optional structured fields, included when non-empty.
+   */
   debug(message: string, meta?: Record<string, unknown>) {
     this.write("debug", message, meta);
   }
 
-  /** Default-visible lifecycle events (server started, new session opened). */
+  /**
+   * Default-visible lifecycle events (server started, new session opened).
+   *
+   * @param message - Log message.
+   * @param meta - Optional structured fields, included when non-empty.
+   */
   info(message: string, meta?: Record<string, unknown>) {
     this.write("info", message, meta);
   }
 
-  /** Recoverable/transient issues, e.g. a retried dashboard API request. */
+  /**
+   * Recoverable/transient issues, e.g. a retried dashboard API request.
+   *
+   * @param message - Log message.
+   * @param meta - Optional structured fields, included when non-empty.
+   */
   warn(message: string, meta?: Record<string, unknown>) {
     this.write("warn", message, meta);
   }
 
-  /** Aborted operations, e.g. a thrown tool handler or unhandled rejection. */
+  /**
+   * Aborted operations, e.g. a thrown tool handler or unhandled rejection.
+   *
+   * @param message - Log message.
+   * @param meta - Optional structured fields, included when non-empty.
+   */
   error(message: string, meta?: Record<string, unknown>) {
     this.write("error", message, meta);
   }
 
   /** Writes one entry if `level` meets {@link minLevel}; `meta` is included
-   * only when non-empty. */
+   * only when non-empty.
+   *
+   * @param level - Severity of the entry.
+   * @param message - Log message.
+   * @param meta - Optional structured fields.
+   */
   private write(level: LogLevel, message: string, meta?: Record<string, unknown>) {
     if (LEVEL_ORDER[level] < LEVEL_ORDER[this.minLevel]) {
       return;

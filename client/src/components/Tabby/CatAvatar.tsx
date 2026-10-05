@@ -62,20 +62,30 @@
 import { useEffect, useRef, useState } from "react";
 import type { Mood } from "./brain";
 
+/** Props for {@link CatAvatar}. */
 interface CatAvatarProps {
+  /**
+   * Mood to show; each mood has its own pose and animation, driven by a `data-mood` attribute and
+   * CSS.
+   */
   mood: Mood;
+  /** When true, animations are disabled and the eyes stop following the cursor. */
   reducedMotion: boolean;
+  /** Whether the pointer is over the avatar, for a small hover reaction. */
   hovered?: boolean;
+  /** Rendered width and height in pixels; defaults to 60. */
   size?: number;
 }
 
+/** Furthest the pupils move from center, in units of the 100x100 viewBox. */
 const MAX_PUPIL_SHIFT = 2.8; // px in the 100x100 viewBox
 
-// Module-level last-known cursor position, tracked from the moment this module
-// first loads (well before any avatar mounts). This is what makes eye tracking
-// feel *immediate*: as soon as the cat mounts it aims at wherever the cursor
-// already is, instead of sitting centered until the next mousemove. `null`
-// until the very first pointer event of the page's life.
+/**
+ * Last known cursor position, tracked from the moment this module first loads, well before any
+ * avatar mounts. This is what makes eye tracking feel immediate: as soon as the cat mounts it aims
+ * at wherever the cursor already is, instead of sitting centered until the next mouse move. Null
+ * until the page's first pointer event.
+ */
 let lastCursor: { x: number; y: number } | null = null;
 if (typeof window !== "undefined") {
   const remember = (e: MouseEvent) => {
@@ -89,6 +99,10 @@ if (typeof window !== "undefined") {
   });
 }
 
+/**
+ * Tabby's SVG cat. The mood sets the pose and animation through CSS, and the pupils follow the
+ * cursor (throttled to one update per animation frame) while motion is allowed.
+ */
 export function CatAvatar({ mood, reducedMotion, hovered = false, size = 60 }: CatAvatarProps) {
   const rootRef = useRef<SVGSVGElement | null>(null);
   const rafRef = useRef<number | undefined>(undefined);
@@ -106,6 +120,7 @@ export function CatAvatar({ mood, reducedMotion, hovered = false, size = 60 }: C
       return;
     }
 
+    /** Point the pupils toward a screen position, limited to {@link MAX_PUPIL_SHIFT}. */
     const aimAt = (clientX: number, clientY: number) => {
       const el = rootRef.current;
       if (!el) return;
@@ -129,6 +144,7 @@ export function CatAvatar({ mood, reducedMotion, hovered = false, size = 60 }: C
       initRaf = requestAnimationFrame(() => aimAt(c.x, c.y));
     }
 
+    /** Track the cursor, updating the pupils at most once per animation frame. */
     const onMove = (e: MouseEvent) => {
       if (rafRef.current) return;
       rafRef.current = requestAnimationFrame(() => {

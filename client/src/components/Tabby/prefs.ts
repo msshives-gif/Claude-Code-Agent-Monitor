@@ -58,8 +58,14 @@
  * ----------------------------------------------------------------------------- */
 
 const ENABLED_KEY = "agent-dashboard-tabby-enabled";
+/** localStorage key for the muted preference. */
 const MUTED_KEY = "agent-dashboard-tabby-muted";
+/** localStorage key for the docked position. */
 const POS_KEY = "agent-dashboard-tabby-pos";
+/**
+ * Window event fired when the enabled or muted preference changes, so Settings and the live widget
+ * stay in sync in the same tab.
+ */
 const EVENT = "tabby:prefs";
 
 /**
@@ -68,10 +74,22 @@ const EVENT = "tabby:prefs";
  * fraction of the viewport height (0–1) so it survives window resizes.
  */
 export interface TabbyPos {
+  /** Edge the avatar is docked to. */
   side: "left" | "right";
+  /**
+   * Vertical position as a fraction (0 at the top, 1 at the bottom) of the space the avatar can
+   * move in, so it survives window resizes.
+   */
   y: number;
 }
 
+/**
+ * Read a boolean preference.
+ *
+ * @param key - localStorage key.
+ * @param fallback - Value when unset or storage is unavailable.
+ * @returns The stored value or the fallback.
+ */
 function readBool(key: string, fallback: boolean): boolean {
   try {
     const v = localStorage.getItem(key);
@@ -81,6 +99,13 @@ function readBool(key: string, fallback: boolean): boolean {
   }
 }
 
+/**
+ * Write a boolean preference and notify listeners in this tab. Storage failures (private mode,
+ * quota) are ignored, since preferences are best-effort.
+ *
+ * @param key - localStorage key.
+ * @param value - New value.
+ */
 function writeBool(key: string, value: boolean): void {
   try {
     localStorage.setItem(key, String(value));
@@ -94,6 +119,11 @@ function writeBool(key: string, value: boolean): void {
   }
 }
 
+/**
+ * Read the stored docked position, validating its shape and clamping `y` to 0 to 1.
+ *
+ * @returns The position, or null when unset or invalid.
+ */
 function readPos(): TabbyPos | null {
   try {
     const raw = localStorage.getItem(POS_KEY);
@@ -108,6 +138,12 @@ function readPos(): TabbyPos | null {
   }
 }
 
+/**
+ * Store the docked position. Deliberately does not fire the preferences event, because position
+ * changes are local to the widget.
+ *
+ * @param pos - New position.
+ */
 function writePos(pos: TabbyPos): void {
   try {
     localStorage.setItem(POS_KEY, JSON.stringify(pos));
@@ -118,6 +154,10 @@ function writePos(pos: TabbyPos): void {
   // are local to the widget and shouldn't churn the Settings toggle listeners.
 }
 
+/**
+ * Tabby's persisted preferences: enabled (default on), muted (default off), and docked position,
+ * plus a subscription to enabled and muted changes.
+ */
 export const tabbyPrefs = {
   getEnabled: () => readBool(ENABLED_KEY, true),
   setEnabled: (v: boolean) => writeBool(ENABLED_KEY, v),

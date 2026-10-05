@@ -67,6 +67,10 @@ import { ApiError } from "../clients/dashboard-api-client.js";
  * The result is a single `text` block: the tool name as a title, then the
  * payload pretty-printed as JSON — a display convenience, not a
  * machine-readable envelope.
+ *
+ * @param title - Heading for the text content.
+ * @param payload - Data to return; serialized as JSON.
+ * @returns The tool result.
  */
 export function jsonResult(title: string, payload: unknown): CallToolResult {
   return {
@@ -87,6 +91,9 @@ export function jsonResult(title: string, payload: unknown): CallToolResult {
  * failure) surfaces its own `code`/`status`/`details`; any other error
  * (including policy-guard failures) collapses to a generic `INTERNAL_ERROR`
  * with just the message.
+ *
+ * @param error - Thrown value.
+ * @returns An error tool result.
  */
 export function errorResult(error: unknown): CallToolResult {
   if (error instanceof ApiError) {

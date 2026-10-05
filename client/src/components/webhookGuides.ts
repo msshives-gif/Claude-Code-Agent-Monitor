@@ -57,6 +57,7 @@
 
 import type { WebhookType } from "../lib/types";
 
+/** Official setup guide for each webhook provider, linked from the webhook form. */
 export const WEBHOOK_DOCS: Partial<Record<WebhookType, string>> = {
   slack: "https://api.slack.com/messaging/webhooks",
   discord: "https://support.discord.com/hc/en-us/articles/228383668",

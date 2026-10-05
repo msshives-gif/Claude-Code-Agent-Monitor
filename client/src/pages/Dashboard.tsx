@@ -116,7 +116,16 @@ import type { Stats, Agent, DashboardEvent, WSMessage, WorkflowData, Session } f
 /** Tab keys in render order — also the order `1`/`2` and `[`/`]` address them. */
 const DASHBOARD_TABS = ["monitor", "health"] as const;
 
+/**
+ * Response of `/api/settings/info` as used by the Health tab, which reads more of it than Settings
+ * does: SQLite pragmas and load, process memory and CPU, and transcript-cache statistics.
+ */
 interface SystemInfo {
+  /**
+   * Database file path and size, row counts per table, the SQLite pragmas in effect (journal mode,
+   * synchronous level, auto-vacuum, encoding, foreign keys, busy timeout), and the server's load
+   * averages over 5 minutes, 15 minutes, and 1 hour.
+   */
   db: {
     path: string;
     size: number;
@@ -131,7 +140,13 @@ interface SystemInfo {
     };
     load_stats: { m5: number; m15: number; h1: number };
   };
+  /** Claude Code hook installation status. */
   hooks: { installed: boolean; path: string; hooks: Record<string, boolean> };
+  /**
+   * Server process and host details: uptime, Node.js version, platform and architecture, open
+   * WebSocket connections, process memory, CPU load averages, total and free host memory, and CPU
+   * count.
+   */
   server: {
     uptime: number;
     node_version: string;
@@ -144,6 +159,9 @@ interface SystemInfo {
     free_mem: number;
     cpus: number;
   };
+  /**
+   * Transcript parse cache: current and maximum entries, hit and miss counts, and the cached keys.
+   */
   transcript_cache: {
     size: number;
     maxSize: number;
@@ -153,12 +171,24 @@ interface SystemInfo {
   };
 }
 
+/**
+ * Human-readable size in B, KB, or MB.
+ *
+ * @param bytes - Size in bytes.
+ * @returns The formatted size.
+ */
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/**
+ * Compact uptime, for example `3d 4h 12m`, `5h 2m`, or `17m`.
+ *
+ * @param seconds - Uptime in seconds.
+ * @returns The formatted duration.
+ */
 function formatUptime(seconds: number): string {
   const d = Math.floor(seconds / 86400);
   const h = Math.floor((seconds % 86400) / 3600);
@@ -168,11 +198,20 @@ function formatUptime(seconds: number): string {
   return `${m}m`;
 }
 
+/**
+ * Health tab of the Dashboard: database, server, hook, and cache health, plus workflow-derived
+ * figures, built from `/api/settings/info` and `/api/workflows`. Refreshed every 30 seconds and
+ * when the data scope changes.
+ */
 function SystemHealthTab() {
   const [info, setInfo] = useState<SystemInfo | null>(null);
   const [workflow, setWorkflow] = useState<WorkflowData | null>(null);
   const [scope] = useDataScope();
 
+  /**
+   * Fetch system info and workflow data together for the Health tab. Errors are logged and leave
+   * the previous figures on screen.
+   */
   const loadData = useCallback(async () => {
     try {
       const [infoRes, workflowRes] = await Promise.all([api.settings.info(), api.workflows.get()]);
@@ -189,6 +228,10 @@ function SystemHealthTab() {
     return () => clearInterval(int);
   }, [loadData]);
 
+  /**
+   * Derived figures for the Health tab, such as the share of sessions, agents, and events among
+   * stored rows. Null until both requests have loaded.
+   */
   const stats = useMemo(() => {
     if (!info || !workflow) return null;
 
@@ -1031,6 +1074,13 @@ function toolGroupBreakdown(events: DashboardEvent[]): string {
     .join(", ");
 }
 
+/**
+ * Dashboard page (`/`). The Monitor tab shows overview stat cards, live agent cards with
+ * collapsible subagent trees, and a recent activity feed whose item counts adapt to the available
+ * height. The Health tab is {@link SystemHealthTab}. The tab is mirrored in the URL. Data follows
+ * the global data scope, reloads on live WebSocket updates (throttled to at most one load every 2
+ * seconds), and is polled every 10 seconds as a backstop.
+ */
 export function Dashboard() {
   const navigate = useNavigate();
   const { t } = useTranslation("dashboard");
@@ -1088,6 +1138,10 @@ export function Dashboard() {
   // source-machine and provider params into the calls below).
   const [scope] = useDataScope();
 
+  /**
+   * Load everything the Monitor tab shows in parallel: stats, working agents, waiting agents
+   * (including transient rows), recent events, costs, and sessions.
+   */
   const load = useCallback(async () => {
     try {
       const [statsRes, workingRes, waitingRes, eventsRes, costRes, sessionsRes] = await Promise.all(
@@ -1178,6 +1232,10 @@ export function Dashboard() {
     // the view eventually consistent and the 10s poll remains the backstop.
     const THROTTLE_MS = 2_000;
     const throttleRef = { timer: null as ReturnType<typeof setTimeout> | null, lastRun: 0 };
+    /**
+     * Schedule a throttled reload: at most one load per 2-second window, with a trailing call so
+     * the view still catches up after a burst of WebSocket messages.
+     */
     const scheduleLoad = () => {
       if (throttleRef.timer) return; // trailing run already scheduled
       const wait = Math.max(0, THROTTLE_MS - (Date.now() - throttleRef.lastRun));
@@ -1420,6 +1478,7 @@ export function Dashboard() {
                       const { total: totalDesc, active: activeDesc } = hasChildren
                         ? getDescendants(agent.id)
                         : { total: 0, active: 0 };
+                      /** Expand or collapse this agent's subagent tree. */
                       const toggleExpanded = () =>
                         setExpandedAgents((prev) => {
                           const next = new Set(prev);

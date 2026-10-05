@@ -62,7 +62,9 @@ import { PaginatedLegend } from "../PaginatedLegend";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
+/** Props for {@link AgentCollaborationNetwork}. */
 export interface AgentCollaborationNetworkProps {
+  /** Per-subagent-type statistics; each type becomes a node. */
   effectiveness: Array<{
     subagent_type: string;
     total: number;
@@ -71,24 +73,38 @@ export interface AgentCollaborationNetworkProps {
     sessions: number;
     successRate: number;
   }>;
+  /**
+   * How often one subagent type was followed by another within a session; each becomes a directed
+   * link.
+   */
   edges: Array<{ source: string; target: string; weight: number }>;
 }
 
+/** One subagent type in the force-directed pipeline graph. */
 interface PipelineNode extends d3.SimulationNodeDatum {
+  /** Subagent type name. */
   id: string;
+  /** Times the type was spawned; drives the node radius. */
   total: number;
+  /** Distinct sessions the type appeared in. */
   sessions: number;
+  /** Success rate as a percentage. */
   successRate: number;
+  /** Index into {@link PALETTE} and {@link STROKE_PALETTE}. */
   colorIndex: number;
 }
 
+/** A directed link between two subagent types. */
 interface PipelineLink extends d3.SimulationLinkDatum<PipelineNode> {
+  /** How many times the transition happened; drives the stroke width. */
   weight: number;
+  /** Edge label, for example `3x`. */
   label: string;
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
+/** Node fill colors, cycled by node index. */
 const PALETTE = [
   "#6366f1",
   "#3b82f6",
@@ -102,6 +118,7 @@ const PALETTE = [
   "#14b8a6",
 ];
 
+/** Node outline colors, the lighter partner of each {@link PALETTE} entry. */
 const STROKE_PALETTE = [
   "#818cf8",
   "#60a5fa",
@@ -115,11 +132,20 @@ const STROKE_PALETTE = [
   "#2dd4bf",
 ];
 
+/** Radius of the least-spawned node. */
 const MIN_R = 20;
+/** Radius of the most-spawned node. */
 const MAX_R = 44;
 
 // ── Safe tooltip DOM builder ──
 
+/**
+ * Append a label/value row to the tooltip element.
+ *
+ * @param parent - Tooltip container.
+ * @param label - Row label.
+ * @param value - Row value.
+ */
 function appendTooltipRow(parent: HTMLElement, label: string, value: string) {
   const row = document.createElement("div");
   row.style.cssText = "display:flex;justify-content:space-between;gap:16px;font-size:11px";
@@ -134,6 +160,12 @@ function appendTooltipRow(parent: HTMLElement, label: string, value: string) {
   parent.appendChild(row);
 }
 
+/**
+ * Append a separated description paragraph to the tooltip element.
+ *
+ * @param parent - Tooltip container.
+ * @param text - Description text.
+ */
 function appendTooltipDescription(parent: HTMLElement, text: string) {
   const p = document.createElement("p");
   p.style.cssText =
@@ -142,8 +174,17 @@ function appendTooltipDescription(parent: HTMLElement, text: string) {
   parent.appendChild(p);
 }
 
+/** Translation function signature used by the imperative tooltip helpers. */
 type TFn = (key: string, options?: Record<string, unknown>) => string;
 
+/**
+ * Describe a node's role in plain language for the tooltip, including a health verdict from its
+ * success rate: perfect (95% and above), healthy (80%), shaky (50%), or failing.
+ *
+ * @param d - Node.
+ * @param t - Translation function.
+ * @returns The description sentence.
+ */
 function describeNodeRole(d: PipelineNode, t: TFn): string {
   const sr = Math.round(d.successRate);
   let healthKey: string;
@@ -161,6 +202,17 @@ function describeNodeRole(d: PipelineNode, t: TFn): string {
   });
 }
 
+/**
+ * Fill and position the tooltip for a hovered node: type, spawn count and share of all spawns,
+ * sessions, success rate, and a role description.
+ *
+ * @param el - Tooltip element; its content is replaced.
+ * @param d - Hovered node.
+ * @param x - Horizontal position within the container.
+ * @param y - Vertical position within the container.
+ * @param t - Translation function.
+ * @param totalSpawns - Spawns across all types, for the share.
+ */
 function showTooltip(
   el: HTMLDivElement,
   d: PipelineNode,
@@ -204,6 +256,10 @@ function showTooltip(
  * Position a tooltip so its top-right corner sits near (x, y), but clamped to
  * the viewport so it never disappears behind the sidebar or the right edge.
  * Sets opacity to 1 to fade the tooltip in via its CSS transition.
+ *
+ * @param el - Tooltip element.
+ * @param x - Pointer x within the container.
+ * @param y - Pointer y within the container.
  */
 function positionTooltipAt(el: HTMLDivElement, x: number, y: number) {
   el.style.opacity = "0";
@@ -231,6 +287,13 @@ function positionTooltipAt(el: HTMLDivElement, x: number, y: number) {
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
+/**
+ * Agent pipeline graph on the Workflows page: a D3 force simulation of subagent types (circles
+ * sized by spawn count) linked by curved arrows (thickness by how often one type followed another,
+ * with `Nx` labels). Self-loops, duplicates, and links to unknown types are dropped. Hover is
+ * handled with direct DOM updates so it never re-renders React. Shows an empty state when there are
+ * no nodes or no links.
+ */
 export function AgentCollaborationNetwork({
   effectiveness,
   edges,
@@ -589,6 +652,10 @@ export function AgentCollaborationNetwork({
     );
   }
 
+  /**
+   * Hide the tooltip when the pointer leaves the chart, in case a node's own leave event was
+   * missed.
+   */
   const handleContainerLeave = () => {
     const tip = tooltipRef.current;
     if (tip) tip.style.opacity = "0";

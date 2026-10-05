@@ -74,11 +74,12 @@ import * as path from "node:path";
 
 import { log } from "./logger";
 
-// Markers fence the PATH off from any shell-startup noise (banners, MOTD, …).
-// An interactive login shell may print arbitrary text before running our
-// `-c` command (e.g. a `.zshrc` `neofetch` call); scanning for this sentinel
-// pair — rather than trusting the last line of stdout — makes extraction
-// robust to whatever the user's shell profile prints.
+/**
+ * Sentinel that fences the PATH off from shell startup noise (banners, MOTD, and so on). An
+ * interactive login shell may print arbitrary text before running the `-c` command (for example a
+ * `.zshrc` that calls `neofetch`), so scanning for this sentinel pair, rather than trusting the
+ * last line of output, keeps extraction robust whatever the profile prints.
+ */
 const DELIM = "__CCAM_SHELL_PATH__";
 
 /**
@@ -117,6 +118,9 @@ export function ensureUserPath(): void {
 
   const ordered: string[] = [];
   const seen = new Set<string>();
+  /**
+   * Append each segment of a PATH-style value that has not been seen yet, keeping first-seen order.
+   */
   const add = (value?: string | null): void => {
     if (!value) return;
     for (const seg of value.split(path.delimiter)) {

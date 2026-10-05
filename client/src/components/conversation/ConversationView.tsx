@@ -71,20 +71,37 @@ import { isRemoteDataRefreshMessage } from "../../lib/remoteDataEvents";
 import { MessageList } from "./MessageList";
 import type { TranscriptMessage, TranscriptInfo, WSMessage } from "../../lib/types";
 
-// Catch-up poll interval. Some lifecycle event streams do not emit every
-// transcript write, so a user-typed message or assistant text may otherwise
-// remain invisible until the next event. A short visibility-gated poll closes
-// that gap and also rescues the conversation from missed/late WebSocket frames.
+/**
+ * Catch-up poll interval. Some lifecycle event streams do not emit every transcript write, so a
+ * typed user message or assistant text could otherwise stay invisible until the next event. A
+ * short, visibility-gated poll closes that gap and also recovers from missed or late WebSocket
+ * frames.
+ */
 const POLL_INTERVAL_MS = 3000;
-// Rescan the transcripts list periodically so new subagents that spawn
-// mid-session appear in the dropdown without a page reload.
+/**
+ * How often the list of transcripts is rescanned, so subagents that spawn mid-session appear in the
+ * dropdown without a reload.
+ */
 const TRANSCRIPTS_REFRESH_MS = 15000;
 
+/** Props for {@link ConversationView}. */
 interface ConversationViewProps {
+  /** Session whose transcripts are shown. */
   sessionId: string;
+  /**
+   * Transcript to open first (`main` or a subagent's), for example when arriving from an agent
+   * link.
+   */
   initialTranscriptId?: string | null;
 }
 
+/**
+ * Conversation tab of Session Detail: a transcript picker (main agent and each subagent) and the
+ * message list. New lines are loaded incrementally with line cursors, older history loads when
+ * scrolling to the top, and updates arrive through WebSocket messages plus a 3-second
+ * visibility-gated poll. A refresh requested while a fetch is in flight is queued once, so no
+ * update is dropped.
+ */
 export function ConversationView({ sessionId, initialTranscriptId }: ConversationViewProps) {
   const { t } = useTranslation("sessions");
   const [messages, setMessages] = useState<TranscriptMessage[]>([]);

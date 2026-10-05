@@ -98,7 +98,10 @@ import type {
   WebhookTestResult,
 } from "../lib/types";
 
-// Brand-ish accent per provider type; anything unmapped falls back to neutral.
+/**
+ * Brand-like accent per provider type for the target badges; unmapped providers fall back to {@link
+ * NEUTRAL_STYLE}.
+ */
 const TYPE_STYLES: Partial<Record<WebhookType, string>> = {
   slack: "text-[#E01E5A] bg-[#E01E5A]/10 border-[#E01E5A]/20",
   discord: "text-[#5865F2] bg-[#5865F2]/10 border-[#5865F2]/20",
@@ -111,27 +114,58 @@ const TYPE_STYLES: Partial<Record<WebhookType, string>> = {
   opsgenie: "text-[#2684FF] bg-[#2684FF]/10 border-[#2684FF]/20",
   splunk_oncall: "text-[#F99D1C] bg-[#F99D1C]/10 border-[#F99D1C]/20",
 };
+/** Badge classes for providers without a brand accent. */
 const NEUTRAL_STYLE = "text-gray-300 bg-surface-2 border-border";
 
+/** One editable custom HTTP header row in the form. */
 interface HeaderRow {
+  /** Header name. */
   key: string;
+  /** Header value. */
   value: string;
 }
 
+/** State of the add/edit webhook form. */
 interface FormState {
+  /** Id of the target being edited, or null when adding. */
   id: string | null;
+  /** Display name of the target. */
   name: string;
+  /** Provider type; decides which fields the form shows. */
   type: WebhookType;
+  /**
+   * Destination URL. Blank when editing, which keeps the stored URL; the API only ever returns a
+   * masked preview of it.
+   */
   url: string;
+  /** Signing secret for generic providers. Blank keeps the stored secret. */
   secret: string;
+  /** Custom headers for providers that support them. */
   headerRows: HeaderRow[];
+  /**
+   * When editing, whether to replace the stored headers with `headerRows`. Off by default so saving
+   * without touching headers keeps them.
+   */
   replaceHeaders: boolean;
+  /**
+   * Provider-specific settings (for example region, chat id, or severity). Secret fields start
+   * blank when editing and are only sent when re-entered.
+   */
   config: Record<string, string>;
+  /** When true the target receives alerts from every rule; otherwise only from `ruleIds`. */
   scopeAll: boolean;
+  /** Alert rules the target is limited to when `scopeAll` is false. */
   ruleIds: string[];
+  /** Whether the target receives alerts. */
   enabled: boolean;
 }
 
+/**
+ * Default values for a provider's config fields.
+ *
+ * @param provider - Provider definition, or undefined.
+ * @returns Field defaults keyed by field name.
+ */
 function defaultsFor(provider: WebhookProvider | undefined): Record<string, string> {
   const out: Record<string, string> = {};
   if (!provider) return out;
@@ -139,13 +173,17 @@ function defaultsFor(provider: WebhookProvider | undefined): Record<string, stri
   return out;
 }
 
+/** Small on/off switch with an optional label, exposed as `role="switch"`. */
 function Toggle({
   checked,
   onChange,
   label,
 }: {
+  /** Whether the switch is on. */
   checked: boolean;
+  /** Called with the new state. */
   onChange: (v: boolean) => void;
+  /** Optional label beside the switch. */
   label?: string;
 }) {
   return (
@@ -167,6 +205,13 @@ function Toggle({
   );
 }
 
+/**
+ * Webhook targets section (the Channels tab of Alerts). Lists configured targets with their
+ * provider, enabled state, and rule scope. It can add, edit, test, enable or disable, and delete
+ * them; the form adapts to each provider's fields. Secrets and URLs are never sent back to the
+ * browser: editing leaves them blank, and they are only updated when re-entered. Hosted providers
+ * require HTTPS.
+ */
 export function WebhookSettings() {
   const { t } = useTranslation("settings");
   const [targets, setTargets] = useState<WebhookTarget[]>([]);
@@ -182,11 +227,13 @@ export function WebhookSettings() {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [guideOpen, setGuideOpen] = useState(false);
 
+  /** Look up a provider definition by type. */
   const providerOf = useCallback(
     (type: WebhookType) => providers.find((p) => p.type === type),
     [providers]
   );
 
+  /** Load the configured targets. */
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -214,9 +261,15 @@ export function WebhookSettings() {
       .catch(() => setRules([]));
   }, []);
 
+  /**
+   * Merge a change into the open form.
+   *
+   * @param patch - Fields to change.
+   */
   const set = (patch: Partial<FormState>) =>
     setForm((prev) => (prev ? { ...prev, ...patch } : prev));
 
+  /** Open the form to add a target, defaulting to the first provider with its field defaults. */
   const openCreate = () => {
     const first = providers[0];
     setForm({
@@ -236,6 +289,12 @@ export function WebhookSettings() {
     setFormOpen(true);
   };
 
+  /**
+   * Open the form to edit a target. Non-secret settings are prefilled; secret fields and the URL
+   * start blank, since they are redacted and only re-entered to change them.
+   *
+   * @param target - Target to edit.
+   */
   const openEdit = (target: WebhookTarget) => {
     const provider = providerOf(target.type);
     // Prefill non-secret config (region, chat_id, severity, …); leave secret
@@ -263,6 +322,7 @@ export function WebhookSettings() {
     setFormOpen(true);
   };
 
+  /** Close the form and discard its state. */
   const closeForm = () => {
     setFormOpen(false);
     setForm(null);
@@ -274,6 +334,11 @@ export function WebhookSettings() {
   const showUrl = !!provider && (provider.url_required || provider.has_default_url);
   const urlOptional = !!provider && !provider.url_required;
 
+  /**
+   * Whether the form can be submitted. Creating needs a name, the URL when the provider requires
+   * one, and every required field; editing only needs a name, because the server keeps stored
+   * values for blank fields.
+   */
   const canSubmit = useMemo(() => {
     if (!form || !provider) return false;
     if (!form.name.trim()) return false;
@@ -285,6 +350,7 @@ export function WebhookSettings() {
     return true;
   }, [form, provider, isEdit]);
 
+  /** Build the provider settings from the form, dropping empty values and trimming text fields. */
   const buildConfigObj = (): Record<string, string> | undefined => {
     if (!form || !provider || provider.fields.length === 0) return undefined;
     const out: Record<string, string> = {};
@@ -299,6 +365,7 @@ export function WebhookSettings() {
     return out;
   };
 
+  /** Build the custom headers from the form, skipping rows without a name. */
   const buildHeaders = (): Record<string, string> => {
     if (!form) return {};
     const out: Record<string, string> = {};
@@ -306,6 +373,10 @@ export function WebhookSettings() {
     return out;
   };
 
+  /**
+   * Create or update the target. Updates only send the URL, secret, and headers when they were
+   * re-entered or replaced.
+   */
   const onSubmit = async () => {
     if (!form || !provider || saving || !canSubmit) return;
     setSaving(true);
@@ -346,6 +417,11 @@ export function WebhookSettings() {
     }
   };
 
+  /**
+   * Enable or disable a target, then reload.
+   *
+   * @param target - Target to toggle.
+   */
   const onToggle = async (target: WebhookTarget) => {
     try {
       await api.webhooks.update(target.id, { enabled: !target.enabled });
@@ -355,6 +431,11 @@ export function WebhookSettings() {
     }
   };
 
+  /**
+   * Delete a target, then reload.
+   *
+   * @param id - Id of the target to delete.
+   */
   const onDelete = async (id: string) => {
     try {
       await api.webhooks.remove(id);
@@ -365,6 +446,11 @@ export function WebhookSettings() {
     }
   };
 
+  /**
+   * Send a test alert to a target and show the outcome next to it.
+   *
+   * @param id - Id of the target to test.
+   */
   const onTest = async (id: string) => {
     setTesting(id);
     setTestResult((prev) => {
@@ -386,6 +472,12 @@ export function WebhookSettings() {
     }
   };
 
+  /**
+   * Display label for a provider type.
+   *
+   * @param type - Provider type.
+   * @returns The provider's label, or the type itself when unknown.
+   */
   const labelOf = (type: WebhookType) => providerOf(type)?.label || type;
 
   return (

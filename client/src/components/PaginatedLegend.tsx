@@ -60,13 +60,21 @@ import { useEffect, useMemo, useState, type Key, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
+/** Props for {@link PaginatedLegend}. */
 export interface PaginatedLegendProps<T> {
+  /** All legend entries. */
   items: readonly T[];
+  /** Stable React key for an entry. */
   getKey: (item: T, index: number) => Key;
+  /** Renders one entry. */
   renderItem: (item: T, index: number) => ReactNode;
+  /** Entries per page; values below 1 are treated as 1. */
   pageSize?: number;
+  /** Classes for the outer wrapper. */
   className?: string;
+  /** Classes for the list of entries. */
   listClassName?: string;
+  /** Classes for the previous/next controls. */
   controlsClassName?: string;
 }
 
@@ -93,6 +101,7 @@ export function PaginatedLegend<T>({
     setPage((current) => Math.min(current, pageCount - 1));
   }, [pageCount]);
 
+  /** Entries on the current page. */
   const pageItems = useMemo(() => {
     const start = currentPage * safePageSize;
     return items.slice(start, start + safePageSize);

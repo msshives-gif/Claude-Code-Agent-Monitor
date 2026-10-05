@@ -66,6 +66,8 @@ import type { ToolContext } from "../../types/tool-context.js";
  * tier plus an exact confirmation token (cleanup only touches stale/old rows;
  * reimport, reinstall-hooks and snapshot compression are lossless, repeatable
  * operations). Snapshot storage reads and prune dry runs are read-only.
+ *
+ * @param context - Shared tool context.
  */
 export function registerMaintenanceTools(context: ToolContext): void {
   const { api, config } = context;

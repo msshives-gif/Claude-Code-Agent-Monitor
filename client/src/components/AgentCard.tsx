@@ -73,7 +73,11 @@ import { formatDuration, timeAgo, formatModelName, pathBasename, fmtCost } from 
 
 /** Keep a compact card's history legible: at most two distinct human turns,
  * one visual row each. This intentionally preserves a title-matching first
- * request when a terse follow-up depends on it for context. */
+ * request when a terse follow-up depends on it for context.
+ *
+ * @param value - Stored prompt context, possibly empty.
+ * @returns Up to two display lines.
+ */
 function promptPreviewLines(value: string | null | undefined): string[] {
   const seen = new Set<string>();
   return String(value || "")
@@ -88,13 +92,17 @@ function promptPreviewLines(value: string | null | undefined): string[] {
     .slice(-2);
 }
 
+/** Props for {@link AgentCard}. */
 interface AgentCardProps {
+  /** Agent to show. */
   agent: Agent;
   /** Optional session data for richer main-agent rendering (model, cwd,
    *  cost). Subagent display ignores this. When omitted, the card falls
    *  back to the original minimal layout. */
   session?: Session;
+  /** Subtitle override, shown in place of the subagent type. */
   label?: string;
+  /** Click handler; defaults to opening the agent's session. */
   onClick?: () => void;
   /** `dot` shrinks the status badge to its colored dot (tooltip + screen-reader
    *  label kept) for surfaces where the layout already shows the status, such
@@ -102,6 +110,13 @@ interface AgentCardProps {
   statusDisplay?: "badge" | "dot";
 }
 
+/**
+ * Whether a card is a transient placeholder for a Codex TUI process that has not written a session
+ * id yet. Such cards are not clickable, since there is no session page to open.
+ *
+ * @param metadata - The row's JSON metadata.
+ * @returns True when `pre_identity_process` is set.
+ */
 function isTransientProcessCard(metadata: string | null | undefined): boolean {
   if (!metadata) return false;
   try {
@@ -111,6 +126,11 @@ function isTransientProcessCard(metadata: string | null | undefined): boolean {
   }
 }
 
+/**
+ * Kanban card for an agent: name, status badge, and what it is working on. Main-agent cards use the
+ * session for model, working directory, and cost; subagent cards show their type. Clicking opens
+ * the session, except for transient Codex placeholders, which have no page yet.
+ */
 export function AgentCard({
   agent,
   session,
