@@ -44,6 +44,8 @@ Resource groups list by default: `ccam sessions` ≡ `ccam sessions list` ≡ `c
 
 ## Architecture
 
+Contributor notes — module layout, the error model, and a step-by-step guide to adding a command — live in [`cli/README.md`](../cli/README.md).
+
 | Path | Role |
 | ---- | ---- |
 | `bin/ccam.js` | Executable entry point (linked by `npm link`); resolves its real path and calls `cli/index.js` |
