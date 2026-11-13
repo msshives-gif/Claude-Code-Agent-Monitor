@@ -155,7 +155,8 @@ returns the same optional field.
 | `sort_by` | string | `time` | Ordering dimension: `time`, `duration`, or `price` |
 | `sort_desc` | boolean | `true` | Use descending order; set to `false` for ascending order |
 | `sources` | string | - | Comma-separated data-source ids to include (the built-in local history is `local`; remote SSH machines use their `remote_sources.id`). Omit for all sources. Also accepted on `/api/events`, `/api/agents`, `/api/stats`, `/api/analytics`, and `/api/pricing/cost`. See [Remote Data Sources](#remote-data-sources) |
-| `providers` | string | - | Comma-separated product providers: `claude`, `codex`, or both. It composes with `sources` and is accepted by the scoped list, aggregate, facet, per-session detail, cost, and workflow routes. Codex workflow responses include its recorded `response_item` tool calls, token/model totals, and `context_compacted` events; only Claude Code's Workflow-tool run journals are unavailable for Codex. |
+| `providers` | string | - | Comma-separated stored providers: `claude`, `cursor`, and/or `codex`. Requesting `claude` also includes Cursor for the Claude-compatible product scope; requesting `cursor` directly isolates Cursor sessions. It composes with `sources` and is accepted by the scoped list, aggregate, facet, per-session detail, cost, and workflow routes. Codex workflow responses include its recorded `response_item` tool calls, token/model totals, and `context_compacted` events; only Claude Code's Workflow-tool run journals are unavailable for Codex. |
+| `provider` | string | - | Exact stored provider for this Sessions list: `claude`, `cursor`, or `codex`. It intersects the broader `providers` product scope, so a page-level selection cannot escape the product scope chosen in onboarding or Settings. |
 | `include_transient` | boolean | `false` | Opt in to local, in-memory Codex startup cards before Codex exposes a stable session ID. On `/api/sessions`, this is honored only on the first page when `status` is absent or `active`; on `/api/agents`, only on the first `status=waiting` page without `session_id`. These cards are prepended without changing durable `total`, pagination, analytics, pricing, workflows, alerts, or history. |
 | `include_task_progress` | boolean | `false` | Attach nullable `todo_summary` values for the latest top-level work item to at most the first 100 returned rows. A new Claude human turn or Codex task that emits no tracker clears older state; a turn/task ending without a final update drops unfinished state. Fully completed history remains available. Each transcript is read 32 MiB deep on first contact and incrementally after that, starting over with a fresh 32 MiB scan if it grew by more than that since the last read (state covers its newest 32 MiB), and each summary includes at most five preview tasks. Rows after the enrichment cap omit the field. |
 
@@ -376,11 +377,24 @@ responses include human turns, legacy `function_call` records, and the primary
 can render the actual command flow rather than only `wait` calls. Both providers
 also expose persisted PNG/JPEG/GIF/WebP user attachments as `image` content blocks;
 missing or expired files are simply omitted, and Codex's duplicated response/event
-user records are returned as one human turn. Cursor main sessions can return
-`prompt_history.json` turns before JSONL exists. Their messages carry stable `id`
-values; an incremental result with `refresh: true` is a latest window that clients
-merge by `id`, allowing the canonical transcript to replace the pending prompt
-without duplication.
+user records are returned as one human turn. Cursor main sessions merge the
+ordered native `store.db` conversation, including tool calls/results and the
+concrete response model, with any replies available only in JSONL.
+`prompt_history.json` fills submitted prompts that neither durable source has
+recorded yet. JSONL sources are snapshotted directly; native stores are reduced
+to a verified `store.compact.db` that reconciles the current root with
+legacy-only references and preserves every selected raw blob byte-for-byte.
+Repeated and parser-opaque references remain intact. Sources attach through
+read-only, non-creating SQLite URIs, and a per-session lock serializes live and
+worker installs. Legacy-only stores migrate in isolated batches of at most four
+per sync; an empty scheduled scan waits five minutes before checking again.
+Stores are removed only after root containment and raw verification; an unchanged
+source stops retrying after five failures in one process and remains on disk. Prompt
+history is read from the live Cursor chat directory only. Messages carry stable `id` values, and an
+incremental result with `refresh: true` is a latest window that clients merge by
+`id`. A Cursor `/resume` shell ID is also accepted here and resolves to the
+canonical conversation before the transcript is read. The response does not
+include the canonical ID; the old ID remains accepted.
 
 #### Read Persisted Transcript Image
 
@@ -973,6 +987,20 @@ curl -X DELETE http://localhost:4820/api/pricing/gpt-5.1-codex
 
 ---
 
+#### Calculate Cost
+
+```http
+GET /api/pricing/cost
+GET /api/pricing/cost/:sessionId
+```
+
+The response contains `total_cost`, `breakdown`, `daily_costs`, feature surcharges, and
+`unpriced_models`. Each unpriced entry includes `provider` (`claude`, `cursor`, or `codex`) so a
+client can link the missing rate to the correct Settings editor; its tokens contribute $0 until a
+matching rule exists.
+
+---
+
 ### Workflows
 
 #### Aggregate Workflow Intelligence
@@ -1086,6 +1114,8 @@ The `/api/remote-sources/*` namespace configures **remote SSH machines** the das
 ```
 
 `ssh_port`, `identity_file`, `remote_home`, `remote_codex_home`, `claude_status`, `codex_status`, `last_error`, `last_sync_at`, and `last_sync_counts` are nullable. `remote_home` and `remote_codex_home` are the optional **Remote Claude home** and **Remote Codex home** overrides; send `null` on `PATCH` to return either provider to its default remote home. `status` is one of `idle`, `syncing`, `ok`, `error`; provider statuses additionally use `unavailable` when that CLI's history directory is absent.
+
+During `syncing`, `last_error` (and the WebSocket `error` field) retains the most recent failure, so automatic retries do not hide the diagnostic. A completed failure replaces it; a successful sync clears it. Last successful import counts and timestamp remain unchanged on failure.
 
 #### List Remote Sources
 
@@ -1386,9 +1416,9 @@ whichever of the live file and the snapshot is more complete.
   "total_bytes": 734003200,
   "total_files": 1840,
   "roots": {
-    "claude": { "path": "/Users/me/.claude/agent-dashboard/transcripts", "files": 1702, "bytes": 692060160, "compressed_files": 1210, "compressed_bytes": 211812352, "sessions": 512 },
-    "codex": { "path": "/Users/me/.claude/agent-dashboard/codex-transcripts", "files": 96, "bytes": 31457280, "compressed_files": 0, "compressed_bytes": 0, "sessions": 96 },
-    "cursor": { "path": "/Users/me/.claude/agent-dashboard/cursor-transcripts", "files": 42, "bytes": 10485760, "compressed_files": 18, "compressed_bytes": 2097152, "sessions": 21 }
+    "claude": { "path": "/Users/me/.claude/agent-dashboard/transcripts", "files": 1702, "bytes": 692060160, "transcript_files": 1702, "compressed_files": 1210, "compressed_bytes": 211812352, "database_files": 0, "database_bytes": 0, "compact_database_files": 0, "compression_supported": true, "sessions": 512 },
+    "codex": { "path": "/Users/me/.claude/agent-dashboard/codex-transcripts", "files": 96, "bytes": 31457280, "transcript_files": 96, "compressed_files": 0, "compressed_bytes": 0, "database_files": 0, "database_bytes": 0, "compact_database_files": 0, "compression_supported": false, "sessions": 96 },
+    "cursor": { "path": "/Users/me/.claude/agent-dashboard/cursor-transcripts", "files": 42, "bytes": 10485760, "transcript_files": 21, "compressed_files": 18, "compressed_bytes": 2097152, "database_files": 21, "database_bytes": 3145728, "compact_database_files": 21, "compression_supported": true, "sessions": 21 }
   },
   "policy": { "compress": true, "max_age_days": null, "max_bytes": null }
 }
@@ -1399,6 +1429,10 @@ original is gone and that has been idle for 24 h — the same lossless pass the
 server runs every 6 h. Each archive is decompressed and matched (SHA-256 +
 length) before the plain file is removed; a provider whose source tree is
 missing or unreadable is reported in `skipped_roots` and left untouched.
+`compressed_files` is therefore a share of `transcript_files`, not every file
+in a provider root. Cursor `database_files` are compact current-root stores;
+`compact_database_files < database_files` means a verified legacy migration is
+still pending.
 
 `POST /api/settings/snapshots/prune` takes at least one of `max_age_days`,
 `max_bytes` (bytes or a size such as `"5GB"`), and `orphans: true`. It selects
@@ -1430,7 +1464,7 @@ rows. Malformed JSON returns `400 INVALID_JSON`, an invalid bundle returns
 
 ### Agent Config
 
-The `/api/cc-config/*` namespace powers the Claude Config Explorer page. All read endpoints are pure file reads under `CLAUDE_HOME` and the project's `.claude/` dir; requested files and allowed roots are canonicalized with `realpath`, so a symlink cannot escape those roots. Mutations are limited to low-risk text-file artifacts (skills, subagents, slash commands, output styles, memory) and always create a timestamped backup before writing. Plugins, MCP servers, hooks-in-settings, and live `settings.json` files stay read-only because they are written concurrently by the running Claude Code CLI.
+The `/api/cc-config/*` namespace powers the Claude Config Explorer page. Claude home resolves as `CLAUDE_HOME || CLAUDE_CONFIG_DIR || ~/.claude`; the separate global state file is `$CLAUDE_CONFIG_DIR/.claude.json` when that variable is set, otherwise `~/.claude.json`. All read endpoints are pure file reads under the resolved Claude home and the project's `.claude/` dir; requested files and allowed roots are canonicalized with `realpath`, so a symlink cannot escape those roots. Mutations are limited to low-risk text-file artifacts (skills, subagents, slash commands, output styles, memory) and always create a timestamped backup before writing. Plugins, MCP servers, hooks-in-settings, and live `settings.json` files stay read-only because they are written concurrently by the running Claude Code CLI.
 
 ```http
 GET /api/cc-config/overview
@@ -2003,6 +2037,10 @@ await fetch('http://localhost:4820/api/pricing/my-custom-model', {
 ```
 
 ---
+
+## Remote Source Import Ownership
+
+Successful `POST /api/remote-sources/:id/sync` responses and successful entries in `POST /api/remote-sources/sync-all` include `sessions_excluded` (unique conflicting native IDs), `subagent_files_excluded`, and `excluded_ids` (at most 50 IDs), alongside the existing import counters. Successful provider-specific results carry the same counters; skipped, unavailable, and failed results report their status/reason or error instead. Sessions belonging to another source or provider are excluded from snapshots, events, tokens, and source tagging; a copied local session remains local and cannot be purged through the remote source. Ownership is checked again when writing after asynchronous transcript or workflow parsing. The local periodic Claude sweep also rechecks after its synchronous import before snapshotting or publishing a change. Failed Claude session transactions do not publish snapshots or workflow journals. Codex imports reject conflicting filename, metadata or cursor identities before ingesting; metadata-free legacy transcripts retain their filename identity fallback. Local Claude directory imports also exclude other providers before publishing snapshots or workflows. New remote rows record source and `metadata.origin_host` atomically. The `collector-v2` origin mark hashes the configured SSH destination, port, identity-file path and both provider history roots. After source deletion without purge, only an exact mark permits re-adoption. Legacy host-only marks are retained but do not authorize re-adoption; an existing registered owner can refresh its mark during a normal import. Cached rows with missing or empty metadata receive an object containing the mark during tagging. Nonempty malformed or nonobject metadata is preserved and cannot authorize local history imports. The sessions metadata PATCH replaces metadata; explicit replacement can remove a provenance mark, so this guarantee applies to normal import and source deletion flows. Destination case and an unspecified port are preserved because SSH usernames are case-sensitive and SSH configuration can supply a port. This identifies the configured collector, not key contents, resolved SSH configuration or the machine where a copied session originally ran. Existing timer and SSH transport behavior are unchanged.
 
 ## Summary
 

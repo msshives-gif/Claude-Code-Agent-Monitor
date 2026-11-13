@@ -64,9 +64,11 @@ graph TB
 ```
 
 **Database Location:**
-- **Canonical (default):** `~/.claude/agent-dashboard/dashboard.db` — shared by `npm start`, `npm run dev`, Docker (bind mount), and the desktop app when it uses the same data dir
+- **Canonical (default):** `~/.claude/agent-dashboard/dashboard.db` without `CLAUDE_CONFIG_DIR`. With a relocated config, new dashboard data uses machine-local app data: `%LOCALAPPDATA%/Claude Code Monitor/data` on Windows, `~/Library/Application Support/Claude Code Monitor/data` on macOS, or `$XDG_DATA_HOME/claude-code-monitor/data` (fallback `~/.local/share/claude-code-monitor/data`) on Linux. An existing machine-local directory takes precedence; otherwise an existing `<CLAUDE_HOME>/agent-dashboard` or `~/.claude/agent-dashboard` is reused, in that order, to keep its history, snapshots, VAPID keys, and import marker together.
 - **Override:** set `DASHBOARD_DATA_DIR` (directory) or `DASHBOARD_DB_PATH` (file path) for tests or custom deployments
+- **Synced Claude config:** `CLAUDE_CONFIG_DIR` never places new dashboard data in that synced folder. If only `CLAUDE_HOME` points to a synced folder, set `DASHBOARD_DATA_DIR` to a machine-local directory before launching. Do not sync a live SQLite database or its WAL files.
 - **Legacy:** repo-local `./data/dashboard.db` is migrated into the canonical location on first launch (see `server/db.js`)
+- **Live ownership:** `<database-directory>/.agent-dashboard-owners/<pid>.json` — one liveness marker per server process, shared independently of `CLAUDE_HOME` and keyed to `DASHBOARD_DB_PATH` when set; startup repair proceeds only when these markers prove a sole live owner
 
 ---
 
@@ -175,7 +177,7 @@ Tracks Claude Code, Cursor, and Codex sessions (one per CLI invocation or backgr
 
 Session rows also retain optional `repo_remote_url` metadata: the first sanitized remote supplied by a collector wins. URL userinfo, query strings, and fragments are removed; malformed URLs are discarded before session or event persistence.
 
-> **Cursor:** Native rows are first discovered from `~/.cursor/chats/*/<session>/meta.json` and stored with `provider = 'cursor'` even while `transcript_path` is null. Prompt history updates that row immediately; the later `~/.cursor/projects/*/agent-transcripts` path and dashboard-owned snapshot remain separately resolvable, so conversation history survives source cleanup and pricing uses only the Cursor rate card.
+> **Cursor:** Native rows are first discovered from `~/.cursor/chats/*/<session>/meta.json` and stored with `provider = 'cursor'` even while `transcript_path` is null. Prompt history updates that row immediately; later JSONL and compact native-store snapshots remain separately resolvable. A compact store reconciles the current root with legacy-only references and preserves the selected raw blobs byte-for-byte while excluding unreachable history. Source databases attach read-only, and a per-session filesystem lock serializes live snapshots with worker migration. A heap-limited worker migrates at most four legacy-only stores per sync; an empty scheduled scan backs off for five minutes, while same-stamp failures stop after five attempts in one process and leave the source in place. A `/resume` shell ID may become an alias of the transcript-bearing canonical row, so old links work while conversation, lifecycle, and cost stay unified.
 
 ```sql
 CREATE TABLE sessions (
@@ -460,6 +462,21 @@ Standard rates and intro rates are edited independently: the pricing update path
 
 ---
 
+### cursor_session_aliases, cursor_generations, cursor_hook_receipts, cursor_turn_usage, cursor_repair_state, cursor_repair_progress
+
+These internal Cursor tables make resumed turns and completion usage durable:
+
+- `cursor_generations(generation_id PRIMARY KEY, session_id, has_transcript, updated_at)` binds Cursor's stable turn identity to the canonical session. The transcript-bearing row wins when `/resume` emits different shell and conversation IDs.
+- `cursor_session_aliases(alias_session_id PRIMARY KEY, canonical_session_id, generation_id, created_at)` preserves stale URLs after dependent rows have been moved transactionally.
+- `cursor_hook_receipts(receipt_key PRIMARY KEY, session_id, hook_type, generation_id, created_at)` suppresses exact repeated completion deliveries while retaining different status, text, or token payloads.
+- `cursor_turn_usage(generation_id PRIMARY KEY, session_id, model, speed, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, updated_at)` stores one authoritative token snapshot per generation. Generation-less fallback keys are scoped to their session, and partial later hooks preserve fields already reported for the same turn. Session `token_usage` buckets are rebuilt from these rows, preventing a resumed shell and canonical conversation from charging the same turn twice.
+- `cursor_repair_state(repair_key PRIMARY KEY, completed_at)` records one-time historical repairs, including alias correlation, usage backfill, response-event cleanup, and exact Stop deduplication.
+- `cursor_repair_progress(repair_key PRIMARY KEY, phase, last_event_id, merged_count, removed_count, usage_count, updated_at)` checkpoints that repair between bounded transactions. Startup yields between batches so live hook ingestion remains responsive; the row is removed only after the completion marker is committed.
+
+All session references cascade on delete. Alias resolution is applied by the session and pricing routes rather than exposing duplicate session rows.
+
+---
+
 ### cursor_model_pricing
 
 Dedicated Cursor rate card for sessions stored with `provider = 'cursor'`. Keeping it separate prevents Cursor-native and routed third-party models from accidentally matching Anthropic or OpenAI/Codex rules.
@@ -476,7 +493,7 @@ CREATE TABLE cursor_model_pricing (
 );
 ```
 
-Defaults mirror Cursor's published four-column USD-per-million-token card for Cursor Grok 4.6/4.5, Composer 2.5, and the supported Anthropic, Google, Z.ai, OpenAI, Moonshot, and Meta models. Fast Cursor models have more-specific patterns; `speed = 'fast'` also tries the corresponding `-fast` pattern. Rows are editable through Settings and `/api/pricing/cursor`, and are included in export/restore bundles beginning with bundle version 3.
+Defaults mirror Cursor's published four-column USD-per-million-token card for Cursor Grok 4.7/4.6/4.5, Composer 2.5, and the supported Anthropic, Google, Z.ai, OpenAI, Moonshot, and Meta models. Fast Cursor models have more-specific patterns; `speed = 'fast'` also tries the corresponding `-fast` pattern. Rows are editable through Settings and `/api/pricing/cursor`, and are included in export/restore bundles beginning with bundle version 3. Cost figures are API-equivalent estimates, not Cursor subscription charges.
 
 ---
 
@@ -521,6 +538,18 @@ Durable append cursor for every Codex `rollout-*.jsonl`. It stores the byte offs
 Independent durable byte cursor for each Codex rollout's `response_item` records. It is transactionally advanced only after every newly discovered invocation is stored as a `codex_tool_call` event with a normalized display category and its raw tool name. This gives the Workflows tool flow and session drill-in an exact, once-only record of Codex commands, edits, reads, searches, MCP calls, and delegation tools while the separate `codex_ingest_state` cursor remains responsible for messages, lifecycle state, and cumulative token deltas. Existing rollout history is safely backfilled without replaying token accounting or changing historical session freshness.
 
 ---
+
+### monitor_event_count and monitor_session_event_counts
+
+Internal derived tables, atomically rebuilt from `events` at startup. Imports never copy them. The global singleton has `singleton = 1`, nonnegative `total`, `trusted` (0/1), and the SQLite `schema_version` captured after all five event triggers are installed.
+
+`monitor_session_event_counts` is a `WITHOUT ROWID` table with non-NULL `session_id` as its primary key and nonnegative `total`. It includes orphan IDs; NULL-ID events are represented only by the global total. Scoped statistics sum session buckets through current owning-session predicates, preserving NULL/orphan exclusions and source/provider changes. Event-list totals with only parsed session/source/provider filters reuse the original WHERE and bindings against buckets. Session-only requests include orphan IDs. Type, tool, agent, text and date predicates keep their original COUNT; invalid derived state selects that same fallback within the worker snapshot. Eligibility is decided from parsed filters, not a regex over arbitrary SQL. Event-page rows, probe fallback and total execute in one worker read transaction, so a concurrent commit cannot mix an older page with a newer count. In-memory databases use the same connection in a transaction.
+
+INSERT/DELETE maintain both tables; UPDATE of `session_id` transfers the bucket. PK conflicts (including rowid aliases) conservatively taint while preserving SQLite REPLACE/IGNORE semantics. Missing/underflow old buckets taint before any partial deletion/transfer update. Tainted maintenance is skipped. All triggers work with `trusted_schema=OFF`.
+
+Read-only callers require canonical definitions for both tables/all triggers, a valid global singleton/trust flag, an unchanged persisted schema version, and no extra UNIQUE indexes on events. Missing/altered objects and any ordinary DDL, even identical trigger restoration, select legacy COUNT. Workers never migrate. Startup repairs incomplete state atomically; extra UNIQUE indexes disable the shortcut. A failed repair disables only its own triggers when restored state is invalid; cleanup failure is reported. The deferred token-repair snapshot preserves an already admitted counter version inside its specific event-preserving transaction, never blessing invalid history.
+
+Direct derived-row edits or deliberate manual schema-cookie resets are outside automatic detection. `ensureGlobalEventCount(db, { rebuild: true })` rebuilds both derived tables without changing original event/token rows. Backfill duration depends on storage and corpus size.
 
 ### remote_sources
 

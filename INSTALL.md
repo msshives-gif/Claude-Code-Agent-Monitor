@@ -63,7 +63,7 @@ This starts two processes concurrently:
 Open **http://localhost:5173** in your browser.
 
 > [!TIP]
-> When you run the dashboard directly on the host with `npm run dev` or `npm start`, the server automatically writes the Claude Code hook configuration to `~/.claude/settings.json`. If you run the dashboard in Docker or Podman, install hooks from the host with `npm run install-hooks` after the container is up.
+> When you run the dashboard directly on the host with `npm run dev` or `npm start`, the server automatically writes the Claude Code hook configuration to `~/.claude/settings.json`. If you run the dashboard in Docker or Podman, install hooks from the host with `npm run install-hooks -- --both --dashboard-port 4820` after the container is up. Replace `4820` if you publish a different host port.
 
 ---
 
@@ -136,6 +136,19 @@ Verify it worked by opening the **Analytics** page and checking that
 per-model token totals and estimated cost look correct. Full walkthrough
 with per-OS archive commands in
 [SETUP.md → Importing existing Claude Code history](./SETUP.md#importing-existing-claude-code-history).
+
+### Safeguard usage and cost before an upgrade
+
+Before an upgrade that may recount usage, capture a read-only snapshot, upgrade and restart CCAM, let startup maintenance finish, then compare a second snapshot:
+
+```bash
+node scripts/cost-snapshot.js snapshot --out before.tsv
+# Upgrade CCAM, restart it, and let startup maintenance finish.
+node scripts/cost-snapshot.js snapshot --out after.tsv
+node scripts/cost-snapshot.js compare before.tsv after.tsv --fail-on-local-change
+```
+
+Write each snapshot to a new path and keep the TSV files private because they contain session identifiers and ownership metadata. The guard fails when a local session's compared usage or cost changes, ownership moves to or from local, or a local session disappears; remote and newly added sessions are reported separately.
 
 <p align="center">
   <img src="images/import.png" alt="Import History UI" width="100%">
@@ -408,7 +421,10 @@ read-only at `/home/node/.claude` and `/home/node/.codex`. Named volumes retain
 SQLite and dashboard-owned config.
 
 > [!IMPORTANT]
-> Install hooks on the host. For remote cloud hooks, use
+> Install hooks on the host with
+> `npm run install-hooks -- --both --dashboard-port 4820`; the explicit target
+> is required because the read-only container cannot publish a host-visible
+> discovery entry. For remote cloud hooks, use
 > `CCAM_DASHBOARD_URL=https://...` and `CCAM_HOOK_TOKEN`; non-loopback targets
 > require HTTPS. See [`DEPLOYMENT.md`](DEPLOYMENT.md) for the full stack,
 > Kubernetes, Terraform, backup, restore, and rollback.

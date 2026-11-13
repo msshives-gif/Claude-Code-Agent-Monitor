@@ -33,16 +33,36 @@ const tags = [];
 
 const SNAPSHOT_ROOT_SUMMARY = {
   type: "object",
-  required: ["path", "files", "bytes", "compressed_files", "compressed_bytes", "sessions"],
+  required: [
+    "path",
+    "files",
+    "bytes",
+    "transcript_files",
+    "compressed_files",
+    "compressed_bytes",
+    "database_files",
+    "database_bytes",
+    "compact_database_files",
+    "compression_supported",
+    "sessions",
+  ],
   properties: {
     path: { type: "string", description: "Absolute snapshot directory." },
     files: { type: "integer" },
     bytes: { type: "integer" },
+    transcript_files: { type: "integer", description: "Plain or gzip JSONL snapshots." },
     compressed_files: {
       type: "integer",
       description: "Files stored as verified `.jsonl.gz` (original transcript gone).",
     },
     compressed_bytes: { type: "integer" },
+    database_files: { type: "integer", description: "Cursor native-store snapshots." },
+    database_bytes: { type: "integer" },
+    compact_database_files: {
+      type: "integer",
+      description: "Cursor stores migrated to the current-root-only compact format.",
+    },
+    compression_supported: { type: "boolean" },
     sessions: { type: "integer" },
   },
 };
@@ -485,6 +505,23 @@ const schemas = {
         type: "integer",
         description: "Number of imported sessions stamped with this source's id.",
         example: 50,
+      },
+      sessions_excluded: {
+        type: "integer",
+        description: "Unique session ids excluded because another source or provider owns them.",
+        example: 2,
+      },
+      subagent_files_excluded: {
+        type: "integer",
+        description:
+          "Subagent files excluded because their parent session belongs to another source or provider.",
+        example: 3,
+      },
+      excluded_ids: {
+        type: "array",
+        maxItems: 50,
+        items: { type: "string" },
+        description: "Up to 50 excluded native session ids; sessions_excluded is the full count.",
       },
       providers: {
         type: "object",

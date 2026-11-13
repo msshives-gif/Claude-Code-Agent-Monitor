@@ -86,9 +86,9 @@ Monitor Claude Code, Cursor, and Codex sessions in real time. Follow conversatio
 CCAM combines native hooks with provider-aware transcript discovery. It stays local by default and turns agent activity into a searchable, durable operational record.
 
 - **One live fleet:** Claude Code, Cursor, and Codex sessions appear in the same Dashboard, Sessions, Activity Feed, and Kanban views.
-- **Complete conversations:** Rendered Markdown, highlighted code, tool calls, command output, queued prompts, attachments, and provider-native titles.
+- **Complete conversations:** Rendered Markdown, highlighted code, tool calls, command output, queued prompts, attachments, and provider-native titles; Cursor adopts a generated title only when ingestion metadata proves the current fallback is CCAM-owned.
 - **Agent orchestration:** Parent-child trees, background agents, dynamic workflow runs, tool-flow graphs, concurrency, delegation, and compaction analysis.
-- **Cost and usage:** Model-aware tokens, configurable pricing, introductory rates, subagent costs, trends, and budget-friendly CLI/MCP access.
+- **Cost and usage:** API-equivalent estimate details live behind the cost label's info icon; Cursor usage is counted once per generation against the concrete native model.
 - **Run and resume agents:** Launch Claude Code or Codex, stream output, send follow-ups, resume previous work, and reattach to background runs.
 - **Configuration visibility:** Inspect Claude Code and Codex settings, skills, hooks, MCP servers, rules, plugins, memory, profiles, and instructions.
 - **Operational safety:** Loopback binding, optional authentication, guarded mutations, backup-first edits, bounded uploads, and no automatic self-update.
@@ -134,6 +134,17 @@ npm run dev
 Open [http://localhost:5173](http://localhost:5173). `npm run setup` installs the root, client, and VS Code extension dependencies, builds the MCP server, and links the `ccam` CLI. On first launch, follow the dashboard prompt to install hooks for the providers you select, or run `npm run install-hooks` manually.
 
 For production, run `npm run build && npm start` and open [http://localhost:4820](http://localhost:4820).
+
+Before an upgrade that may recount usage, capture and compare read-only cost snapshots:
+
+```bash
+node scripts/cost-snapshot.js snapshot --out before.tsv
+# Upgrade and restart CCAM, then let startup maintenance finish.
+node scripts/cost-snapshot.js snapshot --out after.tsv
+node scripts/cost-snapshot.js compare before.tsv after.tsv --fail-on-local-change
+```
+
+Keep these TSV files private because they contain session identifiers and ownership metadata. The guard fails when an existing local session's usage or cost changes, ownership moves to or from local, or a local session disappears; remote and newly added sessions are reported separately. See the [complete upgrade safeguard](./README-EN.md#cost-snapshots-before-an-upgrade) for the exact compared fields.
 
 ## Choose how to run CCAM
 

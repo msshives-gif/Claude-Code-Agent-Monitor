@@ -314,7 +314,7 @@ The dashboard covers the complete local agent lifecycle. Detailed operational co
 | **Task Progress** | Owner-aware progress from Claude task tools, legacy `TodoWrite`, and Codex `update_plan`. Compact previews appear on cards and rows; Session Detail adds status segments, active work, owners, and 10-row paging. New top-level work clears stale unfinished state, while completed history remains. |
 | **Dashboard** | Persistent **Monitor** and **Health** tabs combine fleet totals, active hierarchies, recent activity, weighted success/cache/error/heap health, storage, tools, models, subagent effectiveness, and compaction metrics. Health refreshes every 5 seconds from `/api/settings/info` and `/api/workflows`. |
 | **Kanban Board** | Agent columns cover Working, Waiting, Completed, and Error; session columns add Active and Abandoned. Cards page 10 at a time, subscribe only to the active WebSocket view, preserve full titles, and explain waiting reasons such as permission input, turn completion, prompt idle, or interruption. |
-| **Sessions** | Searchable, filterable, server-paginated history with visible-page cost calculation and a temporary in-memory Codex startup row. Search covers `id`, `name`, and `cwd` with a 300 ms debounce. Names resolve from explicit title, AI title, then the first meaningful user prompt. |
+| **Sessions** | Searchable, filterable, server-paginated history with visible-page cost calculation and a temporary in-memory Codex startup row. Its provider selector narrows to Claude Code, Cursor, or Codex while respecting the product scope chosen in onboarding or Settings. Search covers `id`, `name`, and `cwd` with a 300 ms debounce. Names resolve from explicit title, AI title, then the first meaningful user prompt. Cursor replaces a temporary first-prompt fallback with the native generated title only when ingestion metadata proves CCAM owns the current name; manual and ambiguous legacy names remain unchanged. |
 | **Session Detail** | Live stats, active work, tool usage, subagents, tokens, hierarchy, filtered event timelines, `tool_use_id` grouping, and tool-specific renderers. Conversation view renders queued turns, system notices, Markdown, highlighted code, and styled tools; waiting banners show the reason and elapsed time. |
 | **Activity Feed** | Pausable real-time events with shared filters, server pagination, grouping, project/session/subagent origin, session links, and consistent Claude/Codex status badges. |
 | **Analytics** | Model tokens, tool frequency, Sunday-aligned activity heatmaps, session trends, connection state, layout-matched loading skeletons, and paged long legends. |
@@ -326,9 +326,9 @@ The dashboard covers the complete local agent lifecycle. Detailed operational co
 | **Subagent Hierarchy** | Collapsible parent-child trees on Dashboard and Session Detail auto-expand while children are active. |
 | **Background Agents** | Background subagents remain tracked without premature completion. |
 | **Subagent Tool Attribution** | `SubagentStop` and startup scans import per-subagent JSONL tools, pair results by `tool_use_id`, deduplicate, merge matching live rows within 30 seconds, and reconstruct true nested parents from spawned-child IDs. Reparenting is additive and triggers UI refresh even when no row is inserted. |
-| **Cost Tracking** | Configurable per-model and per-session pricing supports dated introductory rates, editable promo categories, each subagent's own cost, and compaction-safe totals. Transcript reads use cached incremental byte offsets. |
+| **Cost Tracking** | API-equivalent estimates—not subscription charges—use configurable per-model rates, including Cursor's concrete native model and one usage record per generation. An accessible info icon beside each Dashboard and Analytics cost label holds the selected scope and every missing rate; the Analytics value tooltip contains only the exact amount, and Settings keeps the same coverage details inline. |
 | **Transcript Cache** | Incremental JSONL parsing extracts tokens, compactions, API errors, turn durations, thinking, and usage metadata; full parses repair legacy duplicates while tail parses stay append-only. Arrays cap at `TRANSCRIPT_CACHE_MAX_ARRAY_LEN`, default `1000`, and entries store only file metadata plus the parsed result. |
-| **Transcript Snapshot Retention** | Durable Claude, Codex, and Cursor snapshots preserve the most complete conversation. Missing-source Claude and Cursor copies gzip after verified round-trip; purge removes snapshots; optional age/size caps can prune the only old copy after a Settings dry-run preview. |
+| **Transcript Snapshot Retention** | Durable Claude, Codex, and Cursor snapshots preserve the most complete conversation. Cursor native-store snapshots retain the live root, legacy-only references, and their exact raw blobs while excluding unreachable history. An isolated worker migrates at most four legacy-only stores per sync; source stores open read-only, a per-session lock serializes installs, and an empty scheduled scan waits five minutes before checking again. After five failures for the same source stamp in one process, the file remains for later repair. Only eligible missing-source Claude/Cursor JSONL copies gzip after a verified round-trip; Codex snapshots stay plain. Purge removes snapshots, and optional age/size caps can prune the only old copy after a Settings dry-run preview. |
 | **Notifications** | VAPID Web Push delivers configured events in background or closed-browser states, with macOS audio support and subscription controls. |
 | **Alerts** | Settings provides Rules, Channels, and Activity for event-pattern, inactivity, stuck-agent, and token alerts. Event rules run after ingestion; time rules sweep every 60 seconds. Persisted alerts use per-rule/session cooldown, default 300 seconds, WebSocket delivery, acknowledgement, and scoped webhook fan-out to 14 named providers or generic signed JSON with masked secrets, timeouts, and bounded retries. |
 | **Update Notifier** | A non-blocking scheduled `git fetch` compares the checkout with the canonical remote, then shows the exact update command in the modal, sidebar, and terminal. CCAM never pulls or restarts itself. |
@@ -338,7 +338,7 @@ The dashboard covers the complete local agent lifecycle. Detailed operational co
 | **MCP Server (Local)** | Three transports, stdio, HTTP+SSE, and REPL, expose 103 typed tools across 16 modules. One validated catalog enforces localhost or HTTPS targets, bearer-token rules, redirect rejection, mutation gates, 50 MiB per-file and 100 MiB per-call uploads, 10 MiB binary responses, and 25 MiB restores. |
 | **Workflows** | Eleven D3 sections cover orchestration, tool flow, collaboration, effectiveness, patterns, delegation, errors, concurrency, complexity, compaction, and session drill-in. Localized explanatory tooltips, cross-filtering, JSON export, 3-second-debounced live refresh, and journal-reconstructed dynamic runs preserve per-agent phase, token, tool, duration, prompt, and result detail. |
 | **Compaction Tracking** | Transcript scans create zero-duration compaction agents/events, repair legacy negative durations, backfill old sessions, and periodically inspect only active sessions through cached `sessions.transcript_path` values. |
-| **Subsessions/Resumed Sessions** | New events reactivate resumed or orphaned sessions; a sweep every quarter of `DASHBOARD_STALE_MINUTES`, bounded to 60 seconds through 5 minutes, catches abandoned sessions. |
+| **Subsessions/Resumed Sessions** | Cursor `generation_id` correlation joins a `/resume` shell session to its canonical conversation, redirects stale session links, and deduplicates repeated completion hooks. Other new events reactivate resumed or orphaned sessions; the bounded stale sweep still catches abandoned sessions. |
 | **Pre-Existing Session Detection** | Startup import marks recently modified transcripts active, and later Stop events reactivate imported completed or abandoned sessions before updating them. |
 | **Continuous Project Sync** | An immediate startup sweep, debounced filesystem watcher, and `DASHBOARD_SESSION_SYNC_MS` poll, default 30 seconds, share an mtime cache and coalesced scan. Only new or advanced files reparse, with Linux-safe watcher scope and live session broadcasts. |
 | **Remote Data Sources** | SSH sources independently mirror Claude and Codex homes through `scp` or WSL `tar`, tag `sessions.source`, reconcile lifecycle, and remain healthy if either provider works. Polling defaults to 15 seconds; stale fallback affects only the failed provider. Credentials remain with host SSH. |
@@ -385,13 +385,15 @@ npm run setup
 npm run install-hooks
 ```
 
-Choose **Claude Code**, **Codex (beta)**, or both with the arrow keys, Space, and Enter. Claude hooks are stored in `~/.claude/settings.json` and Codex hooks in `~/.codex/hooks.json`. Reinstalling replaces only CCAM entries and preserves unrelated hooks; the same action is available under **Settings → Hook Configuration**.
+Choose **Claude Code**, **Codex (beta)**, or both with the arrow keys, Space, and Enter. By default, Claude hooks are stored in `~/.claude/settings.json` and Codex hooks in `~/.codex/hooks.json`. Reinstalling replaces only CCAM entries and preserves unrelated hooks; the same action is available under **Settings → Hook Configuration**.
+
+Claude home follows `CLAUDE_HOME || CLAUDE_CONFIG_DIR || ~/.claude`, so hooks and transcripts use the relocated directory. With `CLAUDE_CONFIG_DIR`, Agent Config reads `$CLAUDE_CONFIG_DIR/.claude.json`. Discovery uses machine-local app data whenever Claude home is relocated. For dashboard data, an existing machine-local directory wins; otherwise an existing `<CLAUDE_HOME>/agent-dashboard` or `~/.claude/agent-dashboard` is reused, and new data uses machine-local app data. `DASHBOARD_DATA_DIR` can select another local path. `CCAM_NO_AUTO_HOOKS=1` skips startup installation and leaves legacy entries unchanged; manual installation still works, and a legacy entry with a missing handler should be reinstalled or removed. Hook paths installed by the current version exit silently and show as uninstalled if their handler disappears. Packaged desktop Settings saves home overrides in Electron `userData/.env` when it owns the server; an adopted server uses its own environment file. Development keeps the repository `.env`.
 
 On first launch, CCAM checks only the providers selected for the current data scope and offers to install any missing hooks. A failed readiness check falls back to manual setup instead of blocking the dashboard.
 
 Provider discovery continues after setup:
 
-- **Claude Code and Cursor:** Claude hooks feed live events. Cursor needs no hooks; selecting Claude Code also watches `~/.cursor/chats` and `~/.cursor/projects/*/agent-transcripts`, snapshots conversations before Cursor cleanup, and honors `DASHBOARD_CURSOR_HOME`.
+- **Claude Code and Cursor:** Claude hooks feed live events. CCAM automatically merges its `stop` and `afterAgentResponse` commands into `~/.cursor/hooks.json` without replacing or splitting unrelated command chains; run `npm run install-cursor-hooks` to repair them manually. Cursor's native chat store and transcript watcher remain the offline fallback, correlate `/resume` shell IDs with canonical conversations, merge native store, JSONL, and alias prompt history, adopt generated titles only for ingestion-owned names, resolve `default` only when a response match is found anywhere in the alias family's native stores, and honor `DASHBOARD_CURSOR_HOME`.
 - **Codex:** hooks and incremental `~/.codex/sessions` rollout watching keep lifecycle, prompts, titles, tools, tokens, costs, compactions, conversations, and WebSocket state current. Bad files retry in isolation; exact rollout/process matching prevents phantom active cards; native `/rename` titles and cursor-paged conversation history stay live.
 - **Both:** cards retain the latest two distinct human prompts, render persisted image attachments, and deduplicate repeated Codex responses. Codex-only scope hides Claude-only Dynamic Workflow journals.
 
@@ -479,7 +481,7 @@ npm run docker:full:up
 All host ports bind to loopback by default: dashboard `4820`, MCP `8819`, Nginx `8080`, Prometheus `9090`, and Grafana `3000`. Claude and Codex homes are mounted read-only; named volumes persist SQLite and dashboard-owned configuration. Nginx proxies the UI, authenticated REST API, and WebSocket, while hooks, metrics, and MCP stay blocked at the edge unless explicitly enabled. The optional `agent-runtime` Docker target adds pinned Claude Code and Codex CLIs for container-native Run Agent workflows.
 
 > [!IMPORTANT]
-> Install Claude Code/Codex hooks on the host after the container starts. For remote cloud hooks, set `CCAM_DASHBOARD_URL=https://...` and a separate `CCAM_HOOK_TOKEN`; non-loopback hook URLs require HTTPS. See [DEPLOYMENT.md](DEPLOYMENT.md).
+> Install Claude Code/Codex hooks on the host after the container starts with `npm run install-hooks -- --both --dashboard-port 4820` (replace `4820` for a custom published host port). The installer embeds this verified target because the read-only container cannot publish a host-visible discovery entry. Existing Compose users should rerun this command once after upgrading so older dashboard-owned hook entries receive the explicit target. For remote cloud hooks, set `CCAM_DASHBOARD_URL=https://...` and a separate `CCAM_HOOK_TOKEN`; non-loopback hook URLs require HTTPS. See [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ---
 
@@ -514,7 +516,7 @@ sequenceDiagram
 ### Hook Lifecycle
 
 1. **Claude Code** emits session, prompt, tool, notification, subagent, turn, and exit hooks.
-2. **`scripts/hook-handler.js`** reads each event from stdin and discovers live dashboards through `~/.claude/.agent-dashboard.json` or `CLAUDE_DASHBOARD_PORT`. It sends once per unique SQLite data directory, choosing the lowest port for duplicate listeners while still feeding dashboards with separate databases. Delivery is fail-safe: each target is isolated and the handler exits within 5 seconds.
+2. **`scripts/hook-handler.js`** reads each event from stdin and targets `CCAM_DASHBOARD_URL` first, then an explicit `CLAUDE_DASHBOARD_PORT`, then live dashboards in the local `.agent-dashboard.json` registry. For a relocated Claude home selected by either `CLAUDE_HOME` or `CLAUDE_CONFIG_DIR`, the registry lives in machine-local app data; for the default home it lives under `~/.claude`. It filters by canonical Claude home, then sends once per unique SQLite data directory, choosing the lowest port for duplicate listeners while still feeding matching dashboards with separate databases. Delivery is fail-safe: each target is isolated and the handler exits within 2.5 seconds.
 3. **The server** commits the event and related state in one SQLite transaction:
    - First contact creates the session and main agent. `SessionStart` begins in **Waiting**; `UserPromptSubmit` or `PreToolUse` moves it to **Working**; `PostToolUse` keeps it working.
    - `Stop` returns the main agent to **Waiting** while background agents continue. `stop_reason=error` marks the agent and session **Error**. Permission notifications also wait for input; only a new prompt or tool start recovers an error.
@@ -615,7 +617,7 @@ flowchart LR
 | Environment variable | Default | Purpose |
 | --- | --- | --- |
 | `DASHBOARD_PORT` | `4820` | Express server port. |
-| `CLAUDE_DASHBOARD_PORT` | `4820` | Port used by the hook handler. |
+| `CLAUDE_DASHBOARD_PORT` | unset (discovery) | Explicit port override used by the hook handler; persist it during installation with `--dashboard-port N`. |
 | `NODE_ENV` | `development` | Use `production` to serve the built client. |
 | `DASHBOARD_UPDATE_CHECK` | enabled | Set `0`, `false`, or `off` to disable scheduled upstream checks. |
 | `DASHBOARD_UPDATE_CHECK_INTERVAL_MS` | `300000` | Update interval, minimum 60,000 ms. Manual **Check now** remains available. |
@@ -748,6 +750,7 @@ If `ccam` is not on `PATH`, run `npm link` once from the repository root. See [d
 | `npm run import-history`| Import legacy sessions from `~/.claude/` (also runs on startup) |
 | `npm run reconcile-tokens`| Refresh token totals for imported sessions (never lowers a total) |
 | `npm run repair-tokens` | Re-derive **non-workflow** token totals for every **Claude** session with a transcript on disk (found under `~/.claude/projects/` or via the session's stored `transcript_path`) and zero the compaction baselines; workflow and Codex rows are preserved. One-time repair for databases affected by the pre-v2.0.9 per-record usage sum or by omitted same-model flat subagent usage. Stop the dashboard first |
+| `node scripts/repair-codex-output.js --db /path/to/dashboard.db --out plan.json` | Preview Codex output repair: reasoning is already included in output. Stop the dashboard before applying with `--apply --journal new-backup.json`. Existing files are never overwritten; ambiguous histories are preserved. Plain, gzip and Zstd transcripts are read as streams. |
 | `DASHBOARD_TOKEN_REPAIR` | Enabled by default (`1`). One-time automatic repair of historical token totals affected by per-record inflation or omitted same-model flat subagents. Live fixes cannot revisit every completed session, and `replaceTokenUsage` cannot lower an old high-water mark. Runs once per database (marker-gated, deferred off the boot path, skipped while another dashboard shares the data directory) and snapshots the old rows to `token_usage_pre_repair_v2` first. Set to `0` to skip it and repair manually with `npm run repair-tokens` |
 | `npm run clear-data`    | Delete all sessions, agents, events, and token usage            |
 | `npm run mcp:install`   | Install dependencies for local MCP package (`mcp/`)       |
@@ -786,6 +789,23 @@ If `ccam` is not on `PATH`, run `npm link` once from the repository root. See [d
 | `npm run docker:full:up` | Dashboard + authenticated MCP + rootless Nginx + Prometheus + Grafana |
 | `npm run docker:full:down` | Tear down the full Docker stack |
 | `npm run deploy:validate` | Review Docker, Compose, Nginx, Helm, Kustomize, Terraform, dependency audits, and the one-writer invariant. Findings are advisory (exit 0); `CCAM_DEPLOY_VALIDATE_STRICT=1` turns them into a hard gate |
+
+---
+
+Cost estimates use configured API rates, not subscription charges. Dashboard and Analytics put the selected machine/product scope and complete missing-rate list behind a keyboard-accessible info icon beside the cost label; the Analytics value tooltip contains only the unabbreviated amount, while Settings shows the same coverage details inline. GPT-6.1 Sol Standard/Fast Short/Long defaults follow the published OpenAI table without shadowing an existing matching custom rule.
+
+### Cost snapshots before an upgrade
+
+Before an upgrade that may recount usage, capture a read-only baseline, upgrade and restart CCAM, let startup maintenance finish, then capture a second snapshot to a new path and compare them. Keep the TSV files private: they contain session identifiers and ownership metadata. The guard exits with status 1 if an existing local session's input, output, cache-read, cache-write, one-hour cache-write, web-search, web-fetch, code-execution, or cost changes; if ownership changes between local and another source or provider; or if a local session disappears. Remote and newly added sessions are reported separately.
+
+```bash
+node scripts/cost-snapshot.js snapshot --out before.tsv
+# Upgrade CCAM, restart it, and let startup maintenance finish.
+node scripts/cost-snapshot.js snapshot --out after.tsv
+node scripts/cost-snapshot.js compare before.tsv after.tsv --fail-on-local-change
+```
+
+An interrupted remote sync is shown as an error after restart; its preceding import receipt remains available. Startup recovery runs only when per-process liveness markers under the shared SQLite data directory prove this is the sole live dashboard, even when processes use different `CLAUDE_HOME` values; missing, malformed, or concurrent ownership defers recovery. A busy database is retried independently, so recovery cannot disable the remote poller. Remote retries keep the most recent error visible while checking again; a successful sync clears it.
 
 ---
 

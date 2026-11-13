@@ -5,7 +5,8 @@
  * and serves the built React client (`client/dist`) as static assets in
  * production. We import that module directly — no child process, no IPC, no
  * port marshalling — and start it on a free port. The whole thing keeps the
- * desktop shell to "Electron is a window onto the same code."
+ * desktop shell to "Electron is a window onto the same code." Settings
+ * persistence uses Electron userData so portable restarts retain overrides.
  *
  * If another process is already listening on the preferred port and that
  * process answers `/api/health` with `{ status: "ok" }`, we adopt it instead
@@ -13,6 +14,170 @@
  * runs `npm start` in a terminal — we should not double-bind.
  * @author Son Nguyen <hoangson091104@gmail.com>
  */
+/*
+ * GENERATED_MAINTAINER_REFERENCE:BEGIN
+ *
+ * AUTO-GENERATED MAINTAINER REFERENCE — DO NOT EDIT THIS BLOCK BY HAND.
+ * It is derived from the current TypeScript AST and repository-area contracts.
+ * Regenerate after structural edits so imports, exports, landmarks, and checks stay current.
+ *
+ * **Module:** desktop/src/server-host.ts
+ * **Area:** desktop shell
+ * **Responsibility:**
+ * Hosts the existing Express server in-process. The dashboard's `server/index.js` already exports
+ * `{ createApp, startServer }` and serves the built React client (`client/dist`) as static assets
+ * in production. We import that module directly — no child process, no IPC, no port marshalling —
+ * and start it on a free port. The whole thing keeps the desktop shell to "Electron is a window
+ * onto the same code." Settings persistence uses Electron userData so portable restarts retain
+ * overrides. If another process is already listening on the preferred port and that process answers
+ * `/api/health` with `{ status: "ok" }` , we adopt it instead of starting a second server. This
+ * covers the case where the user already runs `npm start` in a terminal — we should not
+ * double-bind.
+ *
+ * ## Architectural boundary
+ * - Owns Electron main-process lifecycle, local server hosting, native integration, and the narrow
+ *   preload boundary.
+ * - Renderer code remains web-compatible; privileged filesystem, process, tray, menu, and window
+ *   operations stay here.
+ * - Startup and shutdown coordinate one dashboard server instance without corrupting discovery or
+ *   user data.
+ *
+ * ## Local dependency edges
+ * - `./constants` — repository-local contract consumed by this module; review its exports before
+ *   changing assumptions here.
+ * - `./logger` — repository-local contract consumed by this module; review its exports before
+ *   changing assumptions here.
+ *
+ * ## Package dependency edges
+ * - `electron` — external package boundary; keep usage within the installed version and the
+ *   repository's existing adapter patterns.
+ * - `node:fs` — external package boundary; keep usage within the installed version and the
+ *   repository's existing adapter patterns.
+ * - `node:http` — external package boundary; keep usage within the installed version and the
+ *   repository's existing adapter patterns.
+ * - `node:module` — external package boundary; keep usage within the installed version and the
+ *   repository's existing adapter patterns.
+ * - `node:net` — external package boundary; keep usage within the installed version and the
+ *   repository's existing adapter patterns.
+ * - `node:path` — external package boundary; keep usage within the installed version and the
+ *   repository's existing adapter patterns.
+ *
+ * ## Public surface
+ * - `closeEmbeddedDatabase` (function) — exported contract; search downstream imports and tests
+ *   before changing its name, shape, or timing.
+ * - `getServerSnapshot` (function) — exported contract; search downstream imports and tests before
+ *   changing its name, shape, or timing.
+ * - `refreshServerSnapshot` (function) — exported contract; search downstream imports and tests
+ *   before changing its name, shape, or timing.
+ * - `ServerHandle` (interface) — exported contract; search downstream imports and tests before
+ *   changing its name, shape, or timing.
+ * - `ServerSnapshot` (interface) — exported contract; search downstream imports and tests before
+ *   changing its name, shape, or timing.
+ * - `startEmbeddedServer` (function) — exported contract; search downstream imports and tests
+ *   before changing its name, shape, or timing.
+ * - `startSnapshotPolling` (function) — exported contract; search downstream imports and tests
+ *   before changing its name, shape, or timing.
+ *
+ * ## Top-level implementation landmarks
+ * - `backgroundServicesStarted` (variable) — top-level declaration that helps orient code review
+ *   and focused test selection.
+ * - `bootstrapOwnedServer` (function) — top-level declaration that helps orient code review and
+ *   focused test selection.
+ * - `closeEmbeddedDatabase` (function) — top-level declaration that helps orient code review and
+ *   focused test selection.
+ * - `ensureNativeModulesPatched` (function) — top-level declaration that helps orient code review
+ *   and focused test selection.
+ * - `fetchSnapshotOverHttp` (function) — top-level declaration that helps orient code review and
+ *   focused test selection.
+ * - `getServerSnapshot` (function) — top-level declaration that helps orient code review and
+ *   focused test selection.
+ * - `lastSnapshot` (variable) — top-level declaration that helps orient code review and focused
+ *   test selection.
+ * - `nativeModulesPatched` (variable) — top-level declaration that helps orient code review and
+ *   focused test selection.
+ * - `pickFreePort` (function) — top-level declaration that helps orient code review and focused
+ *   test selection.
+ * - `probePort` (function) — top-level declaration that helps orient code review and focused test
+ *   selection.
+ * - `refreshServerSnapshot` (function) — top-level declaration that helps orient code review and
+ *   focused test selection.
+ * - `resolveAppRoot` (function) — top-level declaration that helps orient code review and focused
+ *   test selection.
+ * - `ServerHandle` (interface) — top-level declaration that helps orient code review and focused
+ *   test selection.
+ * - `ServerModule` (interface) — top-level declaration that helps orient code review and focused
+ *   test selection.
+ * - `ServerSnapshot` (interface) — top-level declaration that helps orient code review and focused
+ *   test selection.
+ * - `snapshotTimer` (variable) — top-level declaration that helps orient code review and focused
+ *   test selection.
+ * - `startEmbeddedServer` (function) — top-level declaration that helps orient code review and
+ *   focused test selection.
+ * - `startSnapshotPolling` (function) — top-level declaration that helps orient code review and
+ *   focused test selection.
+ * - `waitForHealthy` (function) — top-level declaration that helps orient code review and focused
+ *   test selection.
+ *
+ * ## Literal API paths
+ * - `/api/health` — route literal present in this source; keep request/response expectations
+ *   aligned with the server and API docs.
+ *
+ * ## Area invariants
+ * - Keep context isolation enabled and expose only the minimum typed preload surface required by
+ *   the renderer.
+ * - Do not enable arbitrary Node integration or pass unchecked renderer input into
+ *   filesystem/process operations.
+ * - Make window, tray, server, and app shutdown idempotent across quit, close, signal, and update
+ *   paths.
+ * - Resolve packaged and development resource paths explicitly for macOS, Windows, and Linux
+ *   layouts.
+ * - Use atomic writes for discovery and state files that another process may read during startup.
+ * - Remove stale discovery metadata only when it belongs to the process being stopped.
+ * - Keep single-instance and deep-link handling bounded to the intended application origin.
+ * - Preserve platform-specific menu and login-item semantics without assuming one operating system.
+ * - Avoid blocking the main process with synchronous work on hot lifecycle paths.
+ * - Test pure path/lifecycle decisions and run the desktop-specific suite for process integration
+ *   changes.
+ *
+ * ## Change-review checklist
+ * - Read the file header and this generated index before changing code; both describe the intended
+ *   ownership boundary.
+ * - Trace every local import listed here to distinguish data contracts from presentation helpers
+ *   and avoid circular dependencies.
+ * - Search every exported symbol before changing its signature; callers may live in tests, route
+ *   components, desktop code, or MCP wiring.
+ * - Keep observable behavior stable unless the task explicitly requests a behavior change and
+ *   includes regression coverage.
+ * - Prefer the repository's existing helpers and types over parallel abstractions that encode the
+ *   same contract twice.
+ * - Keep failure behavior explicit: recoverable local failures should degrade visibly without
+ *   hiding actionable diagnostics.
+ * - Preserve deterministic ordering for lists, maps, serialized values, snapshots, and generated
+ *   output where this module participates.
+ * - Treat identifiers, API paths, event names, translation keys, and persisted field names as
+ *   compatibility surfaces.
+ * - Update the truthful file overview when the module's responsibility changes; never let the
+ *   header become historical fiction.
+ * - Run the narrowest relevant test first, then the area gate, then the full repository
+ *   verification before merging.
+ *
+ * ## Focused validation
+ * - Run `npm run desktop:test` and resolve failures before widening the verification scope.
+ * - Run `npm run desktop:build` and resolve failures before widening the verification scope.
+ * - Run `npm run verify` and resolve failures before widening the verification scope.
+ *
+ * ## Reference maintenance
+ * - Regenerate all tracked references with `node scripts/maintain-typescript-docs.ts --write` .
+ * - Check this module without writing via
+ *   `node scripts/maintain-typescript-docs.ts --check desktop/src/server-host.ts` .
+ * - Prove existing-file edits are comments/trivia only with
+ *   `node scripts/verify-typescript-comment-only.ts origin/master` .
+ * - Review the regenerated diff: generated structure is evidence, not a substitute for
+ *   understanding runtime behavior.
+ *
+ * GENERATED_MAINTAINER_REFERENCE:END
+ */
+
 /* =============================================================================
  * MODULE_GUIDE — extended in-file reference (comments only; safe to read, never executed)
  * =============================================================================
@@ -225,10 +390,9 @@ function bootstrapOwnedServer(appRoot: string, serverModule: ServerModule): void
   // without having to run `npm run install-hooks` from a checkout.
   try {
     const hooks = require(path.join(appRoot, "scripts", "install-hooks.js")) as {
-      installHooks: (silent?: boolean) => boolean;
+      installHooks: (silent?: boolean, options?: { automatic?: boolean }) => boolean;
     };
-    hooks.installHooks(true);
-    log.info("Claude Code hooks ensured");
+    if (hooks.installHooks(true, { automatic: true })) log.info("Claude Code hooks ensured");
   } catch (err) {
     log.warn("hook auto-install failed", err);
   }
@@ -551,12 +715,17 @@ export async function startEmbeddedServer(): Promise<ServerHandle> {
   process.env.NODE_ENV = "production";
   process.env.DASHBOARD_PORT = String(port);
 
-  // The server now defaults its writable state (SQLite DB, VAPID keys,
-  // transcript snapshots) to the shared user-global `~/.claude/agent-dashboard/`
-  // — outside the read-only `.app`/installed bundle AND identical to what
-  // `npm start`/`npm run dev` use, so the desktop app and the web app share ONE
-  // database. We therefore no longer override DASHBOARD_DATA_DIR to this app's
-  // private `userData/data`.
+  // Settings must survive portable extraction and signed/read-only app bundles.
+  // Preserve an operator-supplied location for containers or custom installs.
+  if (!process.env.DASHBOARD_ENV_PATH && app.isPackaged) {
+    process.env.DASHBOARD_ENV_PATH = path.join(app.getPath("userData"), ".env");
+  }
+
+  // The server resolves writable state (SQLite DB, VAPID keys, snapshots)
+  // through getDataDir(), shared with npm start/dev and outside read-only app
+  // bundles. A relocated Claude config uses machine-local app data for new
+  // state and reuses existing data directories. Leave DASHBOARD_DATA_DIR unset
+  // so the server applies that same precedence.
   //
   // Earlier desktop builds DID write there, so point the server's one-time
   // migration at that old per-user DB: on first launch with no shared DB yet,

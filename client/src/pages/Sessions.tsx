@@ -1,11 +1,183 @@
 /**
  * @file Sessions.tsx
  * @description Displays all recorded sessions with searchable multi-project,
- * status, text, and custom sort filters plus server-side pagination. Rows can
- * show an accessible task-progress donut beside status and the local transient
- * Codex startup row before its durable session id exists.
+ * status, provider, text, and custom sort filters plus server-side pagination.
+ * Rows can show an accessible task-progress donut beside status and the local
+ * transient Codex startup row before its durable session id exists.
  * @author Son Nguyen <hoangson091104@gmail.com>
  */
+/*
+ * GENERATED_MAINTAINER_REFERENCE:BEGIN
+ *
+ * AUTO-GENERATED MAINTAINER REFERENCE — DO NOT EDIT THIS BLOCK BY HAND.
+ * It is derived from the current TypeScript AST and repository-area contracts.
+ * Regenerate after structural edits so imports, exports, landmarks, and checks stay current.
+ *
+ * **Module:** client/src/pages/Sessions.tsx
+ * **Area:** client page
+ * **Responsibility:**
+ * Displays all recorded sessions with searchable multi-project, status, provider, text, and custom
+ * sort filters plus server-side pagination. Rows can show an accessible task-progress donut beside
+ * status and the local transient Codex startup row before its durable session id exists.
+ *
+ * ## Architectural boundary
+ * - Route-level orchestration belongs here: load scoped data, subscribe to live updates, and
+ *   compose reusable components.
+ * - Server authority remains on the API side; the page may explain or confirm actions but must not
+ *   invent authorization rules.
+ * - The global data-source scope must flow through shared API helpers so local, all-source, and
+ *   selected-source views agree.
+ *
+ * ## Local dependency edges
+ * - `../components/EmptyState` — repository-local contract consumed by this module; review its
+ *   exports before changing assumptions here.
+ * - `../components/MultiSelect` — repository-local contract consumed by this module; review its
+ *   exports before changing assumptions here.
+ * - `../components/PaletteActionProvider` — repository-local contract consumed by this module;
+ *   review its exports before changing assumptions here.
+ * - `../components/PaletteHint` — repository-local contract consumed by this module; review its
+ *   exports before changing assumptions here.
+ * - `../components/Select` — repository-local contract consumed by this module; review its exports
+ *   before changing assumptions here.
+ * - `../components/Skeleton` — repository-local contract consumed by this module; review its
+ *   exports before changing assumptions here.
+ * - `../components/StatusBadge` — repository-local contract consumed by this module; review its
+ *   exports before changing assumptions here.
+ * - `../components/TodoProgressIndicator` — repository-local contract consumed by this module;
+ *   review its exports before changing assumptions here.
+ * - `../hooks/usePageShortcuts` — repository-local contract consumed by this module; review its
+ *   exports before changing assumptions here.
+ * - `../lib/api` — repository-local contract consumed by this module; review its exports before
+ *   changing assumptions here.
+ * - `../lib/dataScope` — repository-local contract consumed by this module; review its exports
+ *   before changing assumptions here.
+ * - `../lib/eventBus` — repository-local contract consumed by this module; review its exports
+ *   before changing assumptions here.
+ * - `../lib/format` — repository-local contract consumed by this module; review its exports before
+ *   changing assumptions here.
+ * - `../lib/remoteDataEvents` — repository-local contract consumed by this module; review its
+ *   exports before changing assumptions here.
+ * - `../lib/types` — repository-local contract consumed by this module; review its exports before
+ *   changing assumptions here.
+ *
+ * ## Package dependency edges
+ * - `lucide-react` — external package boundary; keep usage within the installed version and the
+ *   repository's existing adapter patterns.
+ * - `react` — external package boundary; keep usage within the installed version and the
+ *   repository's existing adapter patterns.
+ * - `react-i18next` — external package boundary; keep usage within the installed version and the
+ *   repository's existing adapter patterns.
+ * - `react-router` — external package boundary; keep usage within the installed version and the
+ *   repository's existing adapter patterns.
+ *
+ * ## Public surface
+ * - `Sessions` (function) — exported contract; search downstream imports and tests before changing
+ *   its name, shape, or timing.
+ *
+ * ## Top-level implementation landmarks
+ * - `isTransientProcessSession` (function) — top-level declaration that helps orient code review
+ *   and focused test selection.
+ * - `PAGE_SIZE` (variable) — top-level declaration that helps orient code review and focused test
+ *   selection.
+ * - `PROVIDER_FILTERS_BY_SCOPE` (variable) — top-level declaration that helps orient code review
+ *   and focused test selection.
+ * - `SESSION_FILTERS` (variable) — top-level declaration that helps orient code review and focused
+ *   test selection.
+ * - `SESSION_PROVIDER_FILTERS` (variable) — top-level declaration that helps orient code review and
+ *   focused test selection.
+ * - `SessionProviderFilter` (type) — top-level declaration that helps orient code review and
+ *   focused test selection.
+ * - `Sessions` (function) — top-level declaration that helps orient code review and focused test
+ *   selection.
+ * - `SessionSort` (type) — top-level declaration that helps orient code review and focused test
+ *   selection.
+ *
+ * ## React and framework hooks
+ * - `useCallback` — lifecycle/state dependency detected in this module; preserve dependency
+ *   freshness and cleanup semantics.
+ * - `useDataScope` — lifecycle/state dependency detected in this module; preserve dependency
+ *   freshness and cleanup semantics.
+ * - `useEffect` — lifecycle/state dependency detected in this module; preserve dependency freshness
+ *   and cleanup semantics.
+ * - `useNavigate` — lifecycle/state dependency detected in this module; preserve dependency
+ *   freshness and cleanup semantics.
+ * - `usePaletteAction` — lifecycle/state dependency detected in this module; preserve dependency
+ *   freshness and cleanup semantics.
+ * - `useRef` — lifecycle/state dependency detected in this module; preserve dependency freshness
+ *   and cleanup semantics.
+ * - `useState` — lifecycle/state dependency detected in this module; preserve dependency freshness
+ *   and cleanup semantics.
+ * - `useSyncExternalStore` — lifecycle/state dependency detected in this module; preserve
+ *   dependency freshness and cleanup semantics.
+ * - `useTranslation` — lifecycle/state dependency detected in this module; preserve dependency
+ *   freshness and cleanup semantics.
+ * - `useUrlTab` — lifecycle/state dependency detected in this module; preserve dependency freshness
+ *   and cleanup semantics.
+ *
+ * ## Translation namespaces
+ * - `sessions` — visible copy resolves through this namespace; key and interpolation parity applies
+ *   to every supported locale.
+ *
+ * ## Area invariants
+ * - Represent loading, empty, partial, error, and refreshed states deliberately; a blank panel is
+ *   not an error strategy.
+ * - Cancel or ignore stale asynchronous work when parameters, source scope, or component lifetime
+ *   changes.
+ * - Merge WebSocket deltas without duplicating entities already returned by the REST snapshot.
+ * - Keep query parameters and route state shareable when the surrounding router already exposes
+ *   that state in URLs.
+ * - Use translation keys for visible copy and preserve interpolation tokens across every supported
+ *   locale.
+ * - Keep expensive derivations memoized only when profiling or dependency stability justifies the
+ *   extra contract.
+ * - Preserve keyboard focus and useful headings when switching tabs, filters, drawers, or modal
+ *   states.
+ * - Do not make destructive requests without the confirmation and server-side gate required by the
+ *   underlying API.
+ * - Use canonical formatting helpers for timestamps, durations, token counts, costs, and provider
+ *   labels.
+ * - Keep page-level polling and event subscriptions bounded; cleanup must run on unmount and scope
+ *   changes.
+ *
+ * ## Change-review checklist
+ * - Read the file header and this generated index before changing code; both describe the intended
+ *   ownership boundary.
+ * - Trace every local import listed here to distinguish data contracts from presentation helpers
+ *   and avoid circular dependencies.
+ * - Search every exported symbol before changing its signature; callers may live in tests, route
+ *   components, desktop code, or MCP wiring.
+ * - Keep observable behavior stable unless the task explicitly requests a behavior change and
+ *   includes regression coverage.
+ * - Prefer the repository's existing helpers and types over parallel abstractions that encode the
+ *   same contract twice.
+ * - Keep failure behavior explicit: recoverable local failures should degrade visibly without
+ *   hiding actionable diagnostics.
+ * - Preserve deterministic ordering for lists, maps, serialized values, snapshots, and generated
+ *   output where this module participates.
+ * - Treat identifiers, API paths, event names, translation keys, and persisted field names as
+ *   compatibility surfaces.
+ * - Update the truthful file overview when the module's responsibility changes; never let the
+ *   header become historical fiction.
+ * - Run the narrowest relevant test first, then the area gate, then the full repository
+ *   verification before merging.
+ *
+ * ## Focused validation
+ * - Run `npm run typecheck:client` and resolve failures before widening the verification scope.
+ * - Run `npm run test:client` and resolve failures before widening the verification scope.
+ * - Run `npm run verify` and resolve failures before widening the verification scope.
+ *
+ * ## Reference maintenance
+ * - Regenerate all tracked references with `node scripts/maintain-typescript-docs.ts --write` .
+ * - Check this module without writing via
+ *   `node scripts/maintain-typescript-docs.ts --check client/src/pages/Sessions.tsx` .
+ * - Prove existing-file edits are comments/trivia only with
+ *   `node scripts/verify-typescript-comment-only.ts origin/master` .
+ * - Review the regenerated diff: generated structure is evidence, not a substitute for
+ *   understanding runtime behavior.
+ *
+ * GENERATED_MAINTAINER_REFERENCE:END
+ */
+
 /* =============================================================================
  * MODULE_GUIDE — extended in-file reference (comments only; safe to read, never executed)
  * =============================================================================
@@ -79,7 +251,7 @@ import { api } from "../lib/api";
 import type { RemoteSource } from "../lib/api";
 import { eventBus } from "../lib/eventBus";
 import { isRemoteDataRefreshMessage } from "../lib/remoteDataEvents";
-import { useDataScope } from "../lib/dataScope";
+import { useDataScope, type ProviderScope } from "../lib/dataScope";
 import { SessionStatusBadge } from "../components/StatusBadge";
 import { TodoProgressIndicator } from "../components/TodoProgressIndicator";
 import { EmptyState } from "../components/EmptyState";
@@ -121,13 +293,22 @@ function isTransientProcessSession(session: Session): boolean {
 /** Status filters in render order — also the order `1`…`6` addresses them.
  *  `""` is the "all" pseudo-filter the server treats as no status constraint. */
 const SESSION_FILTERS = ["", "active", "waiting", "completed", "error", "abandoned"] as const;
+/** Stored session providers accepted by the page-local provider filter. */
+const SESSION_PROVIDER_FILTERS = ["", "claude", "cursor", "codex"] as const;
+type SessionProviderFilter = (typeof SESSION_PROVIDER_FILTERS)[number];
+/** Provider choices that make sense inside each global product scope. */
+const PROVIDER_FILTERS_BY_SCOPE: Record<ProviderScope, readonly SessionProviderFilter[]> = {
+  claude: ["", "claude", "cursor"],
+  codex: ["", "codex"],
+  both: SESSION_PROVIDER_FILTERS,
+};
 
 /**
  * Sessions page (`/sessions`): a server-paginated, searchable, sortable table of every session.
- * Supports status, project, and data-scope filters (the status filter is in the URL so links and
- * the palette can open a narrowed list), task-progress indicators, and live updates throttled to
- * one reload every 2 seconds. Search input is debounced so typing does not query on every
- * keystroke.
+ * Supports status, provider, project, and data-scope filters (the status and provider filters are
+ * in the URL so links can open a narrowed list), task-progress indicators, and live updates
+ * throttled to one reload every 2 seconds. Search input is debounced so typing does not query on
+ * every keystroke.
  */
 export function Sessions() {
   const navigate = useNavigate();
@@ -138,6 +319,9 @@ export function Sessions() {
   // link) can open the list already narrowed. `""` is "all", which the hook
   // treats as a valid value like any other.
   const [filter, setFilter] = useUrlTab(SESSION_FILTERS, "", { param: "status" });
+  const [providerFilter, setProviderFilter] = useUrlTab(SESSION_PROVIDER_FILTERS, "", {
+    param: "provider",
+  });
   // `searchInput` is what the user types; `search` is the debounced value
   // actually sent to the server. Without debouncing, every keystroke would
   // hit /api/sessions.
@@ -162,6 +346,11 @@ export function Sessions() {
   // so switching scope re-fetches; the actual `sources` param is injected by the
   // api layer (see lib/api.ts applyScope).
   const [scope] = useDataScope();
+  const providerScope = scope.provider ?? "claude";
+  const availableProviderFilters = PROVIDER_FILTERS_BY_SCOPE[providerScope];
+  const effectiveProviderFilter = availableProviderFilters.includes(providerFilter)
+    ? providerFilter
+    : "";
   // source id → label, so remote-origin rows show a friendly badge.
   const [sourceLabels, setSourceLabels] = useState<Map<string, string>>(() => new Map());
   // Set of session IDs that are currently being driven by an in-flight Run
@@ -179,6 +368,24 @@ export function Sessions() {
     abandoned: t("filterAbandoned"),
   };
   const FILTER_OPTIONS = SESSION_FILTERS.map((value) => ({ value, label: FILTER_LABELS[value] }));
+  const PROVIDER_LABELS: Record<Exclude<SessionProviderFilter, "">, string> = {
+    claude: t("providerClaude"),
+    cursor: t("providerCursor"),
+    codex: t("providerCodex"),
+  };
+  const PROVIDER_FILTER_OPTIONS = availableProviderFilters.map((value) => ({
+    value,
+    label: value ? PROVIDER_LABELS[value] : t("allProviders"),
+  }));
+
+  // A Settings or splash-screen product-scope change can make the URL's
+  // provider selection invalid. Fall back to all providers in the new scope
+  // instead of issuing a request that escapes the user's selected products.
+  useEffect(() => {
+    if (providerFilter && !availableProviderFilters.includes(providerFilter)) {
+      setProviderFilter("");
+    }
+  }, [availableProviderFilters, providerFilter, setProviderFilter]);
 
   // Debounce the search input → 300 ms after the user stops typing, the
   // committed value flips and triggers a fresh fetch.
@@ -224,6 +431,7 @@ export function Sessions() {
           status: "active",
           q: search || undefined,
           cwd: cwds.length > 0 ? cwds : undefined,
+          provider: effectiveProviderFilter || undefined,
           sort_by: sortBy,
           sort_desc: sortDesc,
           include_transient: page === 0,
@@ -244,6 +452,7 @@ export function Sessions() {
         sort_desc?: boolean;
         include_transient?: boolean;
         include_task_progress?: boolean;
+        provider?: Exclude<SessionProviderFilter, "">;
         limit: number;
         offset: number;
       } = {
@@ -257,6 +466,7 @@ export function Sessions() {
       if (filter) params.status = filter;
       if (search) params.q = search;
       if (cwds.length > 0) params.cwd = cwds;
+      if (effectiveProviderFilter) params.provider = effectiveProviderFilter;
       const res = await api.sessions.list(params);
       setSessions(res.sessions);
       setTotal(res.total);
@@ -265,7 +475,7 @@ export function Sessions() {
     }
     // `scope` is a dep so a data-scope change re-fetches; the api layer injects
     // the matching `sources` param.
-  }, [filter, search, cwds, sortBy, sortDesc, page, scope]);
+  }, [filter, effectiveProviderFilter, search, cwds, sortBy, sortDesc, page, scope]);
 
   usePaletteAction("page.refresh", () => {
     void load();
@@ -276,6 +486,7 @@ export function Sessions() {
   usePaletteAction("sessions.toggleSortDirection", () => setSortDesc((prev) => !prev));
   usePaletteAction("sessions.clearFilters", () => {
     setFilter("");
+    setProviderFilter("");
     setSearchInput("");
     setCwds([]);
   });
@@ -287,7 +498,7 @@ export function Sessions() {
   // Reset to page 0 whenever filters or sort changes.
   useEffect(() => {
     setPage(0);
-  }, [filter, search, cwds, sortBy, sortDesc]);
+  }, [filter, providerFilter, search, cwds, sortBy, sortDesc]);
 
   useEffect(() => {
     // Trailing throttle: session_updated arrives on nearly every hook event
@@ -417,15 +628,17 @@ export function Sessions() {
         </button>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap lg:flex-nowrap items-center gap-3 mb-6 bg-surface-2/40 p-2 rounded-xl border border-border w-full">
+      {/* Filters. Stay on one line from the xl breakpoint up; below that, wrap.
+          `lg:flex-nowrap` kicked in while the sidebar still left the row
+          narrower than these controls, so the sort box was pinned to 180px
+          and its direction icon painted through the border. */}
+      <div className="mb-6 flex w-full min-w-0 flex-wrap items-center gap-3 rounded-xl border border-border bg-surface-2/40 p-2 xl:flex-nowrap">
         {/* Search */}
-        {/* The floor is sized so the field still fits its placeholder alongside
-            the ⌘K chip. A viewport breakpoint cannot express this — the field's
-            width comes from the space the toolbar has left, not the window — so
-            the constraint lives on the field itself, and the row wraps rather
-            than truncating "Search sessions…" to "Search ses". */}
-        <div className="relative flex-1 min-w-[260px] max-w-[340px]">
+        {/* The floor is 260px so the field still fits its placeholder alongside
+            the ⌘K chip, but never wider than the toolbar itself — a fixed
+            260px floor spilled out of a narrow content column. The row wraps
+            rather than truncating "Search sessions…" to "Search ses". */}
+        <div className="relative max-w-[340px] min-w-[min(260px,100%)] flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
           <input
             ref={searchRef}
@@ -454,17 +667,36 @@ export function Sessions() {
           />
         </div>
 
-        {/* Sort Controls */}
-        <div className="flex items-center gap-1.5 bg-surface-1 px-1.5 py-1 rounded-lg border border-border h-[38px] flex-1 min-w-[180px]">
-          <div className="flex-1">
+        {/* Provider selector. Its choices stay inside the product family the
+            user enabled in onboarding or Settings: Claude Code scope offers
+            Claude Code and Cursor, Codex scope offers Codex, and Both offers
+            all three stored session providers. */}
+        <div className="w-full shrink-0 sm:w-[160px] [&>div>button]:h-[38px]">
+          <Select<SessionProviderFilter>
+            value={effectiveProviderFilter}
+            onChange={setProviderFilter}
+            options={PROVIDER_FILTER_OPTIONS}
+          />
+        </div>
+
+        {/* Sort Controls — the label and the direction icon have to stay
+            inside this border. `flex-1 min-w-[180px]` replaced the default
+            content minimum with 180px, which is narrower than "Last active:
+            newest" plus the icon, so the icon painted through the rounded
+            edge and onto the status pills. Size to the label and refuse to
+            shrink; `max-w-full` lets a long translation ellipsize instead of
+            escaping a narrow toolbar. The status strip already scrolls when
+            the row is tight. */}
+        <div className="flex h-[38px] w-max max-w-full shrink-0 items-center gap-1.5 rounded-lg border border-border bg-surface-1 px-1.5">
+          <div className="min-w-0">
             <Select<SessionSort> value={sortBy} onChange={setSortBy} options={SORT_OPTIONS} />
           </div>
-          <div className="w-px h-4 bg-border mx-1" />
+          <div className="mx-1 h-4 w-px shrink-0 bg-border" />
           <button
             type="button"
             onClick={() => setSortDesc(!sortDesc)}
             aria-pressed={sortDesc}
-            className="p-1.5 rounded hover:bg-surface-3 text-gray-400 hover:text-gray-200 transition-colors shrink-0"
+            className="shrink-0 rounded p-1.5 text-gray-400 transition-colors hover:bg-surface-3 hover:text-gray-200"
             title={sortDesc ? t("sortDescending") : t("sortAscending")}
             aria-label={sortDesc ? t("sortDescending") : t("sortAscending")}
           >
@@ -501,7 +733,9 @@ export function Sessions() {
           icon={FolderOpen}
           title={t("noSessions")}
           description={
-            search || filter || cwds.length > 0 ? t("noSessionsDesc") : t("noSessionsHint")
+            search || filter || effectiveProviderFilter || cwds.length > 0
+              ? t("noSessionsDesc")
+              : t("noSessionsHint")
           }
         />
       ) : (

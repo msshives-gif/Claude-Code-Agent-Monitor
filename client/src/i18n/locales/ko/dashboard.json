@@ -6,8 +6,9 @@
   "activeSubagents": "활성 Subagent",
   "eventsToday": "오늘의 이벤트",
   "totalEvents": "전체 이벤트",
-  "totalCost": "API 환산 비용",
+  "totalCost": "API 예상 비용",
   "totalCostScope": "전체 기간 · API 정가 기준",
+  "costInfoLabel": "API 예상 비용 정보",
   "viewBoard": "보드 보기",
   "viewAll": "전체 보기",
   "activeAgentsSection": "활성 Agent",
@@ -50,5 +51,9 @@
     "colWatcherPid": "와처_pid",
     "colHealth": "상태",
     "cmCompactsTitle": "이 세션에 대해 컴팩트 매니저가 실행한 압축 횟수"
-  }
+  },
+  "costEstimate": "API 기준 예상 비용이며 구독 요금이 아닙니다.",
+  "costScope": "출처: {{sources}} · 제품: {{providers}}",
+  "costIncomplete": "일부 사용량에 적용할 요금이 없어 예상 비용이 불완전합니다({{models}}).",
+  "reviewRates": "요금 확인"
 }

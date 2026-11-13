@@ -8,6 +8,195 @@
  * stable across machines and CI.
  * @author Son Nguyen <hoangson091104@gmail.com>
  */
+/*
+ * GENERATED_MAINTAINER_REFERENCE:BEGIN
+ *
+ * AUTO-GENERATED MAINTAINER REFERENCE — DO NOT EDIT THIS BLOCK BY HAND.
+ * It is derived from the current TypeScript AST and repository-area contracts.
+ * Regenerate after structural edits so imports, exports, landmarks, and checks stay current.
+ *
+ * **Module:** client/src/pages/__tests__/screens.snapshot.test.tsx
+ * **Area:** client test
+ * **Responsibility:**
+ * Render snapshot tests for every routed screen. Each page is rendered inside a MemoryRouter with
+ * the API layer mocked to a deterministic loaded-empty state (empty collections + zeroed scalars)
+ * so snapshots capture real structure / layout / i18n without noisy chart DOM or live data. The
+ * system clock and timezone are pinned so any relative/absolute timestamps are stable across
+ * machines and CI.
+ *
+ * ## Architectural boundary
+ * - Protects an observable client contract using Vitest and, for UI, Testing Library semantics.
+ * - The test should fail for a meaningful production regression, not for harmless implementation
+ *   rearrangement.
+ * - Mocks isolate unavailable boundaries; they should not replace the behavior that the test claims
+ *   to prove.
+ *
+ * ## Local dependency edges
+ * - `../../lib/api` — repository-local contract consumed by this module; review its exports before
+ *   changing assumptions here.
+ * - `../ActivityFeed` — repository-local contract consumed by this module; review its exports
+ *   before changing assumptions here.
+ * - `../Analytics` — repository-local contract consumed by this module; review its exports before
+ *   changing assumptions here.
+ * - `../CcConfig` — repository-local contract consumed by this module; review its exports before
+ *   changing assumptions here.
+ * - `../Dashboard` — repository-local contract consumed by this module; review its exports before
+ *   changing assumptions here.
+ * - `../KanbanBoard` — repository-local contract consumed by this module; review its exports before
+ *   changing assumptions here.
+ * - `../NotFound` — repository-local contract consumed by this module; review its exports before
+ *   changing assumptions here.
+ * - `../Run` — repository-local contract consumed by this module; review its exports before
+ *   changing assumptions here.
+ * - `../SessionDetail` — repository-local contract consumed by this module; review its exports
+ *   before changing assumptions here.
+ * - `../Sessions` — repository-local contract consumed by this module; review its exports before
+ *   changing assumptions here.
+ * - `../Settings` — repository-local contract consumed by this module; review its exports before
+ *   changing assumptions here.
+ * - `../Workflows` — repository-local contract consumed by this module; review its exports before
+ *   changing assumptions here.
+ *
+ * ## Package dependency edges
+ * - `@testing-library/react` — external package boundary; keep usage within the installed version
+ *   and the repository's existing adapter patterns.
+ * - `i18next` — external package boundary; keep usage within the installed version and the
+ *   repository's existing adapter patterns.
+ * - `react` — external package boundary; keep usage within the installed version and the
+ *   repository's existing adapter patterns.
+ * - `react-router` — external package boundary; keep usage within the installed version and the
+ *   repository's existing adapter patterns.
+ * - `vitest` — external package boundary; keep usage within the installed version and the
+ *   repository's existing adapter patterns.
+ *
+ * ## Top-level implementation landmarks
+ * - `eventBusTestState` (variable) — top-level declaration that helps orient code review and
+ *   focused test selection.
+ * - `LocationProbe` (function) — top-level declaration that helps orient code review and focused
+ *   test selection.
+ * - `nodeProcess` (variable) — top-level declaration that helps orient code review and focused test
+ *   selection.
+ * - `ObserverStub` (class) — top-level declaration that helps orient code review and focused test
+ *   selection.
+ * - `settle` (function) — top-level declaration that helps orient code review and focused test
+ *   selection.
+ * - `snapshot` (function) — top-level declaration that helps orient code review and focused test
+ *   selection.
+ *
+ * ## React and framework hooks
+ * - `useFakeTimers` — lifecycle/state dependency detected in this module; preserve dependency
+ *   freshness and cleanup semantics.
+ * - `useLocation` — lifecycle/state dependency detected in this module; preserve dependency
+ *   freshness and cleanup semantics.
+ * - `useRealTimers` — lifecycle/state dependency detected in this module; preserve dependency
+ *   freshness and cleanup semantics.
+ *
+ * ## Literal API paths
+ * - `/api/settings/export` — route literal present in this source; keep request/response
+ *   expectations aligned with the server and API docs.
+ *
+ * ## Named test contracts
+ * - `Activity feed` — executable behavior named by this suite; preserve the observable contract or
+ *   update the test with rationale.
+ * - `aligns GPT pricing controls with Claude and keeps rate caveats in the tooltip` — executable
+ *   behavior named by this suite; preserve the observable contract or update the test with
+ *   rationale.
+ * - `Analytics` — executable behavior named by this suite; preserve the observable contract or
+ *   update the test with rationale.
+ * - `Analytics applies a completed refresh while a newer request is still pending` — executable
+ *   behavior named by this suite; preserve the observable contract or update the test with
+ *   rationale.
+ * - `Analytics cost info icon explains API scope and missing rates` — executable behavior named by
+ *   this suite; preserve the observable contract or update the test with rationale.
+ * - `Claude Config` — executable behavior named by this suite; preserve the observable contract or
+ *   update the test with rationale.
+ * - `Dashboard` — executable behavior named by this suite; preserve the observable contract or
+ *   update the test with rationale.
+ * - `Dashboard requests task progress for active agent cards` — executable behavior named by this
+ *   suite; preserve the observable contract or update the test with rationale.
+ * - `ignores a malformed hash instead of throwing` — executable behavior named by this suite;
+ *   preserve the observable contract or update the test with rationale.
+ * - `Kanban board` — executable behavior named by this suite; preserve the observable contract or
+ *   update the test with rationale.
+ * - `Not found` — executable behavior named by this suite; preserve the observable contract or
+ *   update the test with rationale.
+ * - `Run` — executable behavior named by this suite; preserve the observable contract or update the
+ *   test with rationale.
+ * - `screen snapshots` — executable behavior named by this suite; preserve the observable contract
+ *   or update the test with rationale.
+ * - `scrolls to the section a deep link names` — executable behavior named by this suite; preserve
+ *   the observable contract or update the test with rationale.
+ * - `Session detail` — executable behavior named by this suite; preserve the observable contract or
+ *   update the test with rationale.
+ * - `Sessions` — executable behavior named by this suite; preserve the observable contract or
+ *   update the test with rationale.
+ * - `Sessions requests and safely renders the transient Codex startup row` — executable behavior
+ *   named by this suite; preserve the observable contract or update the test with rationale.
+ * - `Settings` — executable behavior named by this suite; preserve the observable contract or
+ *   update the test with rationale.
+ * - `Workflows` — executable behavior named by this suite; preserve the observable contract or
+ *   update the test with rationale.
+ *
+ * ## Area invariants
+ * - Name the user-visible or contract-level behavior in each test title so failures explain the
+ *   regression.
+ * - Query rendered UI by role, accessible name, or meaningful text before reaching for
+ *   implementation selectors.
+ * - Reset mocks, timers, globals, storage, and DOM state so execution order cannot change outcomes.
+ * - Await asynchronous rendering and user interactions instead of relying on arbitrary sleeps.
+ * - Keep fixtures minimal but structurally realistic, including provider and source fields used by
+ *   production branches.
+ * - Assert important negative behavior when duplicate events, stale responses, or absent data are
+ *   the known risk.
+ * - Avoid snapshots for volatile values unless serializers normalize them and review remains
+ *   readable.
+ * - Exercise keyboard and accessibility behavior for controls whose semantics matter beyond visual
+ *   output.
+ * - Do not assert internal hook state when the same contract can be observed through rendered
+ *   output or callbacks.
+ * - When fixing a regression, prove the test fails on the broken implementation before accepting
+ *   the fix.
+ *
+ * ## Change-review checklist
+ * - Read the file header and this generated index before changing code; both describe the intended
+ *   ownership boundary.
+ * - Trace every local import listed here to distinguish data contracts from presentation helpers
+ *   and avoid circular dependencies.
+ * - Search every exported symbol before changing its signature; callers may live in tests, route
+ *   components, desktop code, or MCP wiring.
+ * - Keep observable behavior stable unless the task explicitly requests a behavior change and
+ *   includes regression coverage.
+ * - Prefer the repository's existing helpers and types over parallel abstractions that encode the
+ *   same contract twice.
+ * - Keep failure behavior explicit: recoverable local failures should degrade visibly without
+ *   hiding actionable diagnostics.
+ * - Preserve deterministic ordering for lists, maps, serialized values, snapshots, and generated
+ *   output where this module participates.
+ * - Treat identifiers, API paths, event names, translation keys, and persisted field names as
+ *   compatibility surfaces.
+ * - Update the truthful file overview when the module's responsibility changes; never let the
+ *   header become historical fiction.
+ * - Run the narrowest relevant test first, then the area gate, then the full repository
+ *   verification before merging.
+ *
+ * ## Focused validation
+ * - Run `npm run test:client` and resolve failures before widening the verification scope.
+ * - Run `npm run typecheck:client` and resolve failures before widening the verification scope.
+ * - Run `npm run verify` and resolve failures before widening the verification scope.
+ *
+ * ## Reference maintenance
+ * - Regenerate all tracked references with `node scripts/maintain-typescript-docs.ts --write` .
+ * - Check this module without writing via
+ *   `node scripts/maintain-typescript-docs.ts --check client/src/pages/__tests__/screens.snapshot.test.tsx`
+ *   .
+ * - Prove existing-file edits are comments/trivia only with
+ *   `node scripts/verify-typescript-comment-only.ts origin/master` .
+ * - Review the regenerated diff: generated structure is evidence, not a substitute for
+ *   understanding runtime behavior.
+ *
+ * GENERATED_MAINTAINER_REFERENCE:END
+ */
+
 /* =============================================================================
  * TEST_CONTRACT_GUIDE — executable-specification map (documentation only)
  * =============================================================================
@@ -485,11 +674,16 @@ vi.mock("../../lib/api", async (importOriginal) => {
   };
 });
 
-// eventBus: no-op pub/sub so pages mount without a live socket. onConnection +
-// connected back the useSyncExternalStore(eventBus.onConnection, …) reads.
+const eventBusTestState = vi.hoisted(() => ({ subscribers: new Set<(message: any) => void>() }));
+
+// eventBus: local pub/sub so pages mount without a live socket and refresh races
+// can be exercised. onConnection + connected back useSyncExternalStore reads.
 vi.mock("../../lib/eventBus", () => ({
   eventBus: {
-    subscribe: () => () => {},
+    subscribe: (callback: (message: any) => void) => {
+      eventBusTestState.subscribers.add(callback);
+      return () => eventBusTestState.subscribers.delete(callback);
+    },
     publish: () => {},
     onConnection: () => () => {},
     connected: true,
@@ -585,6 +779,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  eventBusTestState.subscribers.clear();
   vi.clearAllMocks();
 });
 
@@ -676,6 +871,102 @@ describe("screen snapshots", () => {
   });
   it("Analytics", async () => {
     await snapshot(<Analytics />, "/analytics");
+  });
+  it("Analytics cost info icon explains API scope and missing rates", async () => {
+    vi.mocked(api.pricing.totalCost).mockResolvedValueOnce({
+      total_cost: 22495.33,
+      breakdown: [],
+      daily_costs: [],
+      feature_costs: {
+        web_search_cost: 0,
+        web_fetch_cost: 0,
+        code_execution_cost: 0,
+        code_execution_hours_estimated: 0,
+        code_execution_free_hours: 0,
+      },
+      unpriced_models: [
+        {
+          model: "gpt-5-codex",
+          input_tokens: 1,
+          output_tokens: 0,
+          cache_read_tokens: 0,
+          cache_write_tokens: 0,
+        },
+      ],
+    });
+    render(
+      <MemoryRouter initialEntries={["/analytics"]}>
+        <Analytics />
+      </MemoryRouter>
+    );
+    await settle();
+
+    const card = screen.getByText("API Cost Estimate").closest(".card");
+    expect(card).not.toBeNull();
+    fireEvent.focus(within(card as HTMLElement).getByText("$22.50K"));
+    expect(screen.getByRole("tooltip")).toHaveTextContent("$22,495.33");
+    expect(screen.getByRole("tooltip")).not.toHaveTextContent("API-equivalent estimate");
+    fireEvent.blur(within(card as HTMLElement).getByText("$22.50K"));
+    fireEvent.focus(within(card as HTMLElement).getByLabelText("About API cost estimate"));
+    const infoTooltip = screen.getByRole("tooltip");
+    expect(infoTooltip).toHaveTextContent("API-equivalent estimate, not subscription charges.");
+    expect(infoTooltip).toHaveTextContent("Sources: All sources · Products: Claude Code");
+    expect(infoTooltip).toHaveTextContent(
+      "Incomplete estimate: some usage has no applicable rate (gpt-5-codex). Review pricing"
+    );
+  });
+  it("Analytics applies a completed refresh while a newer request is still pending", async () => {
+    const baselineAnalytics = await vi.mocked(api.analytics.get)();
+    const baselineCost = await vi.mocked(api.pricing.totalCost)();
+    let resolveOlderAnalytics!: (value: typeof baselineAnalytics) => void;
+    let resolveOlderCost!: (value: typeof baselineCost) => void;
+    let resolveNewerAnalytics!: (value: typeof baselineAnalytics) => void;
+    let resolveNewerCost!: (value: typeof baselineCost) => void;
+    vi.mocked(api.analytics.get)
+      .mockImplementationOnce(
+        () => new Promise<typeof baselineAnalytics>((resolve) => (resolveOlderAnalytics = resolve))
+      )
+      .mockImplementationOnce(
+        () => new Promise<typeof baselineAnalytics>((resolve) => (resolveNewerAnalytics = resolve))
+      );
+    vi.mocked(api.pricing.totalCost)
+      .mockImplementationOnce(
+        () => new Promise<typeof baselineCost>((resolve) => (resolveOlderCost = resolve))
+      )
+      .mockImplementationOnce(
+        () => new Promise<typeof baselineCost>((resolve) => (resolveNewerCost = resolve))
+      );
+
+    render(
+      <MemoryRouter initialEntries={["/analytics"]}>
+        <Analytics />
+      </MemoryRouter>
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    act(() => {
+      eventBusTestState.subscribers.forEach((callback) => callback({ type: "new_event" }));
+    });
+    await act(async () => {
+      resolveOlderAnalytics({
+        ...baselineAnalytics,
+        overview: { ...baselineAnalytics.overview, total_sessions: 7 },
+      });
+      resolveOlderCost(baselineCost);
+      await Promise.resolve();
+    });
+    expect(screen.getByText("7")).toBeInTheDocument();
+
+    await act(async () => {
+      resolveNewerAnalytics({
+        ...baselineAnalytics,
+        overview: { ...baselineAnalytics.overview, total_sessions: 8 },
+      });
+      resolveNewerCost(baselineCost);
+      await Promise.resolve();
+    });
+    expect(screen.getByText("8")).toBeInTheDocument();
   });
   it("Workflows", async () => {
     await snapshot(<Workflows />, "/workflows");

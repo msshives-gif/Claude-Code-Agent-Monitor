@@ -6,9 +6,10 @@
  */
 
 const { Router } = require("express");
-const { stmts, db, GPT_FAST_LONG_FIELDS } = require("../db");
+const { stmts, db, readCostQuery, GPT_FAST_LONG_FIELDS } = require("../db");
 const { parseSources, sourceColumnClause } = require("../lib/source-filter");
 const { parseProviders, providerColumnClause } = require("../lib/provider-filter");
+const { resolveCursorSessionId } = require("../lib/cursor-session-identity");
 const {
   WEB_SEARCH_PER_1K_SEARCHES,
   CODE_EXEC_PER_HOUR,
@@ -114,6 +115,7 @@ function calculateCost(tokenRows, pricingRules, asOf) {
 
     if (!rule) {
       const u = unpriced.get(row.model) || {
+        provider: "claude",
         model: row.model,
         input_tokens: 0,
         output_tokens: 0,
@@ -249,6 +251,7 @@ function calculateGptCost(tokenRows, pricingRules) {
     if (!isPriced) {
       const key = `${row.model}|${isFast ? "fast" : "standard"}|${contextSize}`;
       const entry = unpriced.get(key) || {
+        provider: "codex",
         model: row.model,
         speed: row.speed || "standard",
         context_size: contextSize,
@@ -352,6 +355,7 @@ function calculateCursorCost(tokenRows, pricingRules) {
     breakdown.push(item);
     if (!rule) {
       unpriced.push({
+        provider: "cursor",
         model,
         speed: row.speed || "standard",
         reason: "No Cursor pricing rule matches this model",
@@ -705,17 +709,17 @@ router.delete("/:pattern", (req, res) => {
 // Honors the global data-scope: `?sources=<csv>` narrows the aggregate to those
 // origin machines (see server/lib/source-filter.js), matching the sessions /
 // stats / analytics endpoints so the Dashboard "total cost" tracks the selector.
-router.get("/cost", (req, res) => {
-  const rawOffset = parseInt(req.query.tz_offset, 10);
-  const tzModifier = Number.isFinite(rawOffset) ? `${-rawOffset} minutes` : "+0 minutes";
-  const sourceScope = sourceColumnClause(parseSources(req), "s.source");
-  const providerScope = providerColumnClause(parseProviders(req), "s.provider");
-  const clauses = [sourceScope.clause, providerScope.clause].filter(Boolean);
-  const params = [...sourceScope.params, ...providerScope.params];
-  const whereClause = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+router.get("/cost", async (req, res, next) => {
+  try {
+    const rawOffset = parseInt(req.query.tz_offset, 10);
+    const tzModifier = Number.isFinite(rawOffset) ? `${-rawOffset} minutes` : "+0 minutes";
+    const sourceScope = sourceColumnClause(parseSources(req), "s.source");
+    const providerScope = providerColumnClause(parseProviders(req), "s.provider");
+    const clauses = [sourceScope.clause, providerScope.clause].filter(Boolean);
+    const params = [...sourceScope.params, ...providerScope.params];
+    const whereClause = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
 
-  const dailyTokens = db
-    .prepare(
+    const { dailyTokens, rules, gptRules, cursorRules } = await readCostQuery(
       `SELECT
         DATE(s.started_at, ?) as date,
         s.provider as provider,
@@ -735,29 +739,31 @@ router.get("/cost", (req, res) => {
       FROM token_usage tu
       JOIN sessions s ON s.id = tu.session_id
       ${whereClause}
-      GROUP BY 1, s.provider, tu.model, tu.speed, tu.inference_geo, tu.service_tier, tu.context_size`
-    )
-    .all(tzModifier, ...params);
-  const rules = stmts.listPricing.all();
-  const gptRules = stmts.listGptPricing.all();
-  const cursorRules = stmts.listCursorPricing.all();
-  // Price the date-split rows so each day's usage bills at the rate effective on
-  // that date (e.g. Sonnet 5's intro discount before 2026-08-31, standard after).
-  // Coverage equals the undated aggregate — token_usage cascades with sessions,
-  // so the INNER JOIN drops nothing — and the breakdown re-collapses per model.
-  const result = calculateProviderCost(dailyTokens, rules, gptRules, cursorRules);
-  const daily_costs = calculateDailyCosts(dailyTokens, rules, gptRules, cursorRules);
-  res.json({ ...result, daily_costs });
+      GROUP BY 1, s.provider, tu.model, tu.speed, tu.inference_geo, tu.service_tier, tu.context_size`,
+      [tzModifier, ...params]
+    );
+    if (res.destroyed) return;
+    // Price the date-split rows so each day's usage bills at the rate effective on
+    // that date (e.g. Sonnet 5's intro discount before 2026-08-31, standard after).
+    // Coverage equals the undated aggregate — token_usage cascades with sessions,
+    // so the INNER JOIN drops nothing — and the breakdown re-collapses per model.
+    const result = calculateProviderCost(dailyTokens, rules, gptRules, cursorRules);
+    const daily_costs = calculateDailyCosts(dailyTokens, rules, gptRules, cursorRules);
+    res.json({ ...result, daily_costs });
+  } catch (error) {
+    next(error);
+  }
 });
 
 // GET /api/pricing/cost/:sessionId - Get cost for a specific session
 router.get("/cost/:sessionId", (req, res) => {
   const rawOffset = parseInt(req.query.tz_offset, 10);
   const tzModifier = Number.isFinite(rawOffset) ? `${-rawOffset} minutes` : "+0 minutes";
+  const sessionId = resolveCursorSessionId(db, req.params.sessionId);
 
   const session = db
     .prepare("SELECT provider, source, DATE(started_at, ?) as date FROM sessions WHERE id = ?")
-    .get(tzModifier, req.params.sessionId);
+    .get(tzModifier, sessionId);
   if (!session) {
     return res.status(404).json({ error: { code: "NOT_FOUND", message: "Session not found" } });
   }
@@ -770,7 +776,7 @@ router.get("/cost/:sessionId", (req, res) => {
     return res.status(404).json({ error: { code: "NOT_FOUND", message: "Session not found" } });
   }
   const tokenRows = stmts.getTokensBySession
-    .all(req.params.sessionId)
+    .all(sessionId)
     .map((row) => ({ ...row, provider: session.provider || "claude" }));
   const rules = stmts.listPricing.all();
   const gptRules = stmts.listGptPricing.all();

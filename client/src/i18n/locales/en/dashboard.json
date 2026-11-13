@@ -6,8 +6,9 @@
   "activeSubagents": "Active Subagents",
   "eventsToday": "Events Today",
   "totalEvents": "Total Events",
-  "totalCost": "API-Equiv. Cost",
+  "totalCost": "API Cost Estimate",
   "totalCostScope": "all-time · at API list prices",
+  "costInfoLabel": "About API cost estimate",
   "viewBoard": "View Board",
   "viewAll": "View All",
   "activeAgentsSection": "Active Agents",
@@ -50,5 +51,9 @@
     "colWatcherPid": "watcher_pid",
     "colHealth": "health",
     "cmCompactsTitle": "compactions fired by compact-manager for this session"
-  }
+  },
+  "costEstimate": "API-equivalent estimate, not subscription charges.",
+  "costScope": "Sources: {{sources}} · Products: {{providers}}",
+  "costIncomplete": "Incomplete estimate: some usage has no applicable rate ({{models}}).",
+  "reviewRates": "Review pricing"
 }

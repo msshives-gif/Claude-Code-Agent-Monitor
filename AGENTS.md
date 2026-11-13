@@ -43,4 +43,5 @@
 - Shrink `events.data` rows stored before payload trimming existed: `npm run trim-events` (dry run; `--yes --backup` with the dashboard stopped)
 - Fork docs: never edit `README*.md` on this fork (they must stay identical to upstream, or every upstream merge conflicts); document fork-only behaviour in `FORK.md`
 - Token repair: `npm run repair-tokens` — one-time re-derivation of token totals inflated before usage was reconciled per `message.id` (the dashboard also runs this automatically once per database; `DASHBOARD_TOKEN_REPAIR=0` opts out)
+- Codex output repair: `node scripts/repair-codex-output.js --db /path/to/dashboard.db --out new-plan.json` previews reasoning-subset correction. Stop the dashboard before `--apply --journal new-backup.json`; apply requires an explicit database, preserves ambiguous history, and never overwrites an existing receipt.
 - Transcript snapshot retention: `ccam snapshots` (storage + policy), `ccam snapshots prune --days N` (dry run unless `--apply --confirm PRUNE_SNAPSHOTS`); `npm run test:snapshots` runs the cross-OS snapshot store tests (CI runs them on Linux, macOS, and Windows)

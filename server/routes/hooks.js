@@ -33,6 +33,17 @@ const {
 } = require("../lib/token-usage");
 const { trimHookPayload } = require("../lib/event-payload");
 const { isCursorTranscriptPath } = require("../lib/cursor-home");
+const {
+  applyCursorTurnUsage,
+  isCursorHook,
+  isCursorTurnPayload,
+  normalizeCursorHook,
+} = require("../lib/cursor-turn-usage");
+const {
+  claimCursorHookReceipt,
+  registerCursorGeneration,
+  resolveCursorSessionId,
+} = require("../lib/cursor-session-identity");
 const { getProjectsDir } = require("../lib/claude-home");
 const {
   TranscriptPathError,
@@ -281,7 +292,7 @@ function ensureSession(sessionId, data, origin = null) {
       data.model || null,
       null
     );
-    if (cursorSession) setSessionProviderStmt.run("cursor", sessionId);
+    if (cursorSession) stmts.setSessionProvider.run("cursor", sessionId);
     // A hook that proved REMOTE_PUSH_TOKEN (see POST /event) comes from
     // another machine: birth the row as remote-push owned so the same
     // collector's POST /ingest-batch can enrich it with tokens/tool events.
@@ -290,7 +301,7 @@ function ensureSession(sessionId, data, origin = null) {
     if (origin && origin.remotePush) {
       stmts.setSessionSource.run(REMOTE_PUSH_SOURCE, sessionId);
       if (REMOTE_PROVIDERS.includes(data.provider) && data.provider !== "claude") {
-        setSessionProviderStmt.run(data.provider, sessionId);
+        stmts.setSessionProvider.run(data.provider, sessionId);
       }
     }
     session = stmts.getSession.get(sessionId);
@@ -338,7 +349,7 @@ function ensureSession(sessionId, data, origin = null) {
   // durable transcript path, not from the event names. Repair pre-v2.2.2 rows
   // on their very next hook as well as classifying newly created rows.
   if (cursorSession && session.provider !== "cursor") {
-    setSessionProviderStmt.run("cursor", sessionId);
+    stmts.setSessionProvider.run("cursor", sessionId);
     session = stmts.getSession.get(sessionId);
   }
   // The local hook is authenticated before it reaches this route. Persist the
@@ -538,10 +549,64 @@ const processEvent = db.transaction((hookType, data, origin = null) => {
     if (repoRemoteUrl) data.repo_remote_url = repoRemoteUrl;
     else delete data.repo_remote_url;
   }
-  const sessionId = data.session_id;
+  let sessionId = data.session_id;
   if (!sessionId) return null;
 
-  const session = ensureSession(sessionId, data, origin);
+  if (isCursorHook(hookType, data)) {
+    const suppliedSessionId = sessionId;
+    sessionId = resolveCursorSessionId(db, sessionId);
+    if (sessionId !== suppliedSessionId) {
+      data = { ...data, session_id: sessionId, cursor_alias_session_id: suppliedSessionId };
+    }
+  }
+
+  let session = ensureSession(sessionId, data, origin);
+  if (!session) return null;
+  if (isCursorHook(hookType, data)) {
+    const suppliedSessionId = sessionId;
+    sessionId = registerCursorGeneration(db, sessionId, data);
+    if (sessionId !== suppliedSessionId) {
+      data = { ...data, session_id: sessionId, cursor_alias_session_id: suppliedSessionId };
+      session = stmts.getSession.get(sessionId);
+    }
+  }
+  if (isCursorHook(hookType, data) && !claimCursorHookReceipt(db, hookType, data, sessionId)) {
+    return {
+      session_id: sessionId,
+      agent_id: getMainAgent(sessionId)?.id || null,
+      event_type: hookType,
+      tool_name: data.tool_name || null,
+      summary: null,
+      created_at: new Date().toISOString(),
+      duplicate: true,
+    };
+  }
+  let cursorUsage = null;
+  if (isCursorTurnPayload(hookType, data)) {
+    cursorUsage = applyCursorTurnUsage(stmts, sessionId, data, { db });
+    if (cursorUsage && session.provider !== "cursor" && session.provider !== "codex") {
+      stmts.setSessionProvider.run("cursor", sessionId);
+      session = stmts.getSession.get(sessionId);
+    }
+    const actualModel = cursorUsage?.snapshot?.model;
+    if (actualModel && !["default", "auto", "unknown"].includes(actualModel.toLowerCase())) {
+      stmts.updateSessionModel.run(actualModel, sessionId, actualModel);
+    }
+  }
+
+  // Cursor's response hook exists to expose token usage. Recording it as a
+  // timeline event duplicates the subsequent Stop and inflates event counts.
+  if (hookType === "afterAgentResponse") {
+    return {
+      session_id: sessionId,
+      agent_id: getMainAgent(sessionId)?.id || null,
+      event_type: hookType,
+      tool_name: null,
+      summary: null,
+      created_at: new Date().toISOString(),
+      suppressed: true,
+    };
+  }
 
   // Remote household hooks (aideck-hook.js on other machines) cannot rely on
   // the transcript being readable on THIS host (the JSONL lives on the remote
@@ -1530,7 +1595,7 @@ function recordSessionOwner(req, sessionId) {
 }
 
 router.post("/event", (req, res) => {
-  const { hook_type, data } = req.body;
+  let { hook_type, data } = req.body;
   if (!hook_type || !data) {
     return res.status(400).json({
       error: { code: "INVALID_INPUT", message: "hook_type and data are required" },
@@ -1546,16 +1611,24 @@ router.post("/event", (req, res) => {
   const expectedRemoteToken = getRemotePushToken();
   const remotePush =
     !!expectedRemoteToken && tokensMatch(extractHeaderOnlyToken(req), expectedRemoteToken);
+  const normalized = normalizeCursorHook(hook_type, data);
+  hook_type = normalized.hookType;
+  data = normalized.data;
   const result = processEvent(hook_type, data, remotePush ? { remotePush: true } : null);
   if (!result) {
     return res.status(400).json({
       error: { code: "MISSING_SESSION", message: "session_id is required in data" },
     });
   }
+  if (result.session_id && data.session_id !== result.session_id) {
+    data = { ...data, session_id: result.session_id };
+  }
 
   if (data.session_id) recordSessionOwner(req, data.session_id);
 
-  res.json({ ok: true, event: result });
+  res.json({ ok: true, event: result.suppressed || result.duplicate ? undefined : result });
+
+  if (result.suppressed || result.duplicate) return;
 
   // Evaluate event-driven alert rules after the ingest transaction committed
   // and the response is on its way — alerting must never slow down or fail
@@ -1725,7 +1798,16 @@ function isErrorAtTail(result) {
   return lastErrorTs >= result.lastTurnTs; // error is the latest activity ⇒ unrecovered
 }
 
+let pendingWatchdog = null;
 function watchdogCheck() {
+  if (pendingWatchdog) return pendingWatchdog;
+  const pending = watchdogTick().finally(() => {
+    pendingWatchdog = null;
+  });
+  pendingWatchdog = pending;
+  return pending;
+}
+async function watchdogTick() {
   try {
     const os = require("os");
     const path = require("path");
@@ -1745,6 +1827,7 @@ function watchdogCheck() {
                  ORDER BY e.created_at DESC LIMIT 1) as last_data
          FROM sessions s
          WHERE s.status IN ('active', 'error') AND s.updated_at < ?
+           AND (s.provider IN ('claude', 'cursor') OR s.provider IS NULL)
            AND (s.source = 'local' OR s.source IS NULL)`
       )
       .all(cutoff);
@@ -1941,8 +2024,8 @@ function watchdogCheck() {
     //     sessions never flicker out on a transient mismatch. A false
     //     completion self-heals anyway: the next hook event reactivates the
     //     session via the existing needsReactivation path.
-    livenessReap();
-    livenessReap({ provider: "codex" });
+    await livenessReapAsync();
+    await livenessReapAsync({ provider: "codex" });
   } catch (err) {
     // Watchdog is best-effort — log but never crash the server
     console.warn("[WATCHDOG] Error during check:", err?.message || err);
@@ -1965,7 +2048,80 @@ function watchdogCheck() {
  * existing reactivation path. Watchdog ticks keep the gate, where it still
  * guards long-running steady-state work against transient probe misses.
  */
-function livenessReap({ ignoreIdleGate = false, provider = "claude" } = {}) {
+function livenessCandidates(provider) {
+  return db
+    .prepare(
+      `SELECT id, name, cwd, transcript_path, updated_at, owner_pid, owner_pid_start,
+    source, provider, awaiting_input_since, awaiting_reason FROM sessions
+    WHERE status = 'active' AND (source = 'local' OR source IS NULL)
+      AND COALESCE(provider, 'claude') = ?
+      AND ((cwd IS NOT NULL AND cwd <> '')
+           OR owner_pid IS NOT NULL
+           OR (? = 'codex' AND transcript_path IS NOT NULL))`
+    )
+    .all(provider, provider);
+}
+function livenessEpoch(session) {
+  let transcript = null;
+  if (session.transcript_path) {
+    try {
+      const stat = require("node:fs").statSync(session.transcript_path);
+      transcript = [stat.dev, stat.ino, stat.size, stat.mtimeMs];
+    } catch (err) {
+      if (err.code !== "ENOENT" && err.code !== "ENOTDIR") return null;
+      /* Confirmed absence is rechecked before applying the decision. */
+    }
+  }
+  const event = db.prepare("SELECT MAX(id) AS id FROM events WHERE session_id = ?").get(session.id);
+  const agents = db
+    .prepare(
+      `SELECT id, name, type, subagent_type, status, current_tool,
+    task, started_at, ended_at, parent_agent_id, updated_at,
+    awaiting_input_since, awaiting_reason FROM agents WHERE session_id = ? ORDER BY id`
+    )
+    .all(session.id);
+  return JSON.stringify([session, transcript, event.id, agents]);
+}
+const pendingReaps = new Map();
+function livenessReapAsync(options = {}) {
+  const provider = options.provider || "claude";
+  // A boot pass bypasses the idle gate; it must not be served by a gated run.
+  const key = `${provider}:${options.ignoreIdleGate ? "boot" : "gated"}`;
+  if (pendingReaps.has(key)) return pendingReaps.get(key);
+  const pending = (async () => {
+    const candidates = livenessCandidates(provider);
+    if (!candidates.length) return;
+    const before = new Map();
+    for (const session of candidates) {
+      const epoch = livenessEpoch(session);
+      if (epoch !== null) before.set(session.id, epoch);
+    }
+    const [probe, rollouts] = await Promise.all([
+      liveness.probeLiveCwdsAsync(provider === "codex" ? "codex" : "claude"),
+      provider === "codex" ? liveness.probeLiveCodexRolloutsAsync() : null,
+    ]);
+    // Sessions with a recorded owner pid get an exact per-process verdict
+    // inside livenessReap, so an unavailable cwd/rollout probe is not a reason
+    // to skip them.
+    if (
+      !probe.available &&
+      !rollouts?.available &&
+      !candidates.some((s) => s.owner_pid != null)
+    )
+      return;
+    livenessReap({ ...options, provider, _probe: probe, _rollouts: rollouts, _before: before });
+  })().finally(() => pendingReaps.delete(key));
+  pendingReaps.set(key, pending);
+  return pending;
+}
+
+function livenessReap({
+  ignoreIdleGate = false,
+  provider = "claude",
+  _probe,
+  _rollouts,
+  _before,
+} = {}) {
   const fs = require("fs");
   const path = require("path");
   const cli = provider === "codex" ? "codex" : "claude";
@@ -1977,26 +2133,23 @@ function livenessReap({ ignoreIdleGate = false, provider = "claude" } = {}) {
   // catch them. Their liveness is owned entirely by the sync/import path
   // (server/lib/remote-sync.js reconciles their status from the mirrored
   // transcript), so the local process probe must leave them alone.
-  const activeSessions = db
-    .prepare(
-      `SELECT id, name, cwd, transcript_path, updated_at, owner_pid, owner_pid_start FROM sessions
-       WHERE status = 'active'
-         AND (source = 'local' OR source IS NULL)
-         AND COALESCE(provider, 'claude') = ?
-         AND ((cwd IS NOT NULL AND cwd <> '')
-              OR owner_pid IS NOT NULL
-              OR (? = 'codex' AND transcript_path IS NOT NULL))`
-    )
-    .all(provider, provider);
+  const activeSessions = livenessCandidates(provider);
   if (activeSessions.length === 0) return; // nothing to check — skip the ps/lsof cost
 
   // Lazily-probed cwd set: only pay the ps/lsof cost if some session actually
-  // needs the fallback (no owner-pid verdict available).
-  let cwdProbe = null;
+  // needs the fallback (no owner-pid verdict available). The async reaper
+  // hands in a pre-taken probe; reuse it instead of probing again.
+  let cwdProbe = _probe || null;
   const getCwdProbe = () => (cwdProbe ??= liveness.probeLiveCwds(cli));
-  const rolloutProbe = provider === "codex" ? liveness.probeLiveCodexRollouts() : null;
+  const rolloutProbe = _probe
+    ? _rollouts
+    : provider === "codex"
+      ? liveness.probeLiveCodexRollouts()
+      : null;
   const now = Date.now();
   for (const sess of activeSessions) {
+    if (_before && (!_before.has(sess.id) || _before.get(sess.id) !== livenessEpoch(sess)))
+      continue;
     // Exact owner-process check first (recorded from the hook handler's
     // ancestry report). An `available` verdict is authoritative either way:
     // alive → the session cannot be dead, skip regardless of cwd (this is
@@ -2139,7 +2292,6 @@ function livenessReap({ ignoreIdleGate = false, provider = "claude" } = {}) {
 // carries no `src_` prefix, so it can never collide with a real configured
 // SSH source id, now or in the future (the id format is fixed at creation).
 const REMOTE_PUSH_SOURCE = "remote_push";
-const setSessionProviderStmt = db.prepare("UPDATE sessions SET provider = ? WHERE id = ?");
 
 // Bump only on a real wire-format break. A mismatch is a whole-request 409 —
 // per-item soft-fail doesn't make sense when the client and server disagree
@@ -2831,6 +2983,7 @@ router.post("/ingest-transcript", (req, res) => {
 router.transcriptCache = transcriptCache;
 router.watchdogCheck = watchdogCheck;
 router.livenessReap = livenessReap;
+router.livenessReapAsync = livenessReapAsync;
 // Exposed as a narrow test seam for version-variant Codex hook payloads.
 router.codexTranscriptPath = codexTranscriptPath;
 module.exports = router;

@@ -313,7 +313,7 @@ flowchart LR
 | **작업 진행률** | Claude 작업 도구, 레거시 `TodoWrite`, Codex `update_plan`에서 소유자를 인식하는 진행률을 생성합니다. 카드와 행에는 간단한 미리보기가 표시되고, Session Detail에는 상태 구간, 활성 작업, 소유자, 10개 행 단위 페이지가 추가됩니다. 새 최상위 작업은 이전의 미완료 상태를 지우고, 완료 기록은 유지합니다. |
 | **Dashboard** | 저장되는 **Monitor**와 **Health** 탭이 전체 합계, 활성 계층, 최근 활동, 가중 성공률/캐시/오류/힙 상태, 스토리지, 도구, 모델, Subagent 효과, 컴팩션 지표를 결합합니다. Health는 `/api/settings/info`와 `/api/workflows`에서 5초마다 새로 고칩니다. |
 | **Kanban Board** | Agent 열은 Working, Waiting, Completed, Error를, 세션 열은 Active와 Abandoned를 추가로 다룹니다. 카드는 10개씩 표시하고 활성 WebSocket 보기만 구독하며, 전체 제목을 보존하고 권한 입력, 턴 완료, 프롬프트 대기, 중단 같은 대기 사유를 설명합니다. |
-| **Sessions** | 보이는 페이지만 비용을 계산하는 검색, 필터, 서버 페이지네이션 히스토리와 메모리 내 임시 Codex 시작 행을 제공합니다. 검색은 300 ms 디바운스로 `id`, `name`, `cwd`를 대상으로 합니다. 이름은 명시적 제목, AI 제목, 첫 의미 있는 사용자 프롬프트 순으로 결정됩니다. |
+| **Sessions** | 보이는 페이지만 비용을 계산하는 검색, 필터, 서버 페이지네이션 히스토리와 메모리 내 임시 Codex 시작 행을 제공합니다. Provider 선택기는 온보딩 또는 Settings에서 선택한 제품 범위를 유지하면서 Claude Code, Cursor, Codex로 좁힐 수 있습니다. 검색은 300 ms 디바운스로 `id`, `name`, `cwd`를 대상으로 합니다. 이름은 명시적 제목, AI 제목, 첫 의미 있는 사용자 프롬프트 순으로 결정됩니다. Cursor의 네이티브 생성 제목은 수집 메타데이터가 현재 이름을 CCAM이 소유함을 입증할 때만 임시 첫 프롬프트 대체 이름을 갱신하며, 수동 이름과 소유권이 불분명한 레거시 이름은 그대로 유지됩니다. |
 | **Session Detail** | 실시간 통계, 활성 작업, 도구 사용량, Subagent, 토큰, 계층, 필터링된 이벤트 타임라인, `tool_use_id` 그룹화, 도구별 렌더러를 제공합니다. Conversation 보기는 대기 중인 턴, 시스템 알림, Markdown, 구문 강조 코드, 스타일이 적용된 도구를 렌더링하고, 대기 배너에는 사유와 경과 시간을 표시합니다. |
 | **Activity Feed** | 공유 필터, 서버 페이지네이션, 그룹화, 프로젝트/세션/Subagent 출처, 세션 링크, 일관된 Claude/Codex 상태 배지를 갖춘 일시 정지 가능한 실시간 이벤트를 제공합니다. |
 | **Analytics** | 모델 토큰, 도구 빈도, 일요일 기준 활동 히트맵, 세션 추세, 연결 상태, 레이아웃에 맞는 로딩 스켈레톤, 긴 범례의 페이지네이션을 다룹니다. |
@@ -325,9 +325,9 @@ flowchart LR
 | **Subagent Hierarchy** | Dashboard와 Session Detail의 접을 수 있는 부모-자식 트리는 자식이 활성인 동안 자동으로 펼쳐집니다. |
 | **Background Agents** | 백그라운드 Subagent를 조기 완료 처리하지 않고 계속 추적합니다. |
 | **Subagent Tool Attribution** | `SubagentStop`과 시작 스캔이 Subagent별 JSONL 도구를 가져오고, `tool_use_id`로 결과를 연결하며, 중복을 제거하고, 30초 이내의 일치하는 실시간 행을 병합하고, 생성된 자식 ID에서 실제 중첩 부모를 재구성합니다. 재부모화는 추가 방식이며 행이 삽입되지 않아도 UI 새로 고침을 유발합니다. |
-| **Cost Tracking** | 모델별, 세션별 설정 가능한 가격은 날짜가 있는 초기 요율, 편집 가능한 프로모션 범주, 각 Subagent의 자체 비용, 컴팩션에 안전한 합계를 지원합니다. 트랜스크립트는 캐시된 증분 바이트 오프셋으로 읽습니다. |
+| **Cost Tracking** | API 상당 예상치(구독 요금 아님)는 설정 가능한 모델별 요금을 사용하며 Cursor의 실제 네이티브 모델과 generation당 하나의 usage 레코드를 포함합니다. Dashboard와 Analytics 비용 레이블 옆의 접근 가능한 정보 아이콘에는 선택 범위와 누락된 모든 요금이 표시되고, Analytics 값 Tooltip에는 전체 금액만 표시되며, Settings는 같은 coverage 정보를 인라인으로 표시합니다. |
 | **Transcript Cache** | 증분 JSONL 파싱은 토큰, 컴팩션, API 오류, 턴 소요 시간, thinking, usage 메타데이터를 추출합니다. 전체 파싱은 레거시 중복을 복구하고 tail 파싱은 append-only로 유지합니다. 배열은 `TRANSCRIPT_CACHE_MAX_ARRAY_LEN`, 기본값 `1000`으로 제한되며 항목은 파일 메타데이터와 파싱 결과만 저장합니다. |
-| **Transcript Snapshot Retention** | 영구 Claude, Codex, Cursor 스냅샷은 가장 완전한 대화를 보존합니다. 소스가 없는 Claude와 Cursor 복사본은 왕복 검증 후 gzip 처리되고, purge는 스냅샷을 제거하며, 선택적 연령과 크기 제한은 Settings 드라이런 미리보기 후 유일한 오래된 복사본을 정리할 수 있습니다. |
+| **Transcript Snapshot Retention** | 영구 Claude, Codex, Cursor 스냅샷은 가장 완전한 대화를 보존합니다. Cursor 네이티브 저장소 스냅샷은 라이브 root, 레거시에만 있는 참조, 해당 원시 blob의 정확한 바이트를 보존하면서 접근할 수 없는 기록은 제외합니다. 격리된 Worker는 동기화당 레거시 전용 Store를 최대 네 개 마이그레이션합니다. 소스 Store는 읽기 전용으로 열고 세션별 잠금으로 설치를 직렬화하며, 작업이 없는 예약 스캔은 5분 뒤 다시 확인합니다. 한 프로세스에서 같은 소스 stamp로 다섯 번 실패하면 이후 복구를 위해 파일을 남기고 재시도를 중단합니다. 원본이 사라진 적격 Claude/Cursor JSONL 복사본만 왕복 검증 후 gzip 처리되며 Codex 스냅샷은 압축하지 않습니다. Purge는 스냅샷을 제거하며, 선택적 연령과 크기 제한은 Settings 드라이런 미리보기 후 유일한 오래된 복사본을 정리할 수 있습니다. |
 | **Notifications** | VAPID Web Push는 백그라운드 또는 브라우저가 닫힌 상태에서도 설정된 이벤트를 전달하며, macOS 오디오 지원과 구독 제어를 제공합니다. |
 | **Alerts** | Settings에서 이벤트 패턴, 비활성, 멈춘 Agent, 토큰 알림을 위한 Rules, Channels, Activity를 제공합니다. 이벤트 규칙은 수집 후 실행되고 시간 규칙은 60초마다 검사됩니다. 저장된 알림은 규칙/세션별 쿨다운, 기본 300초, WebSocket 전달, 확인, 14개 provider 또는 비밀값 마스킹, 타임아웃, 제한된 재시도가 있는 범용 서명 JSON으로의 범위 지정 Webhook fan-out을 사용합니다. |
 | **Update Notifier** | 차단하지 않는 예약 `git fetch`가 checkout을 canonical remote와 비교한 뒤 modal, sidebar, terminal에 정확한 업데이트 명령을 표시합니다. CCAM은 스스로 pull하거나 재시작하지 않습니다. |
@@ -337,7 +337,7 @@ flowchart LR
 | **MCP Server (Local)** | stdio, HTTP+SSE, REPL의 세 transport가 16개 module에서 103개의 typed tool을 노출합니다. 하나의 검증된 catalog가 localhost 또는 HTTPS target, bearer-token 규칙, redirect 거부, mutation gate, 파일당 50 MiB, 호출당 100 MiB upload, 10 MiB binary response, 25 MiB restore를 강제합니다. |
 | **Workflows** | 11개의 D3 섹션이 orchestration, tool flow, collaboration, effectiveness, patterns, delegation, errors, concurrency, complexity, compaction, session drill-in을 다룹니다. 현지화된 설명 tooltip, cross-filtering, JSON export, 3초 debounce 실시간 새로 고침, journal에서 재구성된 dynamic run이 Agent별 phase, token, tool, duration, prompt, result 정보를 보존합니다. |
 | **Compaction Tracking** | 트랜스크립트 스캔은 duration이 0인 compaction Agent와 event를 만들고, 레거시 음수 duration을 복구하며, 이전 세션을 backfill하고, 캐시된 `sessions.transcript_path` 값으로 활성 세션만 주기적으로 검사합니다. |
-| **Subsessions/Resumed Sessions** | 새 이벤트는 재개되었거나 orphaned 상태인 세션을 다시 활성화합니다. `DASHBOARD_STALE_MINUTES`의 1/4 주기로, 60초에서 5분 사이로 제한된 sweep가 abandoned 세션을 찾습니다. |
+| **Subsessions/Resumed Sessions** | Cursor의 `generation_id` 상관관계는 `/resume` 임시 세션을 정식 대화에 합치고 이전 링크를 리디렉션하며 반복 완료 Hook을 중복 제거합니다. 다른 새 이벤트도 재개되거나 orphaned 상태인 세션을 다시 활성화하고, 제한된 stale sweep는 abandoned 세션을 계속 찾습니다. |
 | **Pre-Existing Session Detection** | 시작 가져오기는 최근 수정된 트랜스크립트를 active로 표시하고, 이후 Stop 이벤트는 가져온 completed 또는 abandoned 세션을 업데이트하기 전에 다시 활성화합니다. |
 | **Continuous Project Sync** | 즉시 시작 sweep, debounce filesystem watcher, 기본 30초인 `DASHBOARD_SESSION_SYNC_MS` poll이 mtime cache와 coalesced scan을 공유합니다. 새로 생겼거나 진행된 파일만 다시 파싱하며, Linux에 안전한 watcher 범위와 실시간 session broadcast를 사용합니다. |
 | **Remote Data Sources** | SSH source는 `scp` 또는 WSL `tar`를 통해 Claude와 Codex home을 독립적으로 mirror하고, `sessions.source`를 tag하며, lifecycle을 조정하고, 두 provider 중 하나라도 작동하면 healthy 상태를 유지합니다. Polling 기본값은 15초이며 stale fallback은 실패한 provider에만 적용됩니다. 인증 정보는 host SSH에 남습니다. |
@@ -384,13 +384,15 @@ npm run setup
 npm run install-hooks
 ```
 
-화살표 키, Space, Enter로 **Claude Code**, **Codex (beta)** 또는 둘 다를 선택하세요. Claude Hook은 `~/.claude/settings.json`에, Codex Hook은 `~/.codex/hooks.json`에 저장됩니다. 다시 설치하면 CCAM 항목만 교체하고 관련 없는 Hook은 보존합니다. 같은 작업을 **Settings → Hook Configuration**에서도 실행할 수 있습니다.
+화살표 키, Space, Enter로 **Claude Code**, **Codex (beta)** 또는 둘 다를 선택하세요. 기본적으로 Claude Hook은 `~/.claude/settings.json`에, Codex Hook은 `~/.codex/hooks.json`에 저장됩니다. 다시 설치하면 CCAM 항목만 교체하고 관련 없는 Hook은 보존합니다. 같은 작업을 **Settings → Hook Configuration**에서도 실행할 수 있습니다.
+
+Claude 홈은 `CLAUDE_HOME || CLAUDE_CONFIG_DIR || ~/.claude` 순서로 결정되므로 Hook과 대화 기록이 이동된 디렉터리를 사용합니다. `CLAUDE_CONFIG_DIR`을 설정하면 Agent 설정은 `$CLAUDE_CONFIG_DIR/.claude.json`을 읽습니다. Claude 홈을 이동한 경우 검색 파일은 컴퓨터의 로컬 앱 데이터에 저장됩니다. 대시보드 데이터는 기존 로컬 디렉터리가 우선하며, 없으면 기존 `<CLAUDE_HOME>/agent-dashboard` 또는 `~/.claude/agent-dashboard`를 순서대로 재사용합니다. 새 데이터는 로컬 앱 데이터에 저장되고 `DASHBOARD_DATA_DIR`로 다른 로컬 경로를 선택할 수 있습니다. `CCAM_NO_AUTO_HOOKS=1`은 시작 시 자동 설치를 건너뛰고 기존 Hook 항목을 그대로 둡니다. 수동 설치는 가능하며, 처리기가 없는 기존 항목은 다시 설치하거나 제거해야 합니다. 현재 버전이 설치한 Hook 경로는 처리기가 사라지면 조용히 종료되고 미설치로 표시됩니다. 패키지 데스크톱이 자체 서버를 시작하면 Claude 홈 재정의를 Electron `userData/.env`에 저장하고, 기존 서버를 사용하면 해당 서버의 환경 파일을 사용합니다. 개발 모드는 저장소의 `.env`를 계속 사용합니다.
 
 처음 실행할 때 CCAM은 현재 데이터 범위에서 선택한 provider만 확인하고 누락된 Hook 설치를 제안합니다. 준비 상태 확인에 실패하면 대시보드를 차단하지 않고 수동 설정으로 전환합니다.
 
 설정 후에도 provider 검색은 계속됩니다.
 
-- **Claude Code and Cursor:** Claude Hook이 실시간 이벤트를 전달합니다. Cursor는 Hook이 필요 없습니다. Claude Code를 선택하면 `~/.cursor/chats`와 `~/.cursor/projects/*/agent-transcripts`도 감시하고, Cursor 정리 전에 대화를 스냅샷으로 저장하며, `DASHBOARD_CURSOR_HOME`을 따릅니다.
+- **Claude Code and Cursor:** Claude Hook이 실시간 이벤트를 전달합니다. CCAM은 관련 없는 명령 체인을 바꾸거나 분리하지 않고 자체 `stop` 및 `afterAgentResponse` 명령을 `~/.cursor/hooks.json`에 자동 병합하며, `npm run install-cursor-hooks`로 수동 복구할 수도 있습니다. Cursor의 네이티브 채팅 저장소와 transcript watcher는 오프라인 대체 경로로 유지되어 `/resume` 임시 ID를 정식 대화에 연결하고, 네이티브 Store·JSONL·alias prompt history를 병합하며, 수집기가 소유한 이름에만 생성 제목을 적용하고, alias 패밀리의 어느 네이티브 Store에서든 일치하는 응답을 찾은 경우에만 `default`를 해석하며, `DASHBOARD_CURSOR_HOME`을 따릅니다.
 - **Codex:** Hook과 증분 `~/.codex/sessions` rollout 감시가 라이프사이클, 프롬프트, 제목, 도구, 토큰, 비용, 컴팩션, 대화, WebSocket 상태를 최신으로 유지합니다. 잘못된 파일은 독립적으로 다시 시도하고, 정확한 rollout/process 매칭으로 유령 활성 카드를 방지하며, native `/rename` 제목과 cursor 페이지네이션 대화 히스토리를 실시간으로 유지합니다.
 - **Both:** 카드는 서로 다른 최근 사용자 프롬프트 2개를 유지하고, 저장된 이미지 첨부 파일을 렌더링하며, 반복된 Codex 응답을 중복 제거합니다. Codex-only 범위에서는 Claude-only Dynamic Workflow journal을 숨깁니다.
 
@@ -481,7 +483,7 @@ npm run docker:full:up
 Host port는 기본적으로 loopback에만 bind됩니다: Dashboard `4820`, MCP `8819`, Nginx `8080`, Prometheus `9090`, Grafana `3000`. Claude/Codex home은 read-only mount이고 named volume이 SQLite와 dashboard-owned config를 보존합니다. Nginx는 UI, 인증된 REST, WebSocket을 proxy하지만 Hook, metrics, MCP는 기본적으로 edge에서 차단합니다.
 
 > [!IMPORTANT]
-> Hook은 host에서 설치하십시오. Remote Hook은 `CCAM_DASHBOARD_URL=https://...`와 `CCAM_HOOK_TOKEN`을 사용하며 non-loopback URL은 HTTPS가 필수입니다. [DEPLOYMENT.md](DEPLOYMENT.md)를 참조하십시오.
+> 컨테이너가 시작된 뒤 host에서 `npm run install-hooks -- --both --dashboard-port 4820`으로 Claude Code/Codex Hook을 설치하십시오(다른 host port를 publish했다면 `4820`을 바꾸십시오). Read-only 컨테이너는 host-visible discovery entry를 게시할 수 없으므로 installer가 이 검증된 target을 내장합니다. 기존 Compose 사용자는 업그레이드 후 이 명령을 한 번 다시 실행하여 이전 dashboard-owned Hook entry에 명시적 target을 추가해야 합니다. Remote Hook은 `CCAM_DASHBOARD_URL=https://...`와 `CCAM_HOOK_TOKEN`을 사용하며 non-loopback URL은 HTTPS가 필수입니다. [DEPLOYMENT.md](DEPLOYMENT.md)를 참조하십시오.
 
 ---
 
@@ -516,7 +518,7 @@ sequenceDiagram
 ### Hook 라이프사이클
 
 1. **Claude Code**가 세션, 프롬프트, 도구, 알림, Subagent, 턴, 종료 Hook을 발생시킵니다.
-2. **`scripts/hook-handler.js`**가 stdin에서 각 이벤트를 읽고 `~/.claude/.agent-dashboard.json` 또는 `CLAUDE_DASHBOARD_PORT`를 통해 실행 중인 대시보드를 찾습니다. 고유한 SQLite 데이터 디렉터리마다 한 번 전송하고, 중복 listener에서는 가장 낮은 port를 선택하면서 별도 database를 사용하는 대시보드에는 계속 전달합니다. 각 target은 격리되며 handler는 5초 이내에 종료되어 안전하게 실패합니다.
+2. **`scripts/hook-handler.js`**가 stdin에서 각 이벤트를 읽고 `CCAM_DASHBOARD_URL`, 명시적 `CLAUDE_DASHBOARD_PORT`, 로컬 `.agent-dashboard.json` 등록 파일의 실행 중인 대시보드 순서로 target을 선택합니다. `CLAUDE_HOME` 또는 `CLAUDE_CONFIG_DIR`로 Claude 홈을 이동하면 등록 파일은 컴퓨터의 로컬 앱 데이터에, 기본 홈을 사용하면 `~/.claude`에 위치합니다. 정규화된 Claude 홈으로 먼저 필터링한 뒤 고유한 SQLite 데이터 디렉터리마다 한 번 전송하고, 중복 listener에서는 가장 낮은 port를 선택하면서 홈이 일치하고 별도 database를 사용하는 대시보드에는 계속 전달합니다. 각 target은 격리되며 handler는 2.5초 이내에 종료되어 안전하게 실패합니다.
 3. **서버**가 이벤트와 관련 상태를 하나의 SQLite transaction으로 commit합니다.
    - 첫 접촉에서 세션과 main Agent를 만듭니다. `SessionStart`는 **Waiting**으로 시작하고, `UserPromptSubmit` 또는 `PreToolUse`가 **Working**으로 전환하며, `PostToolUse`는 working 상태를 유지합니다.
    - `Stop`은 background Agent를 계속 실행하면서 main Agent를 **Waiting**으로 되돌립니다. `stop_reason=error`는 Agent와 세션을 **Error**로 표시합니다. 권한 알림도 입력을 기다리며, 새 프롬프트나 도구 시작만 오류를 복구합니다.
@@ -617,7 +619,7 @@ flowchart LR
 | 환경 변수 | 기본값 | 목적 |
 | --- | --- | --- |
 | `DASHBOARD_PORT` | `4820` | Express server port. |
-| `CLAUDE_DASHBOARD_PORT` | `4820` | Hook handler가 사용하는 port. |
+| `CLAUDE_DASHBOARD_PORT` | 미설정(discovery) | Hook handler의 명시적 port override이며 설치 시 `--dashboard-port N`으로 영구 저장할 수 있습니다. |
 | `NODE_ENV` | `development` | 빌드된 client를 제공하려면 `production`을 사용합니다. |
 | `DASHBOARD_UPDATE_CHECK` | 활성화 | 예약 upstream 확인을 끄려면 `0`, `false`, `off`로 설정합니다. |
 | `DASHBOARD_UPDATE_CHECK_INTERVAL_MS` | `300000` | 업데이트 간격이며 최솟값은 60,000 ms입니다. 수동 **Check now**는 계속 사용할 수 있습니다. |
@@ -747,6 +749,7 @@ ccam help [command…] | commands [--json] | completion bash|zsh|fish | version
 | `npm run import-history`| `~/.claude/`에서 레거시 세션을 가져옵니다 (시작 시에도 실행됨) |
 | `npm run reconcile-tokens`| 가져온 세션의 토큰 합계를 새로 계산합니다 (기존 합계를 낮추지는 않습니다) |
 | `npm run repair-tokens` | 트랜스크립트가 디스크에 남아 있는 모든 **Claude** 세션(`~/.claude/projects/` 또는 세션에 저장된 `transcript_path` 로 탐색)의 **workflow 가 아닌** 토큰 합계를 다시 도출하고 컨텍스트 압축 baseline 을 0으로 만듭니다. workflow 및 Codex 행은 그대로 유지됩니다. v2.0.9 이전의 레코드 단위 usage 합산 또는 누락된 동일 모델의 평면 서브에이전트 usage 영향을 받은 데이터베이스를 위한 일회성 복구입니다. 먼저 대시보드를 중지하세요 |
+| `node scripts/repair-codex-output.js --db /path/to/dashboard.db --out plan.json` | Codex 출력 사용량 복구를 미리 확인합니다. 추론 토큰은 이미 출력에 포함됩니다. `--apply --journal new-backup.json` 적용 전에 대시보드를 중지하세요. 기존 파일을 덮어쓰지 않고 모호한 기록은 보존합니다. 일반, gzip 및 Zstd 기록을 스트리밍으로 읽습니다. |
 | `DASHBOARD_TOKEN_REPAIR` | 기본적으로 활성화됩니다(`1`). 레코드 단위 부풀림 또는 누락된 동일 모델의 평면 서브에이전트로 영향을 받은 과거 Token 합계를 일회성으로 자동 복구합니다. 실시간 수정은 완료된 모든 세션을 다시 처리할 수 없고 `replaceTokenUsage` 는 기존 high-water mark 를 낮출 수 없습니다. 데이터베이스당 한 번만 실행되며(마커 기반, 부팅 경로에서 지연, 다른 대시보드가 같은 데이터 디렉터리를 공유하면 건너뜀), 먼저 기존 행을 `token_usage_pre_repair_v2` 로 스냅숏합니다. `0` 으로 설정하면 건너뛰고 `npm run repair-tokens` 로 직접 복구합니다 |
 | `npm run clear-data`    | 모든 세션, 에이전트, 이벤트, 토큰 사용량을 삭제합니다            |
 | `npm run mcp:install`   | 로컬 MCP 패키지(`mcp/`)의 의존성을 설치합니다       |
@@ -782,6 +785,23 @@ ccam help [command…] | commands [--json] | completion bash|zsh|fish | version
 | `npm run docker:full:up` | Dashboard + 인증 MCP + Nginx + Prometheus + Grafana |
 | `npm run docker:full:down` | 전체 container stack 중지 |
 | `npm run deploy:validate` | Docker, Compose, Nginx, Helm, Kustomize, Terraform, single-writer invariant 검토. 결과는 참고용이며(종료 코드 0), `CCAM_DEPLOY_VALIDATE_STRICT=1`을 설정하면 강제 게이트가 됩니다 |
+
+---
+
+비용은 설정된 API 요금을 기준으로 한 예상치이며 구독 요금이 아닙니다. Dashboard와 Analytics는 비용 레이블 옆의 키보드 접근 가능한 정보 아이콘에 선택한 머신/제품 범위와 누락된 요금 전체 목록을 표시하고, Analytics 값 Tooltip에는 축약하지 않은 금액만 표시하며, Settings는 같은 coverage 정보를 인라인으로 보여 줍니다. GPT-6.1 Sol의 Standard/Fast Short/Long 기본 요금은 OpenAI 공개 요금을 따르며 기존에 일치하는 사용자 규칙을 덮어쓰지 않습니다.
+
+### 업그레이드 전 비용 스냅숏
+
+사용량을 다시 집계할 수 있는 업그레이드 전에 읽기 전용 기준 스냅숏을 만들고, CCAM을 업그레이드해 재시작한 뒤 시작 유지 관리가 끝나면 새 경로에 두 번째 스냅숏을 만들어 비교합니다. TSV 파일에는 세션 ID와 소유권 메타데이터가 포함되므로 비공개로 보관하세요. 기존 로컬 세션의 입력, 출력, 캐시 읽기, 캐시 쓰기, 1시간 캐시 쓰기, 웹 검색, 웹 가져오기, 코드 실행 또는 비용이 바뀌거나, 소유권이 로컬과 다른 source 또는 provider 사이에서 바뀌거나, 로컬 세션이 사라지면 가드가 종료 코드 1을 반환합니다. 원격 세션과 새 세션은 별도로 보고합니다.
+
+```bash
+node scripts/cost-snapshot.js snapshot --out before.tsv
+# CCAM을 업그레이드하고 재시작한 다음 시작 유지 관리가 끝날 때까지 기다립니다.
+node scripts/cost-snapshot.js snapshot --out after.tsv
+node scripts/cost-snapshot.js compare before.tsv after.tsv --fail-on-local-change
+```
+
+중단된 원격 동기화는 재시작 후 오류로 표시되고 이전 가져오기 결과는 보존됩니다. 시작 복구는 공유 SQLite 데이터 디렉터리 아래의 프로세스별 생존 마커가 현재 프로세스만 실행 중인 Dashboard임을 입증할 때만 실행됩니다. 프로세스가 서로 다른 `CLAUDE_HOME` 값을 사용해도 같은 마커를 확인하며, 마커가 없거나 손상되었거나 동시 소유자가 있으면 복구를 연기합니다. 데이터베이스가 사용 중이면 독립적으로 재시도하므로 복구 실패가 원격 폴러를 비활성화하지 않습니다. 원격 재시도 중에는 마지막 오류가 계속 표시되며, 동기화가 성공하면 지워집니다.
 
 ---
 

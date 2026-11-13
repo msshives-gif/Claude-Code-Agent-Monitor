@@ -6,8 +6,9 @@
   "activeSubagents": "Subagentes Activos",
   "eventsToday": "Eventos Hoy",
   "totalEvents": "Total de Eventos",
-  "totalCost": "Costo equiv. API",
+  "totalCost": "Coste estimado de API",
   "totalCostScope": "histórico · a precios de lista de la API",
+  "costInfoLabel": "Acerca del coste estimado de API",
   "viewBoard": "Ver Tablero",
   "viewAll": "Ver Todo",
   "activeAgentsSection": "Agentes Activos",
@@ -50,5 +51,9 @@
     "colWatcherPid": "pid_vigilante",
     "colHealth": "salud",
     "cmCompactsTitle": "compactaciones disparadas por el gestor para esta sesión"
-  }
+  },
+  "costEstimate": "Estimación equivalente de API, no cargos de suscripción.",
+  "costScope": "Fuentes: {{sources}} · Productos: {{providers}}",
+  "costIncomplete": "Estimación incompleta: parte del uso no tiene una tarifa aplicable ({{models}}).",
+  "reviewRates": "Revisar precios"
 }

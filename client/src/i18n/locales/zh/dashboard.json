@@ -6,8 +6,9 @@
   "activeSubagents": "活跃Subagent",
   "eventsToday": "今日事件",
   "totalEvents": "总事件数",
-  "totalCost": "API 等价成本",
+  "totalCost": "API 费用估算",
   "totalCostScope": "全部时间 · 按 API 标价",
+  "costInfoLabel": "关于 API 费用估算",
   "viewBoard": "查看看板",
   "viewAll": "查看全部",
   "activeAgentsSection": "活跃Agent",
@@ -50,5 +51,9 @@
     "colWatcherPid": "监视器_pid",
     "colHealth": "健康",
     "cmCompactsTitle": "压缩管理器为此会话触发的压缩次数"
-  }
+  },
+  "costEstimate": "API 等价费用估算，并非订阅扣费。",
+  "costScope": "来源：{{sources}} · 产品：{{providers}}",
+  "costIncomplete": "估算不完整：部分用量没有适用费率（{{models}}）。",
+  "reviewRates": "查看定价"
 }

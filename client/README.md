@@ -63,9 +63,9 @@ The client is a single-page application (SPA) built with modern web technologies
 
 ### First-run hook setup
 
-`SplashScreen.tsx` asks which provider data to display (Claude Code, Codex, or both) before dashboard routes render. The Claude Code choice explicitly includes Cursor monitoring out of the box; the server expands that scope to stored `claude` + `cursor` rows while only Claude hooks need installation. Codex-only needs Codex hooks, and Both needs both hook sets. A ready selection enters the dashboard immediately. A partial or missing setup opens the live-monitoring gate with only the missing selected providers, then calls `POST /api/settings/install-hooks` for that subset and shows command output in place. A status-check failure remains fail-soft by opening manual setup for the full selected scope. API paths are deliberately excluded, so Swagger, ReDoc, and the raw OpenAPI document remain unobstructed and retain the dashboard favicon.
+`SplashScreen.tsx` asks which provider data to display (Claude Code, Codex, or both) before dashboard routes render. The Claude Code choice explicitly includes Cursor monitoring; the server expands that scope to stored `claude` + `cursor` rows and automatically maintains Cursor's completion hooks separately from the interactive Claude/Codex setup gate. Codex-only needs Codex hooks, and Both needs both interactive hook sets. A ready selection enters the dashboard immediately. A partial or missing setup opens the live-monitoring gate with only the missing selected providers, then calls `POST /api/settings/install-hooks` for that subset and shows command output in place. A status-check failure remains fail-soft by opening manual setup for the full selected scope. API paths are deliberately excluded, so Swagger, ReDoc, and the raw OpenAPI document remain unobstructed and retain the dashboard favicon.
 
-Cursor cards use the native session title plus `Cursor · <project>`, subagent-count, and turn-count subtitles. Session Detail renders Cursor conversations through the same DTO as Claude/Codex and listens for `session_updated` so a newly submitted prompt appears before Cursor emits a tool event or assistant reply. During the prompt-history → transcript hand-off, stable provider message ids merge refresh windows without duplicating the human turn. Settings adds a dedicated Cursor pricing editor (`GET/PUT/DELETE /api/pricing/cursor`) with four published rate columns and plan-billing caveats; its strings ship in all five locales.
+Cursor cards use the native session title plus `Cursor · <project>`, subagent-count, and turn-count subtitles. A first-prompt fallback is explicitly ingestion-owned, so Cursor's later generated `meta.json.title` replaces it while manual and ambiguous legacy names remain protected. Session Detail renders Cursor's richest native store/JSONL conversation through the same DTO as Claude/Codex, redirects an obsolete `/resume` shell URL to the canonical conversation, and listens for `session_updated` so a newly submitted prompt appears before an assistant reply. Stable provider message IDs merge refresh windows without duplicating the human turn. Settings adds a dedicated Cursor pricing editor (`GET/PUT/DELETE /api/pricing/cursor`) with four published rate columns and plan-billing caveats; its strings ship in all five locales.
 
 Chart legends use the shared `PaginatedLegend.tsx` component. Lists at or below the configured page size render exactly as before with no controls. Longer Analytics donut legends and data-driven Workflows legends render one bounded page at a time with localized Previous / Next buttons and an accessible visible-range announcement, so labels stay reachable without expanding the chart card indefinitely.
 
@@ -210,7 +210,7 @@ client/
 │   ├── pages/              # Route pages
 │   │   ├── Dashboard.tsx
 │   │   ├── KanbanBoard.tsx
-│   │   ├── Sessions.tsx       # Server-paginated table with task-progress donut, page-zero transient Codex startup row, searchable multi-project filtering, and custom sort menus
+│   │   ├── Sessions.tsx       # Server-paginated table with task-progress donut, page-zero transient Codex startup row, scoped provider/project filtering, and custom sort menus
 │   │   ├── SessionDetail.tsx  # Overview + full task tracker + agent tree + event timeline + cursor-paginated Conversation tab
 │   │   ├── ActivityFeed.tsx  # Real-time event log; row click expands payload; Session btn navigates
 │   │   ├── Analytics.tsx
@@ -258,7 +258,7 @@ graph TB
 
     Dashboard[Dashboard<br/>Monitor tab: stats + agents + events<br/>Health tab: SystemHealthTab]
     Kanban[KanbanBoard<br/>4-column agent board]
-    Sessions[Sessions<br/>searchable multi-project table + custom sorting]
+    Sessions[Sessions<br/>searchable provider/project table + custom sorting]
     Detail[SessionDetail<br/>agent hierarchy + timeline]
     Feed[ActivityFeed<br/>streaming event log]
     Analytics[Analytics<br/>tokens + heatmap + trends]
@@ -307,6 +307,8 @@ sequenceDiagram
 
 ## State Management
 
+Settings system-info reads share one in-flight request across initial/manual loads, the 10-second poll, and completed remote imports. Individual hook WebSocket events do not trigger full database counts. Hook installation, Codex-home changes, and snapshot-storage changes wait for an older read before requesting fresh info. Responses from an unmounted page are ignored.
+
 The client uses **local component state** and **React hooks** for state management. No global state library (Redux, Zustand) is used to keep the architecture simple. The one small exception is the **data-scope store** (`lib/dataScope.ts`): a lightweight app-wide store holding the current source set (`local` plus any configured [Remote Data Sources](../server/README.md#remote-data-sources)) and product set (`claude`, which includes Claude Code + Cursor, `codex`, or both). Pages append the resulting `?sources=` and `?providers=` parameters to their API requests, so the Settings selector immediately narrows the whole app to the chosen machines and/or agents. Remote sources are managed from the Settings page via the `RemoteSources` component (`components/RemoteSources.tsx`), which configures independent `~/.claude` and `~/.codex` homes, renders provider-specific connection/sync results, drives the `/api/remote-sources` CRUD/test/sync endpoints, and reflects live `remote_source.status` WebSocket updates. A source can be Claude-only, Codex-only, or both; a healthy provider's data keeps refreshing even if its sibling provider is unavailable. Local Cursor discovery uses its Claude-compatible filesystem path and is included by the `claude` product scope. When a sync finishes, stats pages refetch via `lib/remoteDataEvents.ts` (`remote_data.updated`, `remote_source.status` with `ok`, or remote `import.progress` complete).
 
 The Remote Data Sources form names its independent optional overrides **Remote Claude home** and **Remote Codex home**, with `~/.claude` / `~/.codex` defaults and `wsl:~/.claude` / `wsl:~/.codex` placeholders for CLI installs inside WSL.
@@ -315,7 +317,7 @@ The Remote Data Sources form names its independent optional overrides **Remote C
 
 **Settings data and homes:** the **Dashboard Data** cards select Claude-compatible (Claude Code + Cursor), Codex, or both through the same global `dataScope` store used by Remote Data Sources. Every scoped sessions, agents, events, workflow, analytics, token, and cost request re-fetches as soon as the selection changes. The Session Data Locations section independently saves the Claude Code root and the dashboard-specific Codex root; local Cursor discovery follows `~/.cursor` (or `DASHBOARD_CURSOR_HOME`) automatically. Saving the Codex root asks the server to re-arm its live rollout watcher and scan the new `sessions/` tree immediately. **Import History** uses matching Claude Code / Codex tabs: switching tabs reloads source-specific instructions and paths, then sends the selected provider with rescan, folder, and upload actions while provider-tagged WebSocket progress keeps concurrent work isolated; Cursor history is backfilled by its background ingestor without a manual import tab.
 
-**Transcript snapshots:** the `SnapshotStorage` card (`components/SnapshotStorage.tsx`) reads `snapshots` from `GET /api/settings/info` and shows total and per-provider (Claude Code / Codex / Cursor) snapshot size, the compressed share, and the env-configured retention policy. **Compress now** calls the lossless `POST /api/settings/snapshots/compress`. The prune controls (older than N days, keep total under N GB, include orphans) first run a dry run (`POST /api/settings/snapshots/prune`); **Prune** stays disabled until a preview exists for exactly the criteria on screen, editing any field invalidates it, and applying takes a second confirming click that sends `confirm: "PRUNE_SNAPSHOTS"`. Its strings ship in all five locales.
+**Transcript snapshots:** the `SnapshotStorage` card (`components/SnapshotStorage.tsx`) reads `snapshots` from `GET /api/settings/info` and shows total and per-provider (Claude Code / Codex / Cursor) snapshot size, transcript-only compressed share, compact/legacy Cursor store counts, and the env-configured retention policy. Codex explains that its rollouts stay plain for incremental ingestion instead of presenting them as failed compression candidates. **Compress now** calls the lossless `POST /api/settings/snapshots/compress`. The prune controls (older than N days, keep total under N GB, include orphans) first run a dry run (`POST /api/settings/snapshots/prune`); **Prune** stays disabled until a preview exists for exactly the criteria on screen, editing any field invalidates it, and applying takes a second confirming click that sends `confirm: "PRUNE_SNAPSHOTS"`. Its strings ship in all five locales.
 
 **Pricing controls:** the Claude, Cursor, and OpenAI GPT pricing sections use the same title, info-tooltip, **Reset Defaults**, and **Add Model** layout. Each Settings reset button resets only its own provider. Cursor keeps input, cache-write, cache-read, and output rates in its own table, while the GPT tooltip holds the USD-per-million-token units, 272K Short/Long threshold, Fast-mode behavior, pattern matching, manual-update guidance, and unpublished-rate handling that would otherwise crowd the table.
 
@@ -679,7 +681,7 @@ The catalog is built by `lib/paletteCommands.ts` as a pure function of one conte
 | Sessions | `GET /api/sessions?q=` — debounced 180 ms, minimum 2 characters, capped at 6 results |
 | This page | Whatever the mounted page registered via `usePaletteAction` — listed only where it is bound |
 | Projects | `GET /api/sessions/facets` — jumps to `/sessions?cwd=…` |
-| Views | Page sub-tabs and list filters (`/?tab=`, `/kanban?view=`, `/analytics?tab=`, `/sessions?status=`) |
+| Views | Page sub-tabs and Sessions status filters (`/?tab=`, `/kanban?view=`, `/analytics?tab=`, `/sessions?status=`) |
 | Settings | All 13 `SETTINGS_SECTIONS` anchors (`/settings#<id>`) |
 | Agent Config | All 12 `TABS` keys (`/cc-config?tab=<key>`) |
 | Actions | Sound (on/off, volume), Tabby (enable, mute), notifications, provider and per-machine data scope, the five languages, sidebar, reload, history, scroll, copy link, updates, API reference, issues, releases |
@@ -1367,3 +1369,15 @@ The client is a production-ready React application with:
 - 🎨 **Maintainable** - Clear architecture, type-safe, well-documented
 
 For server documentation, see [server/README.md](../server/README.md).
+
+**Cost coverage:** Dashboard and Analytics cost cards label values as API-equivalent estimates, not subscription bills. A keyboard-accessible info icon beside each label owns the disclaimer, current source/product scope, and every model without an applicable rate; each missing-rate provider links to its own Settings editor. Dashboard already renders the full USD amount and has no value tooltip; Analytics keeps only its unabbreviated USD amount in the abbreviated value's `Tip`. Settings keeps the same coverage information inline through `components/CostCoverage.tsx`. Dashboard reloads share one pending request per scope; obsolete scope/unmount responses cannot publish values. A completed remote import during a pending load queues one fresh follow-up after it settles. Analytics accepts any completed same-scope response newer than the last applied response, even while a newer poll is pending, so continuous WebSocket traffic cannot starve the page.
+
+Settings coalesces bursts of remote completion notifications into a shared full reload. If another completion arrives during that reload, it performs one follow-up; changing scope or leaving the page cancels queued work. System-info polling continues independently.
+
+Interrupted remote sync flags become errors on restart without erasing the preceding import receipt.
+
+Remote retries preserve `last_error` and the status-message `error` field while checking. Settings labels it as the last error during retry; a successful sync clears the diagnostic. Previously imported rows and the last successful receipt remain available when transport fails.
+
+Dashboard cost publishes independently of pending or failed activity/count reads, with the same scope-generation guard. The shared load remains pending until all its requests settle, so polls do not create duplicate flights during a reader delay.
+
+Settings coalesces bursts of remote completion notifications into a shared full reload. If another completion arrives during that reload, it performs one follow-up; changing scope or leaving the page cancels queued work. Exact-cost and system-info reads publish and report errors in their own sections, so a slow or failed reader cannot block pricing rules or provider-home settings.

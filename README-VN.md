@@ -314,7 +314,7 @@ Dashboard bao quát toàn bộ vòng đời Agent cục bộ. Các hợp đồng
 | **Tiến độ công việc** | Tiến độ theo chủ sở hữu từ công cụ tác vụ Claude, `TodoWrite` cũ và `update_plan` của Codex. Bản xem trước gọn xuất hiện trên thẻ và hàng; Chi tiết phiên bổ sung các đoạn trạng thái, công việc hiện tại, chủ sở hữu và phân trang 10 hàng. Công việc cấp cao nhất mới xóa trạng thái chưa hoàn tất cũ, còn lịch sử đã hoàn tất được giữ lại. |
 | **Dashboard** | Hai tab **Monitor** và **Health** được lưu bền vững, kết hợp tổng số Agent, hệ thống phân cấp đang hoạt động, hoạt động gần đây, sức khỏe có trọng số theo thành công/cache/lỗi/heap, lưu trữ, công cụ, model, hiệu quả Subagent và chỉ số compaction. Health làm mới mỗi 5 giây từ `/api/settings/info` và `/api/workflows`. |
 | **Bảng Kanban** | Các cột Agent gồm Đang làm việc, Đang chờ, Hoàn tất và Lỗi; các cột phiên bổ sung Đang hoạt động và Bị bỏ dở. Thẻ phân trang 10 mục mỗi lần, chỉ đăng ký chế độ xem WebSocket đang hoạt động, giữ nguyên tiêu đề đầy đủ và giải thích lý do chờ như yêu cầu quyền, kết thúc lượt, đang ở dấu nhắc hoặc bị gián đoạn. |
-| **Phiên** | Lịch sử có thể tìm kiếm, lọc và phân trang phía máy chủ, với chi phí chỉ tính trên trang đang hiển thị và một hàng khởi động Codex tạm thời trong bộ nhớ. Tìm kiếm bao quát `id`, `name` và `cwd` với debounce 300 ms. Tên được lấy lần lượt từ tiêu đề rõ ràng, tiêu đề AI rồi lời nhắc người dùng có ý nghĩa đầu tiên. |
+| **Phiên** | Lịch sử có thể tìm kiếm, lọc và phân trang phía máy chủ, với chi phí chỉ tính trên trang đang hiển thị và một hàng khởi động Codex tạm thời trong bộ nhớ. Bộ chọn nhà cung cấp lọc theo Claude Code, Cursor hoặc Codex nhưng vẫn tuân theo phạm vi sản phẩm đã chọn trong phần hướng dẫn ban đầu hoặc Settings. Tìm kiếm bao quát `id`, `name` và `cwd` với debounce 300 ms. Tên được lấy lần lượt từ tiêu đề rõ ràng, tiêu đề AI rồi lời nhắc người dùng có ý nghĩa đầu tiên. Tiêu đề gốc do Cursor tạo chỉ thay thế tên tạm lấy từ prompt đầu tiên khi metadata nhập liệu chứng minh CCAM sở hữu tên hiện tại; tên thủ công và tên cũ không rõ quyền sở hữu được giữ nguyên. |
 | **Chi tiết phiên** | Thống kê trực tiếp, công việc hiện tại, mức dùng công cụ, Subagent, token, hệ thống phân cấp, dòng thời gian sự kiện có bộ lọc, nhóm theo `tool_use_id` và trình kết xuất riêng cho từng công cụ. Chế độ Hội thoại kết xuất lượt chờ, thông báo hệ thống, Markdown, mã được tô sáng và công cụ có kiểu riêng; banner chờ hiển thị lý do và thời gian đã trôi qua. |
 | **Luồng hoạt động** | Sự kiện thời gian thực có thể tạm dừng, với bộ lọc dùng chung, phân trang phía máy chủ, nhóm, nguồn dự án/phiên/Subagent, liên kết phiên và badge trạng thái Claude/Codex nhất quán. |
 | **Phân tích** | Token theo model, tần suất công cụ, heatmap hoạt động bắt đầu tuần vào Chủ nhật, xu hướng phiên, trạng thái kết nối, skeleton tải khớp bố cục và phân trang cho chú giải dài. |
@@ -326,9 +326,9 @@ Dashboard bao quát toàn bộ vòng đời Agent cục bộ. Các hợp đồng
 | **Hệ thống phân cấp Subagent** | Cây cha-con có thể thu gọn trên Dashboard và Chi tiết phiên tự mở rộng khi các Agent con đang hoạt động. |
 | **Agent nền** | Subagent chạy nền tiếp tục được theo dõi mà không bị hoàn tất sớm. |
 | **Gán công cụ cho Subagent** | `SubagentStop` và quét khi khởi động nhập công cụ JSONL theo từng Subagent, ghép kết quả theo `tool_use_id`, khử trùng lặp, hợp nhất hàng trực tiếp trùng khớp trong 30 giây và dựng lại đúng quan hệ cha lồng nhau từ ID Agent con được tạo. Việc đổi cha là bổ sung và kích hoạt làm mới UI ngay cả khi không chèn hàng. |
-| **Theo dõi chi phí** | Định giá có thể cấu hình theo model và phiên, hỗ trợ mức giá giới thiệu có ngày, nhóm khuyến mãi có thể sửa, chi phí riêng của từng Subagent và tổng an toàn qua compaction. Đọc transcript dùng offset byte tăng dần có cache. |
+| **Theo dõi chi phí** | Ước tính tương đương API—không phải phí thuê bao—dùng mức giá có thể cấu hình theo model, gồm model gốc cụ thể của Cursor và chỉ một bản ghi usage cho mỗi generation. Biểu tượng thông tin hỗ trợ truy cập cạnh nhãn chi phí trên Dashboard và Analytics hiển thị scope đã chọn cùng mọi mức giá còn thiếu; tooltip trên giá trị Analytics chỉ chứa số tiền đầy đủ, còn Settings giữ cùng thông tin coverage ngay trên trang. |
 | **Cache transcript** | Phân tích JSONL tăng dần trích xuất token, compaction, lỗi API, thời lượng lượt, suy luận và metadata mức dùng; phân tích đầy đủ sửa bản trùng lặp cũ, còn phân tích phần đuôi chỉ nối thêm. Mảng bị giới hạn bởi `TRANSCRIPT_CACHE_MAX_ARRAY_LEN`, mặc định `1000`, và mục cache chỉ lưu metadata tệp cùng kết quả đã phân tích. |
-| **Lưu giữ snapshot transcript** | Snapshot bền vững của Claude, Codex và Cursor giữ hội thoại đầy đủ nhất. Bản sao Claude và Cursor mất nguồn được gzip sau khi round-trip đã xác minh; purge xóa snapshot; giới hạn tuổi/kích thước tùy chọn có thể cắt bản sao cũ duy nhất sau bản xem trước chạy thử trong Cài đặt. |
+| **Lưu giữ snapshot transcript** | Snapshot bền vững của Claude, Codex và Cursor giữ hội thoại đầy đủ nhất. Snapshot native-store của Cursor giữ root đang hoạt động, các tham chiếu chỉ có trong bản cũ và chính xác các blob thô tương ứng, đồng thời loại bỏ lịch sử không thể truy cập. Worker cô lập di chuyển tối đa bốn store chỉ còn bản cũ mỗi lần đồng bộ; store nguồn được mở chỉ đọc, khóa theo phiên tuần tự hóa việc cài đặt và lần quét định kỳ không có việc sẽ đợi năm phút trước khi kiểm tra lại. Sau năm lần lỗi với cùng dấu nguồn trong một tiến trình, tệp được giữ lại để sửa sau. Chỉ bản sao JSONL Claude/Cursor đủ điều kiện đã mất nguồn mới được gzip sau khi round-trip được xác minh; snapshot Codex vẫn ở dạng thường. Purge xóa snapshot; giới hạn tuổi/kích thước tùy chọn có thể cắt bản sao cũ duy nhất sau bản xem trước chạy thử trong Cài đặt. |
 | **Thông báo** | VAPID Web Push gửi sự kiện đã cấu hình khi chạy nền hoặc khi trình duyệt đóng, có hỗ trợ âm thanh macOS và điều khiển đăng ký. |
 | **Cảnh báo** | Cài đặt cung cấp Rules, Channels và Activity cho cảnh báo theo mẫu sự kiện, không hoạt động, Agent bị kẹt và token. Quy tắc sự kiện chạy sau khi tiếp nhận; quy tắc thời gian quét mỗi 60 giây. Cảnh báo bền vững dùng cooldown theo quy tắc/phiên, mặc định 300 giây, gửi qua WebSocket, xác nhận và fan-out webhook có phạm vi tới 14 nhà cung cấp được đặt tên hoặc JSON ký chung với secret được che, timeout và retry có giới hạn. |
 | **Thông báo cập nhật** | `git fetch` theo lịch không chặn so sánh checkout với remote chuẩn, rồi hiển thị lệnh cập nhật chính xác trong modal, thanh bên và terminal. CCAM không bao giờ tự pull hay tự khởi động lại. |
@@ -338,7 +338,7 @@ Dashboard bao quát toàn bộ vòng đời Agent cục bộ. Các hợp đồng
 | **Máy chủ MCP (cục bộ)** | Ba transport, stdio, HTTP+SSE và REPL, cung cấp 103 công cụ có kiểu trong 16 module. Một danh mục đã xác thực áp dụng đích localhost hoặc HTTPS, quy tắc bearer token, từ chối redirect, cổng bảo vệ mutation, tải lên 50 MiB mỗi tệp và 100 MiB mỗi lần gọi, phản hồi nhị phân 10 MiB và khôi phục 25 MiB. |
 | **Quy trình** | Mười một phần D3 bao quát điều phối, luồng công cụ, cộng tác, hiệu quả, mẫu, ủy quyền, lỗi, đồng thời, độ phức tạp, compaction và drill-in phiên. Tooltip giải thích đã bản địa hóa, lọc chéo, xuất JSON, làm mới trực tiếp có debounce 3 giây và lần chạy động dựng lại từ journal giữ chi tiết giai đoạn, token, công cụ, thời lượng, lời nhắc và kết quả theo Agent. |
 | **Theo dõi compaction** | Quét transcript tạo Agent/sự kiện compaction có thời lượng bằng không, sửa thời lượng âm cũ, backfill phiên cũ và định kỳ chỉ kiểm tra phiên đang hoạt động qua giá trị `sessions.transcript_path` đã cache. |
-| **Phiên con/Phiên tiếp tục** | Sự kiện mới kích hoạt lại phiên được tiếp tục hoặc mồ côi; một lần quét sau mỗi một phần tư `DASHBOARD_STALE_MINUTES`, giới hạn trong khoảng 60 giây đến 5 phút, phát hiện phiên bị bỏ dở. |
+| **Phiên con/Phiên tiếp tục** | Tương quan `generation_id` của Cursor nối phiên tạm do `/resume` tạo với hội thoại chuẩn, chuyển hướng liên kết cũ và khử trùng lặp hook hoàn tất. Các sự kiện khác vẫn kích hoạt lại phiên được tiếp tục hoặc mồ côi; lượt quét stale có giới hạn tiếp tục phát hiện phiên bị bỏ dở. |
 | **Phát hiện phiên có sẵn** | Nhập khi khởi động đánh dấu transcript mới sửa gần đây là đang hoạt động, còn sự kiện Stop về sau kích hoạt lại phiên đã nhập ở trạng thái hoàn tất hoặc bị bỏ dở trước khi cập nhật. |
 | **Đồng bộ dự án liên tục** | Một lần quét ngay khi khởi động, watcher hệ thống tệp có debounce và poll `DASHBOARD_SESSION_SYNC_MS`, mặc định 30 giây, dùng chung cache mtime và lần quét hợp nhất. Chỉ tệp mới hoặc đã tiến lên được phân tích lại, với phạm vi watcher an toàn trên Linux và broadcast phiên trực tiếp. |
 | **Nguồn dữ liệu từ xa** | Nguồn SSH phản chiếu độc lập thư mục Claude và Codex qua `scp` hoặc `tar` của WSL, gắn `sessions.source`, đối chiếu vòng đời và vẫn khỏe nếu một trong hai nhà cung cấp hoạt động. Polling mặc định 15 giây; fallback cũ chỉ ảnh hưởng nhà cung cấp lỗi. Thông tin xác thực ở lại với SSH của máy chủ. |
@@ -385,13 +385,15 @@ npm run setup
 npm run install-hooks
 ```
 
-Chọn **Claude Code**, **Codex (beta)** hoặc cả hai bằng phím mũi tên, Space và Enter. Hook Claude được lưu trong `~/.claude/settings.json`, còn hook Codex trong `~/.codex/hooks.json`. Cài lại chỉ thay thế các mục CCAM và giữ nguyên hook không liên quan; hành động tương tự có tại **Settings → Hook Configuration**.
+Chọn **Claude Code**, **Codex (beta)** hoặc cả hai bằng phím mũi tên, Space và Enter. Theo mặc định, hook Claude được lưu trong `~/.claude/settings.json`, còn hook Codex trong `~/.codex/hooks.json`. Cài lại chỉ thay thế các mục CCAM và giữ nguyên hook không liên quan; hành động tương tự có tại **Settings → Hook Configuration**.
+
+Thư mục Claude được xác định theo `CLAUDE_HOME || CLAUDE_CONFIG_DIR || ~/.claude`, nên hook và bản ghi hội thoại dùng thư mục đã di chuyển. Khi đặt `CLAUDE_CONFIG_DIR`, Cấu hình Agent đọc `$CLAUDE_CONFIG_DIR/.claude.json`. Tệp khám phá dùng thư mục ứng dụng cục bộ khi thư mục Claude được di chuyển. Với dữ liệu dashboard, thư mục cục bộ hiện có được ưu tiên; nếu không, thư mục `<CLAUDE_HOME>/agent-dashboard` hoặc `~/.claude/agent-dashboard` hiện có được tái sử dụng theo thứ tự đó, còn dữ liệu mới dùng thư mục ứng dụng cục bộ. `DASHBOARD_DATA_DIR` có thể chọn đường dẫn cục bộ khác. `CCAM_NO_AUTO_HOOKS=1` bỏ qua cài hook tự động lúc khởi động và giữ nguyên các mục hook cũ; cài thủ công vẫn hoạt động, còn mục cũ bị thiếu trình xử lý cần được cài lại hoặc xóa. Đường dẫn hook do phiên bản hiện tại cài sẽ thoát im lặng và được báo là chưa cài nếu trình xử lý biến mất. Desktop đã đóng gói lưu đường dẫn Claude ghi đè trong `userData/.env` của Electron khi tự khởi động máy chủ; nếu dùng máy chủ có sẵn, nó dùng tệp môi trường của máy chủ đó. Chế độ phát triển tiếp tục dùng `.env` trong kho mã.
 
 Trong lần khởi chạy đầu tiên, CCAM chỉ kiểm tra những nhà cung cấp đã chọn cho phạm vi dữ liệu hiện tại và đề nghị cài hook còn thiếu. Nếu kiểm tra mức sẵn sàng thất bại, ứng dụng chuyển sang thiết lập thủ công thay vì chặn dashboard.
 
 Quá trình phát hiện nhà cung cấp tiếp tục sau khi thiết lập:
 
-- **Claude Code và Cursor:** Hook Claude cung cấp sự kiện trực tiếp. Cursor không cần hook; chọn Claude Code cũng theo dõi `~/.cursor/chats` và `~/.cursor/projects/*/agent-transcripts`, chụp snapshot hội thoại trước khi Cursor dọn dẹp và tôn trọng `DASHBOARD_CURSOR_HOME`.
+- **Claude Code và Cursor:** Hook Claude cung cấp sự kiện trực tiếp. CCAM tự động hợp nhất các lệnh `stop` và `afterAgentResponse` của mình vào `~/.cursor/hooks.json` mà không thay thế hoặc tách chuỗi lệnh không liên quan; chạy `npm run install-cursor-hooks` để sửa thủ công. Kho chat gốc và bộ theo dõi transcript của Cursor vẫn là đường dự phòng ngoại tuyến, nối ID tạm của `/resume` với hội thoại chuẩn, hợp nhất store gốc, JSONL và lịch sử prompt của alias, chỉ áp dụng tiêu đề được tạo cho tên thuộc quyền sở hữu của bộ nhập, chỉ phân giải `default` khi tìm thấy phản hồi khớp trong bất kỳ store gốc nào của họ alias và tôn trọng `DASHBOARD_CURSOR_HOME`.
 - **Codex:** Hook và việc theo dõi rollout `~/.codex/sessions` theo kiểu tăng dần giữ cho vòng đời, lời nhắc, tiêu đề, công cụ, token, chi phí, compaction, hội thoại và trạng thái WebSocket luôn mới. Tệp lỗi được thử lại riêng; đối chiếu chính xác rollout/tiến trình ngăn thẻ đang hoạt động ảo; tiêu đề `/rename` gốc và lịch sử hội thoại phân trang bằng cursor luôn được cập nhật.
 - **Cả hai:** Thẻ giữ hai lời nhắc người dùng khác nhau gần nhất, kết xuất tệp ảnh đính kèm đã lưu và khử trùng lặp phản hồi Codex lặp lại. Phạm vi chỉ Codex ẩn journal Dynamic Workflow chỉ dành cho Claude.
 
@@ -479,7 +481,7 @@ npm run docker:full:up
 Mọi cổng host mặc định chỉ bind vào loopback: dashboard `4820`, MCP `8819`, Nginx `8080`, Prometheus `9090` và Grafana `3000`. Thư mục Claude và Codex được mount chỉ đọc; named volume lưu bền SQLite và cấu hình do dashboard sở hữu. Nginx proxy UI, REST API có xác thực và WebSocket, còn hook, metrics và MCP bị chặn ở edge trừ khi được bật rõ ràng. Docker target `agent-runtime` tùy chọn bổ sung Claude Code và Codex CLI được ghim phiên bản cho quy trình Run Agent gốc trong container.
 
 > [!IMPORTANT]
-> Cài hook Claude Code/Codex trên host sau khi container khởi động. Với hook đám mây từ xa, đặt `CCAM_DASHBOARD_URL=https://...` và một `CCAM_HOOK_TOKEN` riêng; URL hook không phải loopback bắt buộc dùng HTTPS. Xem [DEPLOYMENT.md](DEPLOYMENT.md).
+> Sau khi container khởi động, cài hook Claude Code/Codex trên host bằng `npm run install-hooks -- --both --dashboard-port 4820` (thay `4820` nếu publish một cổng host khác). Trình cài đặt nhúng đích đã xác minh này vì container chỉ đọc không thể publish mục discovery mà host nhìn thấy. Người dùng Compose hiện tại nên chạy lại lệnh này một lần sau khi nâng cấp để các mục hook do dashboard sở hữu trước đây nhận đích tường minh. Với hook đám mây từ xa, đặt `CCAM_DASHBOARD_URL=https://...` và một `CCAM_HOOK_TOKEN` riêng; URL hook không phải loopback bắt buộc dùng HTTPS. Xem [DEPLOYMENT.md](DEPLOYMENT.md).
 
 ---
 
@@ -514,7 +516,7 @@ sequenceDiagram
 ### Vòng đời hook
 
 1. **Claude Code** phát hook cho phiên, lời nhắc, công cụ, thông báo, Subagent, lượt và thoát.
-2. **`scripts/hook-handler.js`** đọc từng sự kiện từ stdin và phát hiện dashboard đang chạy qua `~/.claude/.agent-dashboard.json` hoặc `CLAUDE_DASHBOARD_PORT`. Trình xử lý gửi một lần cho mỗi thư mục dữ liệu SQLite duy nhất, chọn cổng thấp nhất cho listener trùng lặp nhưng vẫn cấp dữ liệu cho dashboard dùng cơ sở dữ liệu riêng. Mỗi đích được cô lập để gửi an toàn khi lỗi, và trình xử lý thoát trong 5 giây.
+2. **`scripts/hook-handler.js`** đọc từng sự kiện từ stdin và chọn `CCAM_DASHBOARD_URL` trước, sau đó là `CLAUDE_DASHBOARD_PORT` tường minh, rồi mới đến dashboard đang chạy trong tệp đăng ký `.agent-dashboard.json` cục bộ. Khi `CLAUDE_HOME` hoặc `CLAUDE_CONFIG_DIR` di chuyển thư mục Claude, tệp đăng ký nằm trong thư mục ứng dụng cục bộ; với thư mục mặc định, nó nằm dưới `~/.claude`. Trình xử lý lọc theo thư mục Claude chuẩn hóa rồi gửi một lần cho mỗi thư mục dữ liệu SQLite duy nhất, chọn cổng thấp nhất cho listener trùng lặp nhưng vẫn cấp dữ liệu cho dashboard có thư mục Claude khớp và dùng cơ sở dữ liệu riêng. Mỗi đích được cô lập để gửi an toàn khi lỗi, và trình xử lý thoát trong 2,5 giây.
 3. **Máy chủ** commit sự kiện và trạng thái liên quan trong một giao dịch SQLite:
    - Lần liên hệ đầu tạo phiên và Agent chính. `SessionStart` bắt đầu ở trạng thái **Đang chờ**; `UserPromptSubmit` hoặc `PreToolUse` chuyển sang **Đang làm việc**; `PostToolUse` giữ trạng thái làm việc.
    - `Stop` đưa Agent chính về **Đang chờ** trong khi Agent nền tiếp tục. `stop_reason=error` đánh dấu Agent và phiên là **Lỗi**. Thông báo quyền cũng chờ input; chỉ lời nhắc mới hoặc lúc bắt đầu công cụ mới khôi phục lỗi.
@@ -615,7 +617,7 @@ flowchart LR
 | Biến môi trường | Mặc định | Mục đích |
 | --- | --- | --- |
 | `DASHBOARD_PORT` | `4820` | Cổng máy chủ Express. |
-| `CLAUDE_DASHBOARD_PORT` | `4820` | Cổng trình xử lý hook sử dụng. |
+| `CLAUDE_DASHBOARD_PORT` | chưa đặt (discovery) | Ghi đè cổng tường minh cho trình xử lý hook; lưu bền khi cài đặt bằng `--dashboard-port N`. |
 | `NODE_ENV` | `development` | Dùng `production` để phục vụ client đã build. |
 | `DASHBOARD_UPDATE_CHECK` | bật | Đặt `0`, `false` hoặc `off` để tắt kiểm tra upstream theo lịch. |
 | `DASHBOARD_UPDATE_CHECK_INTERVAL_MS` | `300000` | Khoảng thời gian cập nhật, tối thiểu 60,000 ms. **Check now** thủ công vẫn dùng được. |
@@ -741,6 +743,7 @@ Nếu `ccam` không có trên `PATH`, hãy chạy `npm link` một lần từ th
 | `npm run import-history`| Nhập các phiên kế thừa từ `~/.claude/` (cũng chạy khi khởi động) |
 | `npm run reconcile-tokens`| Làm mới tổng token cho các phiên đã nhập (không bao giờ hạ thấp một tổng đã có) |
 | `npm run repair-tokens` | Tính lại tổng token **không thuộc workflow** cho mọi phiên **Claude** còn transcript trên đĩa (tìm trong `~/.claude/projects/` hoặc theo `transcript_path` đã lưu của phiên) và đưa các baseline nén ngữ cảnh về 0; các hàng workflow và Codex được giữ nguyên. Bản sửa một lần cho cơ sở dữ liệu bị ảnh hưởng bởi cách cộng usage theo từng bản ghi trước v2.0.9 hoặc bị thiếu usage của subagent phẳng cùng model. Hãy dừng dashboard trước |
+| `node scripts/repair-codex-output.js --db /path/to/dashboard.db --out plan.json` | Xem trước việc sửa lượng đầu ra Codex: token suy luận đã nằm trong đầu ra. Dừng dashboard trước khi áp dụng `--apply --journal new-backup.json`. Không ghi đè tệp có sẵn; giữ nguyên lịch sử mơ hồ. Đọc bản ghi thường, gzip và Zstd theo luồng. |
 | `DASHBOARD_TOKEN_REPAIR` | Được bật theo mặc định (`1`). Tự động sửa một lần các tổng Token lịch sử bị ảnh hưởng bởi việc cộng phồng theo từng bản ghi hoặc bỏ sót subagent phẳng cùng model. Bản sửa trực tiếp không thể xử lý lại mọi phiên đã hoàn tất, và `replaceTokenUsage` không thể hạ mốc cao cũ. Chạy một lần cho mỗi cơ sở dữ liệu (có marker, hoãn khỏi đường khởi động, bỏ qua khi có dashboard khác dùng chung thư mục dữ liệu) và sao lưu các hàng cũ sang `token_usage_pre_repair_v2` trước. Đặt `0` để bỏ qua và tự chạy `npm run repair-tokens` |
 | `npm run clear-data`    | Xóa tất cả các phiên, tác nhân, sự kiện và việc sử dụng mã thông báo            |
 | `npm run mcp:install`   | Cài đặt các phần phụ thuộc cho gói MCP cục bộ (`mcp/`)       |
@@ -776,6 +779,23 @@ Nếu `ccam` không có trên `PATH`, hãy chạy `npm link` một lần từ th
 | `npm run docker:full:up` | Dashboard + MCP có auth + Nginx + Prometheus + Grafana |
 | `npm run docker:full:down` | Dừng full container stack |
 | `npm run deploy:validate` | Rà soát Docker, Compose, Nginx, Helm, Kustomize, Terraform và one-writer invariant. Kết quả chỉ mang tính tham khảo (thoát 0); đặt `CCAM_DEPLOY_VALIDATE_STRICT=1` để biến thành cổng chặn |
+
+---
+
+Ước tính chi phí dùng giá API đã cấu hình, không phải phí thuê bao. Dashboard và Analytics đặt phạm vi máy/sản phẩm đã chọn cùng danh sách đầy đủ mức giá còn thiếu sau biểu tượng thông tin dùng được bằng bàn phím cạnh nhãn chi phí; tooltip trên giá trị Analytics chỉ chứa số tiền không viết tắt, còn Settings hiển thị cùng thông tin coverage ngay trên trang. Giá mặc định Standard/Fast Short/Long của GPT-6.1 Sol theo bảng OpenAI công bố và không thay thế quy tắc tùy chỉnh đã khớp.
+
+### Ảnh chụp chi phí trước khi nâng cấp
+
+Trước một bản nâng cấp có thể tính lại mức sử dụng, hãy tạo đường cơ sở chỉ đọc; nâng cấp và khởi động lại CCAM, chờ bảo trì lúc khởi động hoàn tất, rồi tạo ảnh chụp thứ hai ở một đường dẫn mới và so sánh. Hãy giữ kín các tệp TSV vì chúng chứa mã phiên và siêu dữ liệu sở hữu. Lệnh kiểm tra thoát với mã 1 nếu đầu vào, đầu ra, lượt đọc cache, lượt ghi cache, lượt ghi cache một giờ, tìm kiếm web, tải nội dung web, thực thi mã hoặc chi phí của một phiên cục bộ hiện có thay đổi; nếu quyền sở hữu chuyển giữa cục bộ và một nguồn hoặc nhà cung cấp khác; hoặc nếu một phiên cục bộ biến mất. Phiên từ xa và phiên mới được báo cáo riêng.
+
+```bash
+node scripts/cost-snapshot.js snapshot --out before.tsv
+# Nâng cấp và khởi động lại CCAM, rồi chờ bảo trì lúc khởi động hoàn tất.
+node scripts/cost-snapshot.js snapshot --out after.tsv
+node scripts/cost-snapshot.js compare before.tsv after.tsv --fail-on-local-change
+```
+
+Sau khi khởi động lại, đồng bộ bị gián đoạn hiển thị lỗi; kết quả nhập trước đó vẫn được giữ. Khôi phục lúc khởi động chỉ chạy khi các marker liveness theo tiến trình trong thư mục dữ liệu SQLite dùng chung chứng minh tiến trình này là dashboard duy nhất còn chạy, kể cả khi các tiến trình dùng các giá trị `CLAUDE_HOME` khác nhau; marker bị thiếu, hỏng hoặc có quyền sở hữu đồng thời sẽ trì hoãn việc khôi phục. Cơ sở dữ liệu bận được thử lại độc lập, nên lỗi khôi phục không thể vô hiệu hóa bộ thăm dò nguồn từ xa. Khi thử lại nguồn từ xa, lỗi gần nhất vẫn hiển thị trong lúc kiểm tra; đồng bộ thành công sẽ xóa lỗi.
 
 ---
 

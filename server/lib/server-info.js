@@ -5,11 +5,13 @@
  * The conventional port is 4820, and a plain `npm start` setup almost always
  * binds it. But more than one dashboard can run on a single machine — most
  * commonly the macOS desktop app side-by-side with `npm run dev`. The hook
- * handler fans out to every live dashboard that uses a **different** SQLite
- * data directory. Servers sharing the same `dataDir` receive hooks through a
- * single lowest-port ingest target so events are never duplicated.
+ * handler fans out to every live dashboard for the hook's resolved Claude home
+ * that uses a **different** SQLite data directory. Servers sharing the same
+ * `dataDir` receive hooks through a single lowest-port ingest target so events
+ * are never duplicated, while unrelated Claude homes never receive the event.
  *
- * The on-disk file is a JSON document under the Claude Code home directory.
+ * The on-disk file is a JSON document under the default Claude Code home,
+ * or under machine-local app data for a relocated Claude home.
  * Every server writes its own entry on startup, prunes any stale entries it
  * finds, and the hook handler reads the file and fans out one POST per live
  * entry. Stale entries (process gone) are dropped on every read.
@@ -21,6 +23,11 @@
  * format — still parse the file successfully and reach at least one live
  * server. The new shape lives under `servers: [...]`.
  *
+ * Recovery ownership uses a separate per-process marker directory inside the
+ * SQLite data directory. Unlike the Claude-home discovery file, these markers
+ * are shared by every process that opens the same database even when those
+ * processes use different `CLAUDE_HOME` values.
+ *
  * Every function here is best-effort and never throws: discovery must never
  * block server startup, and the hook handler must never fail because of it.
  *
@@ -29,15 +36,24 @@
 
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 
-const { getClaudeHome, getDataDir } = require("./claude-home");
+const { getClaudeHome, getDataDir, getMachineStateDir } = require("./claude-home");
 
 /** Conventional dashboard port — used when discovery yields nothing. */
 const DEFAULT_PORT = 4820;
 
+/** Per-process liveness markers shared by every server using one data dir. */
+const DATA_DIR_OWNER_DIRECTORY = ".agent-dashboard-owners";
+
 /** Absolute path of the discovery file. */
 function getServerInfoPath() {
-  return path.join(getClaudeHome(), ".agent-dashboard.json");
+  const claudeHome = path.resolve(getClaudeHome());
+  const defaultHome = path.join(os.homedir(), ".claude");
+  return path.join(
+    claudeHome === defaultHome ? defaultHome : getMachineStateDir(),
+    ".agent-dashboard.json"
+  );
 }
 
 /**
@@ -56,6 +72,23 @@ function normalizeDataDir(dir) {
   }
 }
 
+/** Canonical absolute Claude home used to scope hook delivery. */
+function normalizeClaudeHome(dir) {
+  return normalizeDataDir(dir);
+}
+
+/**
+ * Whether a discovery entry belongs to the Claude home of this process.
+ * Legacy entries without `claudeHome` are safe only in the default home's
+ * private registry; the machine-local relocated-home registry is shared and
+ * cannot safely infer which home created an unscoped entry.
+ */
+function matchesCurrentClaudeHome(server) {
+  const current = normalizeClaudeHome(getClaudeHome());
+  if (server.claudeHome) return normalizeClaudeHome(server.claudeHome) === current;
+  return current === normalizeClaudeHome(path.join(os.homedir(), ".claude"));
+}
+
 /**
  * Grouping key for hook-ingest deduplication. Entries without `dataDir` are
  * treated as unique (legacy servers before this field existed).
@@ -69,11 +102,119 @@ function ingestGroupKey(server) {
 }
 
 /**
+ * Canonical directory containing the effective SQLite database. An explicit
+ * database-file override wins over the broader dashboard data directory.
+ */
+function getOwnershipDataDir() {
+  const dbPath = process.env.DASHBOARD_DB_PATH;
+  if (dbPath) {
+    if (dbPath === ":memory:") return "";
+    const resolvedPath = path.resolve(dbPath);
+    try {
+      // Resolve the file itself, not only its parent: two processes may open
+      // one database through a file symlink whose parent directories differ.
+      return path.dirname(fs.realpathSync(resolvedPath));
+    } catch {
+      // The database may not exist on first startup. Canonicalize the parent
+      // as far as possible and let the normal DB initialization create it.
+      return normalizeDataDir(path.dirname(resolvedPath));
+    }
+  }
+  return normalizeDataDir(getDataDir());
+}
+
+/** Absolute directory containing per-process ownership markers for this DB. */
+function getDataDirOwnerDirectory() {
+  const dataDir = getOwnershipDataDir();
+  return dataDir ? path.join(dataDir, DATA_DIR_OWNER_DIRECTORY) : "";
+}
+
+/** Absolute ownership marker path for a process using this DB. */
+function getDataDirOwnerPath(pid = process.pid) {
+  const ownerDirectory = getDataDirOwnerDirectory();
+  return ownerDirectory && Number.isInteger(pid) && pid > 0
+    ? path.join(ownerDirectory, `${pid}.json`)
+    : "";
+}
+
+/** Publish this process's shared-data ownership marker atomically. */
+function writeDataDirOwner() {
+  let tmpPath = "";
+  try {
+    const ownerDirectory = getDataDirOwnerDirectory();
+    const ownerPath = getDataDirOwnerPath();
+    if (!ownerDirectory || !ownerPath) return false;
+    fs.mkdirSync(ownerDirectory, { recursive: true });
+    tmpPath = `${ownerPath}.${Date.now()}.tmp`;
+    fs.writeFileSync(
+      tmpPath,
+      JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() })
+    );
+    fs.renameSync(tmpPath, ownerPath);
+    return true;
+  } catch {
+    if (tmpPath) {
+      try {
+        fs.unlinkSync(tmpPath);
+      } catch {
+        /* best-effort cleanup */
+      }
+    }
+    return false;
+  }
+}
+
+/**
+ * Read live ownership markers for this data directory. A malformed marker is
+ * ambiguous and returns `null`; dead-process markers are pruned best-effort.
+ *
+ * @returns {Array<{pid: number, startedAt?: string}> | null}
+ */
+function readDataDirOwners() {
+  try {
+    const ownerDirectory = getDataDirOwnerDirectory();
+    if (!ownerDirectory) return null;
+    let names;
+    try {
+      names = fs.readdirSync(ownerDirectory);
+    } catch (error) {
+      if (error?.code === "ENOENT") return [];
+      return null;
+    }
+    const live = [];
+    for (const name of names) {
+      if (!name.endsWith(".json")) continue;
+      const ownerPath = path.join(ownerDirectory, name);
+      let owner;
+      try {
+        owner = JSON.parse(fs.readFileSync(ownerPath, "utf8"));
+      } catch {
+        return null;
+      }
+      if (!Number.isInteger(owner?.pid) || owner.pid <= 0) return null;
+      if (name !== `${owner.pid}.json`) return null;
+      if (isPidAlive(owner.pid)) {
+        live.push(owner);
+      } else {
+        try {
+          fs.unlinkSync(ownerPath);
+        } catch {
+          /* another process may have pruned it */
+        }
+      }
+    }
+    return live;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Read the discovery file and return its `servers` list, normalised. Handles
  * both the new array shape and the legacy single-record shape so a file
  * written by an older server is still understood.
  *
- * @returns {Array<{port: number, pid: number, startedAt: string}>}
+ * @returns {Array<{port: number, pid: number, startedAt: string, dataDir?: string, claudeHome?: string}>}
  */
 function readInfoFile() {
   try {
@@ -165,8 +306,9 @@ function persist(servers) {
  */
 function writeServerInfo(port) {
   if (!Number.isInteger(port) || port <= 0) return;
+  writeDataDirOwner();
   try {
-    const dir = getClaudeHome();
+    const dir = path.dirname(getServerInfoPath());
     fs.mkdirSync(dir, { recursive: true });
     const existing = readInfoFile().filter(
       (s) => Number.isInteger(s.port) && s.port > 0 && s.pid !== process.pid && isPidAlive(s.pid)
@@ -176,6 +318,7 @@ function writeServerInfo(port) {
       pid: process.pid,
       startedAt: new Date().toISOString(),
       dataDir: normalizeDataDir(getDataDir()),
+      claudeHome: normalizeClaudeHome(getClaudeHome()),
     };
     persist([...existing, ours]);
   } catch {
@@ -220,10 +363,10 @@ function resolveAllDashboardPorts() {
 }
 
 /**
- * Ports that should receive hook POSTs. When several live servers share the
- * same SQLite data directory, only the lowest port per directory is returned
- * so parallel instances (Docker + dev, two terminals on the same DB) never
- * double-ingest events.
+ * Ports that should receive hook POSTs. Only servers registered for this
+ * process's resolved Claude home are eligible. When several eligible servers
+ * share the same SQLite data directory, only the lowest port per directory is
+ * returned so parallel instances never double-ingest events.
  *
  * @returns {number[]}
  */
@@ -231,10 +374,16 @@ function resolveHookIngestPorts() {
   const envPort = parseInt(process.env.CLAUDE_DASHBOARD_PORT || "", 10);
   if (Number.isInteger(envPort) && envPort > 0) return [envPort];
 
-  const live = readInfoFile().filter(
+  const allLive = readInfoFile().filter(
     (s) => Number.isInteger(s.port) && s.port > 0 && isPidAlive(s.pid)
   );
-  if (live.length === 0) return [DEFAULT_PORT];
+  if (allLive.length === 0) return [];
+
+  const live = allLive.filter(matchesCurrentClaudeHome);
+  // A registry containing only other homes (or ambiguous legacy entries in
+  // the shared relocated-home registry) must not fall back to a port that may
+  // belong to one of those homes. An empty registry is equally unverified.
+  if (live.length === 0) return [];
 
   const byDataDir = new Map();
   for (const server of live) {
@@ -270,6 +419,23 @@ function peersSharingDataDir() {
 }
 
 /**
+ * Whether the data-directory ownership markers prove this process is the only
+ * live owner of its database. Missing, unreadable, or malformed metadata is
+ * ambiguous so startup repair never rewrites another process's live state.
+ *
+ * @returns {boolean}
+ */
+function hasExclusiveDataDirOwnership() {
+  try {
+    const live = readDataDirOwners();
+    if (!live || !live.some((owner) => owner.pid === process.pid)) return false;
+    return live.every((owner) => owner.pid === process.pid);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Single-port helper kept for callers that have always asked the file for
  * "the" port (e.g. legacy code paths and tests). Returns the first live
  * server's port, or the default if none are alive.
@@ -289,7 +455,11 @@ module.exports = {
   resolveAllDashboardPorts,
   resolveHookIngestPorts,
   peersSharingDataDir,
+  hasExclusiveDataDirOwnership,
   // Exported for tests.
   normalizeDataDir,
+  normalizeClaudeHome,
   ingestGroupKey,
+  getOwnershipDataDir,
+  getDataDirOwnerPath,
 };

@@ -3,7 +3,7 @@
 openapi: 3.0.3
 info:
   title: Agent Dashboard for Claude Code, Cursor, and Codex API
-  version: 2.4.5
+  version: 2.4.6
   description: HTTP API for real-time Claude Code, Cursor, and Codex session monitoring, agent lifecycle tracking, analytics, provider-specific pricing, hooks ingestion, and workflow intelligence.
   contact:
     name: Son Nguyen
@@ -161,6 +161,17 @@ components:
         type: string
         example: claude,codex
       description: 'Comma-separated stored providers to include: `claude`, `cursor`, and/or `codex`. Requesting `claude` also includes Cursor because the product scope groups their local workflows. Omit to include every provider.'
+    ExactSessionProviderQuery:
+      name: provider
+      in: query
+      required: false
+      schema:
+        type: string
+        enum:
+          - claude
+          - cursor
+          - codex
+      description: Exact stored provider for the Sessions list. Intersects the broader `providers` product scope instead of replacing it.
   schemas:
     ErrorObject:
       type: object
@@ -605,7 +616,7 @@ components:
         version:
           type: string
           description: Dashboard release version from package.json
-          example: 2.4.5
+          example: 2.4.6
         timestamp:
           type: string
           format: date-time
@@ -1649,6 +1660,12 @@ components:
           items:
             type: object
             properties:
+              provider:
+                type: string
+                enum:
+                  - claude
+                  - cursor
+                  - codex
               model:
                 type: string
               input_tokens:
@@ -2531,7 +2548,7 @@ components:
           example: github
         source:
           type: string
-          description: Where the definition was found, e.g. `~/.claude.json (top-level)`, `~/.claude.json (projects[<root>])`, or `~/.claude/settings.json`.
+          description: Where the definition was found, e.g. `~/.claude.json (top-level)` or `$CLAUDE_CONFIG_DIR/.claude.json (top-level)` when relocated, or Claude home `settings.json`.
           example: ~/.claude.json (top-level)
         kind:
           type: string
@@ -2573,19 +2590,19 @@ components:
             - GITHUB_TOKEN
     CcConfigMcpResponse:
       type: object
-      description: 'MCP servers split by where they apply: globally to the user, or scoped to the resolved project (cwd) in ~/.claude.json projects[<root>].'
+      description: 'MCP servers split by where they apply: globally to the user, or scoped to the resolved project (cwd) in Claude''s global .claude.json state file.'
       required:
         - user
         - projectScoped
       properties:
         user:
           type: array
-          description: User/global MCP servers (top-level ~/.claude.json plus ~/.claude/settings.json).
+          description: User/global MCP servers (top-level global .claude.json plus resolved Claude home settings.json).
           items:
             $ref: '#/components/schemas/CcConfigMcpServer'
         projectScoped:
           type: array
-          description: MCP servers scoped to the current project root in ~/.claude.json.
+          description: MCP servers scoped to the current project root in global .claude.json.
           items:
             $ref: '#/components/schemas/CcConfigMcpServer'
     CcConfigHookEntry:
@@ -3017,7 +3034,7 @@ components:
               example: /repo
             claudeJson:
               type: string
-              description: Path to ~/.claude.json (resolved from $HOME, not CLAUDE_HOME).
+              description: Path to $CLAUDE_CONFIG_DIR/.claude.json when set, otherwise ~/.claude.json. CLAUDE_HOME does not relocate this file.
               example: /Users/son/.claude.json
         counts:
           type: object
@@ -4278,8 +4295,13 @@ components:
                 - path
                 - files
                 - bytes
+                - transcript_files
                 - compressed_files
                 - compressed_bytes
+                - database_files
+                - database_bytes
+                - compact_database_files
+                - compression_supported
                 - sessions
               properties:
                 path:
@@ -4289,11 +4311,24 @@ components:
                   type: integer
                 bytes:
                   type: integer
+                transcript_files:
+                  type: integer
+                  description: Plain or gzip JSONL snapshots.
                 compressed_files:
                   type: integer
                   description: Files stored as verified `.jsonl.gz` (original transcript gone).
                 compressed_bytes:
                   type: integer
+                database_files:
+                  type: integer
+                  description: Cursor native-store snapshots.
+                database_bytes:
+                  type: integer
+                compact_database_files:
+                  type: integer
+                  description: Cursor stores migrated to the current-root-only compact format.
+                compression_supported:
+                  type: boolean
                 sessions:
                   type: integer
             codex:
@@ -4302,8 +4337,13 @@ components:
                 - path
                 - files
                 - bytes
+                - transcript_files
                 - compressed_files
                 - compressed_bytes
+                - database_files
+                - database_bytes
+                - compact_database_files
+                - compression_supported
                 - sessions
               properties:
                 path:
@@ -4313,11 +4353,24 @@ components:
                   type: integer
                 bytes:
                   type: integer
+                transcript_files:
+                  type: integer
+                  description: Plain or gzip JSONL snapshots.
                 compressed_files:
                   type: integer
                   description: Files stored as verified `.jsonl.gz` (original transcript gone).
                 compressed_bytes:
                   type: integer
+                database_files:
+                  type: integer
+                  description: Cursor native-store snapshots.
+                database_bytes:
+                  type: integer
+                compact_database_files:
+                  type: integer
+                  description: Cursor stores migrated to the current-root-only compact format.
+                compression_supported:
+                  type: boolean
                 sessions:
                   type: integer
             cursor:
@@ -4326,8 +4379,13 @@ components:
                 - path
                 - files
                 - bytes
+                - transcript_files
                 - compressed_files
                 - compressed_bytes
+                - database_files
+                - database_bytes
+                - compact_database_files
+                - compression_supported
                 - sessions
               properties:
                 path:
@@ -4337,11 +4395,24 @@ components:
                   type: integer
                 bytes:
                   type: integer
+                transcript_files:
+                  type: integer
+                  description: Plain or gzip JSONL snapshots.
                 compressed_files:
                   type: integer
                   description: Files stored as verified `.jsonl.gz` (original transcript gone).
                 compressed_bytes:
                   type: integer
+                database_files:
+                  type: integer
+                  description: Cursor native-store snapshots.
+                database_bytes:
+                  type: integer
+                compact_database_files:
+                  type: integer
+                  description: Cursor stores migrated to the current-root-only compact format.
+                compression_supported:
+                  type: boolean
                 sessions:
                   type: integer
         policy:
@@ -4818,6 +4889,20 @@ components:
           type: integer
           description: Number of imported sessions stamped with this source's id.
           example: 50
+        sessions_excluded:
+          type: integer
+          description: Unique session ids excluded because another source or provider owns them.
+          example: 2
+        subagent_files_excluded:
+          type: integer
+          description: Subagent files excluded because their parent session belongs to another source or provider.
+          example: 3
+        excluded_ids:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+          description: Up to 50 excluded native session ids; sessions_excluded is the full count.
         providers:
           type: object
           description: Provider-specific import counters and availability state.
@@ -5130,6 +5215,10 @@ paths:
           example: true
         - $ref: '#/components/parameters/SourcesQuery'
           example: local,4d1f0e2a-7b9c-4c33-8a21-9e0f7b6d4c11
+        - $ref: '#/components/parameters/ProvidersQuery'
+          example: claude,codex
+        - $ref: '#/components/parameters/ExactSessionProviderQuery'
+          example: cursor
         - name: include_transient
           in: query
           schema:
@@ -6869,7 +6958,8 @@ paths:
                   code_execution_hours_estimated: 0.1667
                   code_execution_free_hours: 50
                 unpriced_models:
-                  - model: claude-experimental-preview
+                  - provider: claude
+                    model: claude-experimental-preview
                     input_tokens: 4096
                     output_tokens: 2048
                     cache_read_tokens: 0
@@ -6948,7 +7038,8 @@ paths:
                   code_execution_hours_estimated: 0.1667
                   code_execution_free_hours: 50
                 unpriced_models:
-                  - model: claude-experimental-preview
+                  - provider: claude
+                    model: claude-experimental-preview
                     input_tokens: 4096
                     output_tokens: 2048
                     cache_read_tokens: 0
@@ -7293,22 +7384,37 @@ paths:
                       path: /Users/son/.claude/agent-dashboard/transcripts
                       files: 1702
                       bytes: 692060160
+                      transcript_files: 1702
                       compressed_files: 1210
                       compressed_bytes: 211812352
+                      database_files: 0
+                      database_bytes: 0
+                      compact_database_files: 0
+                      compression_supported: true
                       sessions: 512
                     codex:
                       path: /Users/son/.claude/agent-dashboard/codex-transcripts
                       files: 96
                       bytes: 31457280
+                      transcript_files: 96
                       compressed_files: 0
                       compressed_bytes: 0
+                      database_files: 0
+                      database_bytes: 0
+                      compact_database_files: 0
+                      compression_supported: false
                       sessions: 96
                     cursor:
                       path: /Users/son/.claude/agent-dashboard/cursor-transcripts
                       files: 42
                       bytes: 10485760
+                      transcript_files: 21
                       compressed_files: 18
                       compressed_bytes: 2097152
+                      database_files: 21
+                      database_bytes: 3145728
+                      compact_database_files: 21
+                      compression_supported: true
                       sessions: 21
                   policy:
                     compress: true
@@ -9251,7 +9357,7 @@ paths:
       tags:
         - CcConfig
       summary: List MCP servers
-      description: Read-only. Discovers MCP servers from ~/.claude.json (top-level and projects[<root>]) and ~/.claude/settings.json, split into `user` and `projectScoped`. Header and env VALUES are never returned — only their key NAMES. Read-only by design (the CLI writes these files concurrently). Degrades to empty arrays on errors.
+      description: Read-only. Discovers MCP servers from $CLAUDE_CONFIG_DIR/.claude.json when set (otherwise ~/.claude.json), and resolved Claude home settings.json, split into `user` and `projectScoped`. Header and env VALUES are never returned — only their key NAMES. Read-only by design (the CLI writes these files concurrently). Degrades to empty arrays on errors.
       operationId: ccConfigGetMcp
       parameters:
         - name: cwd

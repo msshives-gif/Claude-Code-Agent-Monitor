@@ -40,6 +40,8 @@ const hooksRouter = require("../routes/hooks");
 const realProbe = liveness.probeLiveCwds;
 const realRolloutProbe = liveness.probeLiveCodexRollouts;
 const realProbeAgentPidLive = liveness.probeAgentPidLive;
+const realAsyncProbe = liveness.probeLiveCwdsAsync;
+const realAsyncRollouts = liveness.probeLiveCodexRolloutsAsync;
 
 const enc = (cwd) => cwd.replace(/[^a-zA-Z0-9]/g, "-");
 const PROJECTS = path.join(CLAUDE_HOME, "projects");
@@ -157,6 +159,8 @@ after(() => {
   liveness.probeLiveCwds = realProbe;
   liveness.probeLiveCodexRollouts = realRolloutProbe;
   liveness.probeAgentPidLive = realProbeAgentPidLive;
+  liveness.probeLiveCwdsAsync = realAsyncProbe;
+  liveness.probeLiveCodexRolloutsAsync = realAsyncRollouts;
   if (server) server.close();
   if (db) db.close();
   try {
@@ -170,6 +174,8 @@ beforeEach(() => {
   liveness.probeLiveCwds = realProbe;
   liveness.probeLiveCodexRollouts = realRolloutProbe;
   liveness.probeAgentPidLive = realProbeAgentPidLive;
+  liveness.probeLiveCwdsAsync = realAsyncProbe;
+  liveness.probeLiveCodexRolloutsAsync = realAsyncRollouts;
 });
 
 describe("isClaudeCommand — claude CLI process matcher", () => {
@@ -488,7 +494,8 @@ describe("watchdog liveness reap", () => {
     await seedSession(sid, cwd);
 
     liveness.probeLiveCwds = () => ({ available: true, cwds: new Set() });
-    hooksRouter.watchdogCheck();
+    liveness.probeLiveCwdsAsync = async () => liveness.probeLiveCwds();
+    await hooksRouter.watchdogCheck();
 
     assert.equal(stmts.getSession.get(sid).status, "completed");
   });

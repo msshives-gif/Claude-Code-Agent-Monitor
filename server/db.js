@@ -112,9 +112,10 @@ function migrateLegacyDatabase(targetPath) {
 }
 
 // Resolution order: explicit DASHBOARD_DB_PATH wins; otherwise the file lives in
-// the shared data dir — DASHBOARD_DATA_DIR if set, else the canonical user-global
-// `~/.claude/agent-dashboard/` (see getDataDir). Resolving every launch path to
-// the same file is what lets the web app and the native apps share ONE database.
+// the shared data dir — DASHBOARD_DATA_DIR if set, else the existing local
+// ~/.claude/agent-dashboard or, for relocated Claude config, machine-local app
+// data (see getDataDir). Resolving every launch path to the same file lets the
+// web app and native apps share one database on a machine.
 const DB_PATH = process.env.DASHBOARD_DB_PATH || path.join(getDataDir(), "dashboard.db");
 const DB_DIR = path.dirname(DB_PATH);
 
@@ -300,6 +301,71 @@ db.exec(`
     output_per_mtok REAL NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
   );
+
+  -- Cursor can emit one generation under a provisional shell id and finish it
+  -- under the canonical resumed conversation id. These tables make that join
+  -- durable, keep old links resolvable, and deduplicate repeated completion
+  -- hooks without discarding distinct aborted/error transitions.
+  CREATE TABLE IF NOT EXISTS cursor_session_aliases (
+    alias_session_id TEXT PRIMARY KEY,
+    canonical_session_id TEXT NOT NULL,
+    generation_id TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    FOREIGN KEY (canonical_session_id) REFERENCES sessions(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS cursor_generations (
+    generation_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    has_transcript INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS cursor_hook_receipts (
+    receipt_key TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    hook_type TEXT NOT NULL,
+    generation_id TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+  );
+
+  -- One authoritative usage snapshot per Cursor generation. The globally
+  -- unique generation id prevents a resumed shell and its canonical session
+  -- from charging the same model turn twice.
+  CREATE TABLE IF NOT EXISTS cursor_turn_usage (
+    generation_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    model TEXT NOT NULL,
+    speed TEXT NOT NULL DEFAULT 'standard',
+    input_tokens INTEGER NOT NULL DEFAULT 0,
+    output_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+    cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS cursor_repair_state (
+    repair_key TEXT PRIMARY KEY,
+    completed_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS cursor_repair_progress (
+    repair_key TEXT PRIMARY KEY,
+    phase TEXT NOT NULL,
+    last_event_id INTEGER NOT NULL DEFAULT 0,
+    merged_count INTEGER NOT NULL DEFAULT 0,
+    removed_count INTEGER NOT NULL DEFAULT 0,
+    usage_count INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_cursor_alias_canonical
+    ON cursor_session_aliases(canonical_session_id);
+  CREATE INDEX IF NOT EXISTS idx_cursor_generation_session ON cursor_generations(session_id);
+  CREATE INDEX IF NOT EXISTS idx_cursor_turn_session ON cursor_turn_usage(session_id);
 
   -- Durable cursor state for append-only Codex rollout JSONL files. Keeping the
   -- last cumulative counters makes duplicate hook/watcher notifications free.
@@ -552,13 +618,51 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_workflows_status ON workflows(status);
 `);
 
+// Early Cursor usage builds keyed turns by (session_id, generation_id). Cursor
+// `/resume` proves generation_id is the stable identity while session_id can
+// change mid-turn, so rebuild that preview schema with a global generation key.
+try {
+  const columns = db.prepare("PRAGMA table_info(cursor_turn_usage)").all();
+  const generation = columns.find((column) => column.name === "generation_id");
+  const session = columns.find((column) => column.name === "session_id");
+  if (generation?.pk !== 1 || session?.pk) {
+    db.exec(`
+      ALTER TABLE cursor_turn_usage RENAME TO cursor_turn_usage_pre_resume;
+      CREATE TABLE cursor_turn_usage (
+        generation_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        model TEXT NOT NULL,
+        speed TEXT NOT NULL DEFAULT 'standard',
+        input_tokens INTEGER NOT NULL DEFAULT 0,
+        output_tokens INTEGER NOT NULL DEFAULT 0,
+        cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+        cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+        FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+      );
+      INSERT OR REPLACE INTO cursor_turn_usage
+        (generation_id, session_id, model, speed, input_tokens, output_tokens,
+         cache_read_tokens, cache_write_tokens, updated_at)
+      SELECT generation_id, session_id, model, speed, input_tokens, output_tokens,
+        cache_read_tokens, cache_write_tokens, updated_at
+      FROM cursor_turn_usage_pre_resume ORDER BY updated_at;
+      DROP TABLE cursor_turn_usage_pre_resume;
+      CREATE INDEX IF NOT EXISTS idx_cursor_turn_session ON cursor_turn_usage(session_id);
+    `);
+  }
+} catch (error) {
+  console.warn("[db] Cursor turn-usage key migration skipped:", error.message);
+}
+
 // Before response-item ingestion existed, Codex terminal event messages were
 // the only available approximation of a tool invocation. Those rows remain
 // useful activity events, but response items now provide the exact call, so
-// clear the old analytical tool marker once to avoid double-counting history.
+// clear remaining old analytical tool markers to avoid double-counting history.
+// Do not rewrite already-cleared events (and their indexes/triggers) on restart.
 db.prepare(
   `UPDATE events SET tool_name = NULL
-   WHERE event_type IN ('codex_exec_command_end', 'codex_mcp_tool_call_end', 'codex_web_search_end')`
+   WHERE tool_name IS NOT NULL
+     AND event_type IN ('codex_exec_command_end', 'codex_mcp_tool_call_end', 'codex_web_search_end')`
 ).run();
 
 // Migrate: link agent rows to a workflow run. Workflow inner-agents are already
@@ -723,6 +827,8 @@ const DEFAULT_GPT_PRICING = [
   // gpt-5 patterns so Codex rollout records are priced rather than reported
   // as unpriced usage.
   gptRate("gpt-6-astra%", "GPT-6 Astra", [10, 1, 12.5, 50], [20, 2, 25, 100], [20, 2, 25, 75]),
+  // Rates checked 2026-10-10: https://developers.openai.com/api/docs/pricing
+  gptRate("gpt-6.1-sol%", "GPT-6.1 Sol", [2, 0.1, 2.5, 10], [4, 0.2, 5, 20], [4, 0.2, 5, 15]),
   gptRate("gpt-6-sol%", "GPT-6 Sol", [2, 0.2, 2.5, 10], [4, 0.4, 5, 20], [4, 0.4, 5, 15]),
   gptRate(
     "gpt-6-luna%",
@@ -788,6 +894,8 @@ const cursorRate = (pattern, name, input, cacheWrite, cacheRead, output) => [
   output,
 ];
 const DEFAULT_CURSOR_PRICING = [
+  cursorRate("grok-4.7-fast%", "Cursor Grok 4.7 (Fast)", 4, 0, 1, 12),
+  cursorRate("grok-4.7%", "Cursor Grok 4.7", 2, 0, 0.5, 6),
   cursorRate("grok-4.6-fast%", "Cursor Grok 4.6 (Fast)", 4, 0, 1, 12),
   cursorRate("grok-4.6%", "Cursor Grok 4.6", 2, 0, 0.5, 6),
   cursorRate("grok-4.5-fast%", "Cursor Grok 4.5 (Fast)", 4, 0, 1, 18),
@@ -856,6 +964,7 @@ seedCursorPricing();
 // values avoid applying a guessed multiplier to unsupported model/tier pairs.
 const GPT_FAST_LONG_RATES = {
   "gpt-6-astra%": [40, 4, 50, 150],
+  "gpt-6.1-sol%": [8, 0.4, 10, 30],
   "gpt-6-sol%": [8, 0.8, 10, 30],
   "gpt-6-luna%": [0.4, 0.04, 0.5, 1.5],
   "gpt-5.6-sol%": [16, 1.6, 20, 60],
@@ -894,6 +1003,21 @@ function seedGptPricing(dbHandle = db) {
     const setLong = dbHandle.prepare(`UPDATE gpt_model_pricing SET
       ${GPT_FAST_LONG_FIELDS.map((field) => `${field} = ?`).join(", ")} WHERE model_pattern = ?`);
     for (const row of rows) {
+      // A previously configured broad rule is a user pricing choice, too.
+      // Do not shadow it when introducing this newly published model default.
+      if (
+        row[0] === "gpt-6.1-sol%" &&
+        dbHandle
+          .prepare("SELECT model_pattern FROM gpt_model_pricing")
+          .all()
+          .some((rule) => {
+            const expression = String(rule.model_pattern)
+              .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+              .replace(/%/g, ".*");
+            return new RegExp(`^${expression}$`, "i").test("gpt-6.1-sol");
+          })
+      )
+        continue;
       if (insert.run(...row).changes) {
         setLong.run(...(GPT_FAST_LONG_RATES[row[0]] || [0, 0, 0, 0]), row[0]);
       }
@@ -1678,6 +1802,52 @@ const CARD_PROMPT_PREVIEW_SQL = `COALESCE(
   )
 )`;
 
+/** Bounded SQLite 3.46+ statistics maintenance; never fall back to a full ANALYZE. */
+function optimizeQueryPlanner(connection = db) {
+  try {
+    const version = connection.prepare("SELECT sqlite_version() AS version").get().version;
+    const [major, minor] = String(version).split(".").map(Number);
+    if (
+      !Number.isInteger(major) ||
+      !Number.isInteger(minor) ||
+      major < 3 ||
+      (major === 3 && minor < 46)
+    )
+      return false;
+    const started = performance.now();
+    console.error(`[db] Optimizing query planner statistics (SQLite ${version})`);
+    connection.pragma("optimize(0x10002)");
+    console.error(
+      `[db] Query planner statistics ready in ${Math.round(performance.now() - started)}ms`
+    );
+    return true;
+  } catch (error) {
+    console.warn("[db] query planner optimization skipped:", error?.message || error);
+    return false;
+  }
+}
+
+// All migrations/index creation have finished. Prepared statements below should
+// be planned using the actual distribution of a populated history database.
+optimizeQueryPlanner();
+
+const TASK_EVENTS_SQL = `SELECT id, session_id, agent_id, event_type, tool_name, summary, created_at,
+  CASE WHEN event_type IN ('TaskCreated', 'TaskCompleted') THEN data END AS data
+  FROM events WHERE session_id = ? AND event_type IN (
+    'TaskCreated', 'TaskCompleted', 'UserPromptSubmit', 'cursor_user_message',
+    'Stop', 'SubagentStop', 'SessionEnd', 'Interrupted'
+  ) ORDER BY created_at ASC, id ASC`;
+
+// Publish the derived counter only after all event-table migrations. Failed
+// initialization leaves the exact legacy COUNT available to every reader.
+try {
+  const started = Date.now();
+  if (require("./lib/global-event-count").ensureGlobalEventCount(db))
+    console.error(`[db] Global event count initialized in ${Date.now() - started}ms`);
+} catch (error) {
+  console.warn("[db] Global event counter unavailable; using COUNT:", error.message);
+}
+
 const stmts = {
   getSession: db.prepare("SELECT * FROM sessions WHERE id = ?"),
   listSessions: db.prepare(
@@ -1700,6 +1870,9 @@ const stmts = {
   ),
   updateSession: db.prepare(
     "UPDATE sessions SET name = COALESCE(?, name), status = COALESCE(?, status), ended_at = COALESCE(?, ended_at), metadata = COALESCE(?, metadata), updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?"
+  ),
+  setSessionProvider: db.prepare(
+    "UPDATE sessions SET provider = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?"
   ),
   reactivateSession: db.prepare(
     "UPDATE sessions SET status = 'active', ended_at = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?"
@@ -1948,16 +2121,7 @@ const stmts = {
   // in lib/task-progress.js). Lifecycle payloads can carry tens of KB each
   // (background_tasks, last_assistant_message), so return them as NULL
   // instead of shipping and parsing them on every list call.
-  listTaskEventsBySession: db.prepare(
-    `SELECT id, session_id, agent_id, event_type, tool_name, summary, created_at,
-       CASE WHEN event_type IN ('TaskCreated', 'TaskCompleted') THEN data END AS data
-     FROM events
-     WHERE session_id = ? AND event_type IN (
-       'TaskCreated', 'TaskCompleted',
-       'UserPromptSubmit', 'cursor_user_message', 'Stop', 'SubagentStop', 'SessionEnd', 'Interrupted'
-     )
-     ORDER BY created_at ASC, id ASC`
-  ),
+  listTaskEventsBySession: db.prepare(TASK_EVENTS_SQL),
   // Codex rollout lifecycle reconciliation reads only the terminal/current
   // turn markers, never the high-volume tool/result records.
   getLatestCodexLifecycleEvent: db.prepare(
@@ -1969,14 +2133,7 @@ const stmts = {
   countEvents: db.prepare("SELECT COUNT(*) as count FROM events"),
   countEventsSince: db.prepare("SELECT COUNT(*) as count FROM events WHERE created_at >= ?"),
 
-  stats: db.prepare(`
-    SELECT
-      (SELECT COUNT(*) FROM sessions) as total_sessions,
-      (SELECT COUNT(*) FROM sessions WHERE status = 'active') as active_sessions,
-      (SELECT COUNT(*) FROM agents WHERE status IN ('working', 'waiting')) as active_agents,
-      (SELECT COUNT(*) FROM agents) as total_agents,
-      (SELECT COUNT(*) FROM events) as total_events
-  `),
+  stats: db.prepare(require("./lib/scoped-stats").GLOBAL_STATS_SQL),
   agentStatusCounts: db.prepare("SELECT status, COUNT(*) as count FROM agents GROUP BY status"),
   sessionStatusCounts: db.prepare("SELECT status, COUNT(*) as count FROM sessions GROUP BY status"),
 
@@ -2072,6 +2229,53 @@ const stmts = {
       baseline_web_search = 0,
       baseline_web_fetch = 0,
       baseline_code_execution = 0
+  `),
+  upsertCursorTurnUsage: db.prepare(`
+    INSERT INTO cursor_turn_usage (
+      generation_id, session_id, model, speed,
+      input_tokens, output_tokens, cache_read_tokens, cache_write_tokens
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(generation_id) DO UPDATE SET
+      session_id = excluded.session_id,
+      model = excluded.model,
+      speed = excluded.speed,
+      input_tokens = excluded.input_tokens,
+      output_tokens = excluded.output_tokens,
+      cache_read_tokens = excluded.cache_read_tokens,
+      cache_write_tokens = excluded.cache_write_tokens,
+      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+  `),
+  sumCursorTurnUsage: db.prepare(`
+    SELECT model, speed,
+      SUM(input_tokens) AS input_tokens,
+      SUM(output_tokens) AS output_tokens,
+      SUM(cache_read_tokens) AS cache_read_tokens,
+      SUM(cache_write_tokens) AS cache_write_tokens
+    FROM cursor_turn_usage WHERE session_id = ? GROUP BY model, speed
+  `),
+  getCursorTurn: db.prepare(`
+    SELECT session_id, model, speed, input_tokens, output_tokens,
+      cache_read_tokens, cache_write_tokens
+    FROM cursor_turn_usage WHERE generation_id = ?
+  `),
+  getCursorEventModel: db.prepare(`
+    SELECT COALESCE(json_extract(data, '$.model_id'), json_extract(data, '$.model')) AS model
+    FROM events
+    WHERE session_id = ? AND json_valid(data) = 1
+      AND json_extract(data, '$.generation_id') = ?
+      AND LOWER(COALESCE(json_extract(data, '$.model_id'), json_extract(data, '$.model'), ''))
+        NOT IN ('', 'default', 'auto', 'unknown')
+    ORDER BY id DESC LIMIT 1
+  `),
+  getLatestCursorSessionModel: db.prepare(`
+    SELECT model FROM cursor_turn_usage
+    WHERE session_id = ? AND LOWER(model) NOT IN ('', 'default', 'auto', 'unknown')
+    ORDER BY updated_at DESC LIMIT 1
+  `),
+  deleteTokenUsageBucket: db.prepare(`
+    DELETE FROM token_usage
+    WHERE session_id = ? AND model = ? AND speed = ?
+      AND inference_geo = 'global' AND service_tier = 'standard' AND context_size = 'short'
   `),
   // Incremental Codex counter deltas. Unlike the full Claude re-parser, Codex
   // rollouts expose an authoritative per-request delta, so we only ever add a
@@ -2472,7 +2676,211 @@ const stmts = {
   ),
 };
 
+// Heavy HTTP counts use a lazy read-only worker. In-memory databases retain
+// their existing synchronous connection; a different worker cannot share them.
+const { ReadonlyQuery, databaseGeneration } = require("./lib/readonly-query");
+const queryReader = DB_PATH === ":memory:" ? null : new ReadonlyQuery(DB_PATH);
+const closeDatabase = db.close.bind(db);
+db.close = () => {
+  if (queryReader) queryReader.close();
+  return closeDatabase();
+};
+
+// Cache only compact counts whose committed generation is verified on both
+// sides of the worker read. Payload reads and rolling time windows bypass it.
+const readCache = { generation: "", results: new Map(), hits: 0, misses: 0 };
+const readCacheFile = (() => {
+  try {
+    const stat = fs.statSync(DB_PATH, { bigint: true });
+    return `${stat.dev}:${stat.ino}`;
+  } catch {
+    return null;
+  }
+})();
+function sameReadCacheFile() {
+  if (readCacheFile === null) return false;
+  try {
+    fs.accessSync(DB_PATH, fs.constants.R_OK);
+    const stat = fs.statSync(DB_PATH, { bigint: true });
+    return `${stat.dev}:${stat.ino}` === readCacheFile;
+  } catch {
+    return false;
+  }
+}
+
+const STATIC_COUNT_SQL = new Set(
+  ["events", "sessions", "agents"].map((table) => `select count(*) as count from ${table}`)
+);
+function compactRead(query, cacheKey, stillCurrent = () => true) {
+  const generation = databaseGeneration(db);
+  const eligible =
+    db.inTransaction === false &&
+    sameReadCacheFile() &&
+    typeof cacheKey === "string" &&
+    cacheKey.length <= 4096;
+  if (eligible) {
+    if (readCache.generation !== generation) {
+      readCache.generation = generation;
+      readCache.results.clear();
+    }
+    if (stillCurrent() && readCache.results.has(cacheKey)) {
+      readCache.hits++;
+      return Promise.resolve(structuredClone(readCache.results.get(cacheKey)));
+    }
+    readCache.misses++;
+  }
+  return queryReader.read(query, generation).then((result) => {
+    // A flight from an older generation must never replace a newer cache.
+    if (
+      eligible &&
+      db.inTransaction === false &&
+      sameReadCacheFile() &&
+      stillCurrent() &&
+      readCache.generation === generation &&
+      databaseGeneration(db) === generation
+    ) {
+      try {
+        if (Buffer.byteLength(JSON.stringify(result)) <= 64 * 1024) {
+          const copy = structuredClone(result);
+          if (readCache.results.size >= 32 && !readCache.results.has(cacheKey))
+            readCache.results.delete(readCache.results.keys().next().value);
+          readCache.results.set(cacheKey, copy);
+          return structuredClone(copy);
+        }
+      } catch {
+        /* Non-compact/non-cloneable results remain uncached. */
+      }
+    }
+    return result;
+  });
+}
+function readCountQuery(sql, params = [], counterSql = null) {
+  sql = sql.trim();
+  if (!queryReader) {
+    const resolved = require("./lib/global-event-count").resolveEventCountSql(db, sql, counterSql);
+    return Promise.resolve(db.prepare(resolved).get(...params));
+  }
+  const query = { op: "get", sql, params, ...(counterSql ? { counterSql } : {}) };
+  const normalized = sql.replace(/\s+/g, " ").toLowerCase();
+  const cacheKey =
+    STATIC_COUNT_SQL.has(normalized) && params.length === 0 ? JSON.stringify(query) : null;
+  return compactRead(query, cacheKey);
+}
+
+function readRowsQuery(sql, params = [], probe = null) {
+  sql = sql.trim();
+  if (!queryReader) {
+    if (probe) {
+      const rows = db.prepare(probe.sql).all(...probe.params);
+      if (rows.length === probe.limit) return Promise.resolve(rows);
+    }
+    return Promise.resolve(db.prepare(sql).all(...params));
+  }
+  return queryReader.read(
+    { op: probe ? "page" : "all", sql, params, ...(probe ? { probe } : {}) },
+    databaseGeneration(db)
+  );
+}
+
+function readEventPageSync(page, count) {
+  return db.transaction(() => {
+    let events;
+    if (page.probe) {
+      const rows = db.prepare(page.probe.sql).all(...page.probe.params);
+      if (rows.length === page.probe.limit) events = rows;
+    }
+    if (!events) events = db.prepare(page.sql).all(...(page.params || []));
+    const resolved = require("./lib/global-event-count").resolveEventCountSql(
+      db,
+      count.sql,
+      count.counterSql ?? null
+    );
+    const { count: total } = db.prepare(resolved).get(...(count.params || []));
+    return { events, total };
+  })();
+}
+
+// Page payloads and their exact total must describe one SQLite snapshot, even
+// when a hook commits between the page query and count/counter resolution.
+// The worker measures payload bytes first; a page too large for its heap is
+// read here on the main thread, exactly as it was before the worker existed.
+function readEventPageQuery(page, count) {
+  page = { ...page, sql: page.sql.trim() };
+  count = { ...count, sql: count.sql.trim() };
+  if (!queryReader) return Promise.resolve(readEventPageSync(page, count));
+  const sizeSql = (sql) =>
+    `SELECT id, IFNULL(length(CAST(summary AS BLOB)), 0) + IFNULL(length(CAST(data AS BLOB)), 0) AS bytes FROM (${sql})`;
+  const measured = {
+    ...page,
+    sizeSql: sizeSql(page.sql),
+    fetchSql: "SELECT * FROM events WHERE id IN (SELECT value FROM json_each(?))",
+    ...(page.probe ? { probe: { ...page.probe, sizeSql: sizeSql(page.probe.sql) } } : {}),
+  };
+  return queryReader.read({ op: "eventPage", page: measured, count }, databaseGeneration(db)).then(
+    (result) => (result.overflow ? readEventPageSync(page, count) : result),
+    (error) => {
+      if (error?.cause?.code === "ERR_WORKER_OUT_OF_MEMORY") return readEventPageSync(page, count);
+      throw error;
+    }
+  );
+}
+
+// Keep usage and all provider rate cards on one worker snapshot. Otherwise a
+// pricing edit during the await could price old usage using a newer rate card.
+function readCostQuery(sql, params = []) {
+  sql = sql.trim();
+  if (!queryReader)
+    return Promise.resolve({
+      dailyTokens: db.prepare(sql).all(...params),
+      rules: stmts.listPricing.all(),
+      gptRules: stmts.listGptPricing.all(),
+      cursorRules: stmts.listCursorPricing.all(),
+    });
+  return queryReader.read({ op: "cost", sql, params }, databaseGeneration(db));
+}
+
+function readDashboardStats(sources, providers, todayStart) {
+  if (!queryReader) {
+    const scoped = require("./lib/scoped-stats");
+    const isScoped = !!sources || !!providers;
+    return Promise.resolve({
+      ...(isScoped
+        ? scoped.statsOverview(db, sources, providers)
+        : db.prepare(scoped.globalStatsSql(db)).get()),
+      events_today: (isScoped
+        ? scoped.countEventsToday(db, sources, providers, todayStart)
+        : stmts.countEventsSince.get(todayStart)
+      ).count,
+      agents_by_status: Object.fromEntries(
+        (isScoped
+          ? scoped.agentStatusCounts(db, sources, providers)
+          : stmts.agentStatusCounts.all()
+        ).map((row) => [row.status, row.count])
+      ),
+      sessions_by_status: Object.fromEntries(
+        (isScoped
+          ? scoped.sessionStatusCounts(db, sources, providers)
+          : stmts.sessionStatusCounts.all()
+        ).map((row) => [row.status, row.count])
+      ),
+    });
+  }
+  const query = { op: "stats", sources, providers, todayStart };
+  const cacheKey =
+    typeof todayStart === "string" && Number.isFinite(Date.parse(todayStart))
+      ? JSON.stringify(query)
+      : null;
+  return compactRead(query, cacheKey);
+}
+
 module.exports = {
+  optimizeQueryPlanner,
+  readCountQuery,
+  readRowsQuery,
+  readEventPageQuery,
+  readCostQuery,
+  readDashboardStats,
+  TASK_EVENTS_SQL,
   db,
   stmts,
   DB_PATH,

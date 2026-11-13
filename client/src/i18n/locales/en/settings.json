@@ -2,7 +2,7 @@
   "title": "Settings",
   "subtitle": "Manage pricing, notifications, data, and hooks",
   "exportData": "Export Data",
-  "acrossSessions": "Across all tracked sessions",
+  "acrossSessions": "Within the selected data scope",
   "basedOnUsage": "Based on per-model token usage",
   "tabby": {
     "title": "Tabby companion",
@@ -139,6 +139,7 @@
     "title": "Dashboard Data",
     "description": "Choose which product’s sessions, tokens, costs, and activity appear across the app. The change takes effect immediately and remains independent from the machine data-source filter.",
     "claude": "Claude Code",
+    "cursor": "Cursor",
     "codex": "Codex",
     "both": "Both",
     "claudeDescription": "Show Claude Code and Cursor data.",
@@ -325,7 +326,12 @@
     "total": "Total",
     "files_one": "{{formatted}} file",
     "files_other": "{{formatted}} files",
-    "compressedShare": "{{compressed}} of {{total}} files compressed",
+    "compressedShare": "{{compressed}} of {{total}} transcript files compressed",
+    "incrementalPlain": "Kept plain for incremental ingestion",
+    "compactStores_one": "{{formatted}} compact chat store · {{size}}",
+    "compactStores_other": "{{formatted}} compact chat stores · {{size}}",
+    "legacyStores_one": "{{formatted}} legacy chat store pending compaction",
+    "legacyStores_other": "{{formatted}} legacy chat stores pending compaction",
     "policy": "Compression: {{compression}} · Age cap: {{age}} · Size cap: {{size}} (set with the DASHBOARD_SNAPSHOT_* environment variables)",
     "on": "on",
     "off": "off",
@@ -631,7 +637,8 @@
     "purgeData": "Also delete the sessions imported from this source (cannot be undone)",
     "deleteAndPurge": "Remove + delete data",
     "removeKeep": "Remove (keep data)",
-    "remoteSourceBadgeTitle": "Collected from a remote machine"
+    "remoteSourceBadgeTitle": "Collected from a remote machine",
+    "retryLastError": "Retrying. Last error:"
   },
   "cursorPathsNote": "Cursor is included with the Claude Code dashboard scope. Local history is discovered and snapshotted from ~/.cursor automatically; remote Cursor folders are not synced by Claude-only SSH imports."
 }

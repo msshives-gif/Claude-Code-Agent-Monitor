@@ -315,7 +315,7 @@ Dashboard 覆盖完整的本地 Agent 生命周期。详细运行契约仍见相
 | **任务进度** | 汇总 Claude 任务工具、旧版 `TodoWrite` 与 Codex `update_plan` 的按归属进度。卡片和表格行显示紧凑预览；会话详情增加状态分段、当前工作、归属信息和每页 10 行的分页。新的顶层工作会清除陈旧的未完成状态，已完成历史仍保留。 |
 | **Dashboard** | 持久化的 **Monitor** 和 **Health** 标签页汇总 Agent 总量、活跃层级、最近活动、加权的成功率/缓存/错误/堆内存健康度，以及存储、工具、模型、Subagent 效能和压缩指标。Health 每 5 秒从 `/api/settings/info` 和 `/api/workflows` 刷新。 |
 | **Kanban 看板** | Agent 列覆盖 Working、Waiting、Completed 和 Error，会话列另含 Active 和 Abandoned。卡片每次显示 10 张，仅订阅当前 WebSocket 视图，保留完整标题，并说明权限输入、回合完成、提示符空闲或中断等等待原因。 |
-| **会话** | 可搜索、可筛选、服务端分页的历史记录，费用仅按可见页计算，并包含临时的内存 Codex 启动行。搜索以 300 ms 防抖匹配 `id`、`name` 和 `cwd`。名称依次取显式标题、AI 标题和首条有意义的用户提示。 |
+| **会话** | 可搜索、可筛选、服务端分页的历史记录，费用仅按可见页计算，并包含临时的内存 Codex 启动行。提供方选择器可进一步筛选 Claude Code、Cursor 或 Codex，同时遵循引导页或 Settings 中选择的产品范围。搜索以 300 ms 防抖匹配 `id`、`name` 和 `cwd`。名称依次取显式标题、AI 标题和首条有意义的用户提示。只有导入元数据能够证明当前名称由 CCAM 管理时，Cursor 原生生成标题才会替换临时的首条提示回退名；手动名称和归属不明确的旧名称保持不变。 |
 | **会话详情** | 实时统计、当前工作、工具用量、Subagent、Token、层级、筛选后的事件时间线、`tool_use_id` 分组和工具专用渲染器。对话视图渲染排队回合、系统通知、Markdown、高亮代码和样式化工具；等待横幅显示原因和已等待时长。 |
 | **活动流** | 可暂停的实时事件流，带共享筛选器、服务端分页、分组、项目/会话/Subagent 来源、会话链接，以及一致的 Claude/Codex 状态徽标。 |
 | **分析** | 模型 Token、工具频率、从周日开始的活动热力图、会话趋势、连接状态、与布局匹配的加载骨架和分页长图例。 |
@@ -327,9 +327,9 @@ Dashboard 覆盖完整的本地 Agent 生命周期。详细运行契约仍见相
 | **Subagent 层级** | Dashboard 和会话详情中的可折叠父子树会在子项活跃时自动展开。 |
 | **后台 Agent** | 后台 Subagent 会持续受跟踪，不会过早完成。 |
 | **Subagent 工具归属** | `SubagentStop` 和启动扫描导入每个 Subagent 的 JSONL 工具，按 `tool_use_id` 配对结果并去重，在 30 秒内合并匹配的实时行，再根据已生成的子项 ID 重建真实嵌套父级。重新归属只追加变更，即使未插入行也会触发 UI 刷新。 |
-| **成本跟踪** | 可配置的按模型和按会话定价支持带日期的介绍价、可编辑促销类别、每个 Subagent 自身的成本，以及跨压缩安全的总计。Transcript 读取使用缓存的增量字节偏移。 |
+| **成本跟踪** | API 等价估算（并非订阅扣费）使用可配置的按模型费率，包括 Cursor 的具体原生模型，并且每个 generation 只记录一次用量。Dashboard 与 Analytics 的成本标签旁提供无障碍信息图标，用于显示所选范围及所有缺失费率；Analytics 数值的 Tooltip 仅显示完整金额，Settings 在页面内显示相同的覆盖信息。 |
 | **Transcript 缓存** | 增量 JSONL 解析提取 Token、压缩、API 错误、回合时长、思考和用量元数据；完整解析修复旧版重复，尾部解析保持只追加。数组上限为 `TRANSCRIPT_CACHE_MAX_ARRAY_LEN`，默认 `1000`，条目仅存文件元数据和解析结果。 |
-| **Transcript 快照保留** | 持久的 Claude、Codex 和 Cursor 快照保存最完整的对话。源文件已消失的 Claude 和 Cursor 副本会在往返验证后 gzip 压缩；清除会删除快照；可选年龄/大小上限可在 Settings 试运行预览后清理唯一的旧副本。 |
+| **Transcript 快照保留** | 持久的 Claude、Codex 和 Cursor 快照保存最完整的对话。Cursor 原生存储快照会保留实时根、仅旧版存在的引用及其精确原始 Blob，同时排除不可达历史。隔离 Worker 每次同步最多迁移四个仅旧版 Store；源 Store 以只读方式打开，每个会话的锁会串行化安装，空的定时扫描会等待五分钟再检查。同一源标记失败五次后，本进程会停止重试并保留文件以待后续修复。只有符合条件且源文件已消失的 Claude/Cursor JSONL 副本会在往返验证后 gzip 压缩；Codex 快照保持未压缩。清除会删除快照；可选年龄/大小上限可在 Settings 试运行预览后清理唯一的旧副本。 |
 | **通知** | VAPID Web Push 在后台或浏览器关闭时发送配置的事件，并支持 macOS 音频和订阅控制。 |
 | **告警** | Settings 提供 Rules、Channels 和 Activity，用于事件模式、不活动、Agent 卡住和 Token 告警。事件规则在摄取后运行，时间规则每 60 秒扫描。持久告警按规则/会话冷却，默认 300 秒，并支持 WebSocket 投递、确认，以及按范围扇出至 14 个命名 Provider 或带脱敏 Secret、超时和有界重试的通用签名 JSON。 |
 | **更新提醒** | 非阻塞定时 `git fetch` 将当前检出与规范远程比较，再在模态框、侧边栏和终端显示准确的更新命令。CCAM 从不自行拉取或重启。 |
@@ -339,7 +339,7 @@ Dashboard 覆盖完整的本地 Agent 生命周期。详细运行契约仍见相
 | **MCP Server（本地）** | stdio、HTTP+SSE 和 REPL 三种传输在 16 个模块中暴露 103 个类型化工具。统一的已验证目录强制 localhost 或 HTTPS 目标、Bearer Token 规则、拒绝重定向、变更门禁、每文件 50 MiB 和每调用 100 MiB 上传、10 MiB 二进制响应，以及 25 MiB 恢复。 |
 | **工作流** | 11 个 D3 区域覆盖编排、工具流、协作、效能、模式、委派、错误、并发、复杂度、压缩和会话下钻。本地化说明 Tooltip、交叉筛选、JSON 导出、3 秒防抖的实时刷新，以及从日志重建的动态运行，会保留每个 Agent 的阶段、Token、工具、时长、提示和结果详情。 |
 | **压缩跟踪** | Transcript 扫描创建零时长的压缩 Agent/事件、修复旧版负时长、回填旧会话，并通过缓存的 `sessions.transcript_path` 值定期只检查活跃会话。 |
-| **子会话/恢复会话** | 新事件会重新激活恢复或孤立会话；每隔 `DASHBOARD_STALE_MINUTES` 的四分之一执行一次扫描，间隔限制在 60 秒至 5 分钟，用于发现已废弃会话。 |
+| **子会话/恢复会话** | Cursor 通过 `generation_id` 将 `/resume` 启动的临时会话合并到规范会话，重定向旧链接，并对重复完成 Hook 去重。其他新事件仍会重新激活恢复或孤立会话，受限的过期扫描继续发现已废弃会话。 |
 | **既有会话检测** | 启动导入会将最近修改的 Transcript 标记为活跃；之后到达的 Stop 事件会先重新激活已导入的 completed 或 abandoned 会话，再更新状态。 |
 | **连续项目同步** | 立即启动扫描、防抖文件系统监听器与 `DASHBOARD_SESSION_SYNC_MS` 轮询共用 mtime 缓存和合并扫描，默认 30 秒。只重新解析新增或有进展的文件，监听范围适配 Linux，并实时广播会话。 |
 | **远程数据源** | SSH 数据源通过 `scp` 或 WSL `tar` 分别镜像 Claude 和 Codex 主目录，标记 `sessions.source`，协调生命周期，并在任一 Provider 正常时保持健康。默认每 15 秒轮询；陈旧回退仅影响失败的 Provider。凭据保留在宿主 SSH 中。 |
@@ -385,13 +385,15 @@ npm run setup
 npm run install-hooks
 ```
 
-使用方向键、Space 和 Enter 选择 **Claude Code**、**Codex (beta)** 或两者。Claude Hook 存储在 `~/.claude/settings.json`，Codex Hook 存储在 `~/.codex/hooks.json`。重新安装只替换 CCAM 条目并保留无关 Hook；同一操作也可在 **Settings → Hook Configuration** 中执行。
+使用方向键、Space 和 Enter 选择 **Claude Code**、**Codex (beta)** 或两者。默认情况下，Claude Hook 存储在 `~/.claude/settings.json`，Codex Hook 存储在 `~/.codex/hooks.json`。重新安装只替换 CCAM 条目并保留无关 Hook；同一操作也可在 **Settings → Hook Configuration** 中执行。
+
+Claude 主目录按 `CLAUDE_HOME || CLAUDE_CONFIG_DIR || ~/.claude` 解析，因此 Hook 和转录使用迁移后的目录。设置 `CLAUDE_CONFIG_DIR` 后，Agent 配置读取 `$CLAUDE_CONFIG_DIR/.claude.json`。只要 Claude 主目录已迁移，发现文件就使用本机应用数据目录。对于仪表盘数据，现有本机数据目录优先；否则依次复用现有的 `<CLAUDE_HOME>/agent-dashboard` 或 `~/.claude/agent-dashboard`，新数据则使用本机应用数据目录。`DASHBOARD_DATA_DIR` 可选择其他本地路径。`CCAM_NO_AUTO_HOOKS=1` 会跳过启动时自动安装并保留旧版条目；手动安装仍可使用，处理器缺失的旧版条目应重新安装或删除。本版本安装的 Hook 路径如果处理器后来消失，会静默退出并显示为未安装。打包的桌面版在自行启动服务器时将主目录覆盖值保存在 Electron 的 `userData/.env` 中；采用现有服务器时使用该服务器的环境文件。开发模式继续使用仓库 `.env`。
 
 首次启动时，CCAM 只检查当前数据范围所选的 Provider，并提示安装缺少的 Hook。若就绪检查失败，则回退到手动设置，不会阻塞 Dashboard。
 
 设置完成后，Provider 发现会持续运行：
 
-- **Claude Code 和 Cursor：** Claude Hook 提供实时事件。Cursor 无需 Hook；选择 Claude Code 后也会监视 `~/.cursor/chats` 和 `~/.cursor/projects/*/agent-transcripts`，在 Cursor 清理前保存对话快照，并遵循 `DASHBOARD_CURSOR_HOME`。
+- **Claude Code 和 Cursor：** Claude Hook 提供实时事件。CCAM 会自动将自己的 `stop` 与 `afterAgentResponse` 命令安全合并进 `~/.cursor/hooks.json`，不会替换或拆分无关的命令链；也可运行 `npm run install-cursor-hooks` 手动修复。Cursor 原生聊天存储与 Transcript 监听仍作为离线回退，将 `/resume` 临时 ID 关联到规范会话，合并原生 Store、JSONL 与别名提示历史，仅为导入流程拥有的名称采用生成标题，仅在别名会话族任一原生 Store 中找到匹配响应时解析 `default`，并遵循 `DASHBOARD_CURSOR_HOME`。
 - **Codex：** Hook 与 `~/.codex/sessions` rollout 增量监听共同保持生命周期、提示、标题、工具、Token、成本、压缩、对话和 WebSocket 状态最新。坏文件会独立重试；精确的 rollout/进程匹配可防止幽灵活跃卡片；原生 `/rename` 标题和基于游标分页的对话历史会实时更新。
 - **Both：** 卡片保留最近两条不同的人类提示，渲染持久化图片附件，并对重复的 Codex 响应去重。仅 Codex 的范围会隐藏只适用于 Claude 的 Dynamic Workflow 日志。
 ### 3. 启动
@@ -487,7 +489,7 @@ npm run docker:full:up
 宿主机端口默认仅绑定 loopback：Dashboard `4820`、MCP `8819`、Nginx `8080`、Prometheus `9090`、Grafana `3000`。Claude/Codex home 只读挂载，命名卷保存 SQLite 与 Dashboard 配置。Nginx 代理 UI、认证 REST 与 WebSocket，默认在边缘阻止 Hook、指标和 MCP。
 
 > [!IMPORTANT]
-> Hook 必须在宿主机安装。远程 Hook 使用 `CCAM_DASHBOARD_URL=https://...` 和 `CCAM_HOOK_TOKEN`；非 loopback URL 必须使用 HTTPS。详见 [DEPLOYMENT.md](DEPLOYMENT.md)。
+> 容器启动后，请在宿主机运行 `npm run install-hooks -- --both --dashboard-port 4820` 安装 Claude Code/Codex Hook（若发布了其他宿主机端口，请替换 `4820`）。安装器会嵌入这个已验证目标，因为只读容器无法发布宿主机可见的发现条目。现有 Compose 用户升级后应重新运行一次该命令，让旧的 Dashboard 自有 Hook 条目获得显式目标。远程 Hook 使用 `CCAM_DASHBOARD_URL=https://...` 和 `CCAM_HOOK_TOKEN`；非 loopback URL 必须使用 HTTPS。详见 [DEPLOYMENT.md](DEPLOYMENT.md)。
 
 ---
 
@@ -519,7 +521,7 @@ sequenceDiagram
 ### Hook 生命周期
 
 1. **Claude Code** 发出会话、提示、工具、通知、Subagent、回合和退出 Hook。
-2. **`scripts/hook-handler.js`** 从 stdin 读取每个事件，并通过 `~/.claude/.agent-dashboard.json` 或 `CLAUDE_DASHBOARD_PORT` 发现实时 Dashboard。每个独立 SQLite 数据目录只发送一次；对于重复监听器选择最低端口，同时仍向使用不同数据库的 Dashboard 提供事件。投递采用故障安全设计，每个目标彼此隔离，处理器会在 5 秒内退出。
+2. **`scripts/hook-handler.js`** 从 stdin 读取每个事件，依次选择 `CCAM_DASHBOARD_URL`、显式 `CLAUDE_DASHBOARD_PORT`，最后选择本地 `.agent-dashboard.json` 注册表中的实时 Dashboard。`CLAUDE_HOME` 或 `CLAUDE_CONFIG_DIR` 迁移 Claude 主目录时，注册表位于本机应用数据目录；默认主目录时位于 `~/.claude`。它先按规范化 Claude 主目录筛选，再对每个独立 SQLite 数据目录发送一次；对于重复监听器选择最低端口，同时仍向使用不同数据库且主目录匹配的 Dashboard 提供事件。投递采用故障安全设计，每个目标彼此隔离，处理器会在 2.5 秒内退出。
 3. **服务器** 在一个 SQLite 事务中提交事件及相关状态：
    - 首次接触会创建会话和主 Agent。`SessionStart` 从 **Waiting** 开始；`UserPromptSubmit` 或 `PreToolUse` 将其移至 **Working**；`PostToolUse` 让它保持工作中。
    - `Stop` 将主 Agent 恢复为 **Waiting**，后台 Agent 继续运行。`stop_reason=error` 将 Agent 和会话标记为 **Error**。权限通知同样会等待输入；只有新的提示或工具启动可从错误中恢复。
@@ -617,7 +619,7 @@ flowchart LR
 | 环境变量 | 默认值 | 用途 |
 | --- | --- | --- |
 | `DASHBOARD_PORT` | `4820` | Express 服务器端口。 |
-| `CLAUDE_DASHBOARD_PORT` | `4820` | Hook Handler 使用的端口。 |
+| `CLAUDE_DASHBOARD_PORT` | 未设置（自动发现） | Hook Handler 使用的显式端口覆盖；可在安装时通过 `--dashboard-port N` 持久化。 |
 | `NODE_ENV` | `development` | 设为 `production` 时提供构建后的客户端。 |
 | `DASHBOARD_UPDATE_CHECK` | 已启用 | 设为 `0`、`false` 或 `off` 可禁用定时上游检查。 |
 | `DASHBOARD_UPDATE_CHECK_INTERVAL_MS` | `300000` | 更新检查间隔，最小 60,000 ms。手动 **Check now** 仍可使用。 |
@@ -742,6 +744,7 @@ ccam help [command…] | commands [--json] | completion bash|zsh|fish | version
 | `npm run import-history` | 从 `~/.claude/` 导入历史会话（启动时也会运行） |
 | `npm run reconcile-tokens` | 刷新已导入会话的 Token 总计（不会降低已有的总计） |
 | `npm run repair-tokens` | 为每个 Transcript 仍在磁盘上的 **Claude** 会话（在 `~/.claude/projects/` 中查找，或按会话已保存的 `transcript_path`）重新推导**非 workflow** 的 Token 总计，并将上下文压缩基线清零；workflow 与 Codex 行保持不变。这是针对 v2.0.9 之前按记录累加用量而虚高，或遗漏同模型扁平子 Agent 用量的数据库的一次性修复。请先停止 Dashboard |
+| `node scripts/repair-codex-output.js --db /path/to/dashboard.db --out plan.json` | 预览 Codex 输出用量修复：推理用量已包含在输出中。应用 `--apply --journal new-backup.json` 前先停止仪表板。不会覆盖已有文件；有歧义的历史记录保持不变。以流方式读取普通、gzip 和 Zstd 记录。 |
 | `DASHBOARD_TOKEN_REPAIR` | 默认启用（`1`）。一次性自动修复受按记录虚高或遗漏同模型扁平子 Agent 影响的历史 Token 总计。实时修复无法重新处理所有已完成会话，而 `replaceTokenUsage` 也无法降低旧的高水位标记。每个数据库只运行一次（有标记文件、延后于启动路径、当另一个 Dashboard 共用数据目录时跳过），并会先将旧行快照到 `token_usage_pre_repair_v2`。设为 `0` 可跳过，改用 `npm run repair-tokens` 手动修复 |
 | `npm run clear-data` | 删除所有会话、Agent、事件和 Token 用量 |
 | `npm run mcp:install` | 安装本地 MCP 包（`mcp/`）的依赖 |
@@ -777,6 +780,23 @@ ccam help [command…] | commands [--json] | completion bash|zsh|fish | version
 | `npm run docker:full:up` | Dashboard + 认证 MCP + Nginx + Prometheus + Grafana |
 | `npm run docker:full:down` | 停止完整容器栈 |
 | `npm run deploy:validate` | 审查 Docker、Compose、Nginx、Helm、Kustomize、Terraform 与单 writer 约束。结果仅供参考（退出码 0）；设置 `CCAM_DEPLOY_VALIDATE_STRICT=1` 可将其变为硬性门禁 |
+
+---
+
+费用估算采用已配置的 API 费率，并非订阅扣费。Dashboard 与 Analytics 将所选机器/产品范围和完整的缺失费率列表放在成本标签旁支持键盘操作的信息图标中；Analytics 数值的 Tooltip 仅显示未缩写金额，Settings 则在页面内显示相同的覆盖信息。GPT-6.1 Sol 的 Standard/Fast Short/Long 默认值依据 OpenAI 公布的费率，且不会覆盖已有的匹配自定义规则。
+
+### 升级前的成本快照
+
+在可能重新统计用量的升级前，先创建只读基线；升级并重启 CCAM，等待启动维护完成后，再用新路径创建第二份快照并比较。请妥善保管 TSV 文件：其中包含会话标识和归属元数据。如果已有本地会话的输入、输出、缓存读取、缓存写入、一小时缓存写入、Web 搜索、Web 获取、代码执行或成本发生变化；归属在本地与其他来源或提供方之间变更；或本地会话消失，检查命令会以状态码 1 退出。远程会话和新增会话会单独报告。
+
+```bash
+node scripts/cost-snapshot.js snapshot --out before.tsv
+# 升级并重启 CCAM，然后等待启动维护完成。
+node scripts/cost-snapshot.js snapshot --out after.tsv
+node scripts/cost-snapshot.js compare before.tsv after.tsv --fail-on-local-change
+```
+
+重启后，中断的远程同步显示为错误，之前的导入记录仍然保留。只有当共享 SQLite 数据目录中的逐进程存活标记证明当前进程是唯一运行中的 Dashboard 时，启动恢复才会执行；即使进程使用不同的 `CLAUDE_HOME`，这些标记也彼此可见。标记缺失、损坏或存在并发归属时会延后恢复。数据库忙时会独立重试，因此恢复失败不会禁用远程轮询器。远程重试会在再次检查时保留最近的错误提示；同步成功后清除。
 
 ---
 

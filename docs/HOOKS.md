@@ -23,7 +23,7 @@ Comprehensive guide to integrating with Claude Code's hook system for real-time 
 
 Claude Code provides a hook system that allows external tools to receive real-time events during agent execution. Agent Dashboard uses these hooks to capture session lifecycle, tool executions, and notifications.
 
-> **Cursor:** Cursor does not need to reach a tool hook before appearing. A filesystem watcher imports `~/.cursor/chats/*/<session>/meta.json` at `agent` startup and its `prompt_history.json` on submit; compatible hook envelopes and the later native transcript add tool/assistant detail. Startup and periodic scans still backfill sessions created while the dashboard was offline.
+> **Cursor:** Cursor does not need to reach a tool hook before appearing. A filesystem watcher imports `~/.cursor/chats/*/<session>/meta.json` at `agent` startup, while CCAM's merge-safe `stop` and `afterAgentResponse` completion hooks add exact lifecycle and token usage. The later native store/JSONL adds conversation detail; startup and periodic scans still backfill sessions created while the dashboard was offline.
 
 ```mermaid
 graph TB
@@ -158,6 +158,9 @@ graph TB
 ```bash
 # Install hooks
 npm run install-hooks
+
+# Host hooks feeding the default Compose port (persists the explicit target)
+npm run install-hooks -- --both --dashboard-port 4820
 ```
 
 The installer is interactive: use arrow keys, <kbd>Space</kbd>, then <kbd>Enter</kbd> to select Claude Code, Codex (beta), or both. It starts with Claude Code selected. Existing dashboard hook entries are detected and warned about before replacement; unrelated entries remain untouched. The same multi-select is available from **Settings → Hook Configuration → Install hooks**.
@@ -167,6 +170,27 @@ On a browser's first dashboard visit, select the provider data to display and th
 > [!IMPORTANT]
 > **Hooks are a host-side step.** Claude Code runs on your host, so the hook
 > command must reference a `hook-handler.js` path that exists on the **host**.
+> Compose mounts the Claude home read-only, so it cannot publish a discovery
+> entry the host can trust. Use `--dashboard-port` when installing host hooks;
+> replace `4820` if the container is published on another host port.
+> Existing Compose installations should rerun the command once after upgrading;
+> the installer updates only this dashboard's hook entries in place.
+
+The Claude home resolves from `CLAUDE_HOME`, then `CLAUDE_CONFIG_DIR`, then
+`~/.claude`. When either variable relocates Claude home, server discovery uses
+machine-local app data so synced settings cannot mix ports and PIDs from different machines.
+Startup installation can be disabled with `CCAM_NO_AUTO_HOOKS=1`; an explicit
+`npm run install-hooks` or in-app installation still works. The opt-out leaves
+legacy entries unchanged, so reinstall or remove an entry whose old handler is
+missing. Commands installed by the current installer check for their handler
+before loading it, so a stale path in a synced `settings.json` or a portable
+build exits successfully without disrupting Claude Code. Hook status reports a
+missing current-format handler as not installed so setup can repair the entry.
+For monitoring on each machine, install hooks from that
+machine's current dashboard build. New dashboard data defaults to machine-local
+app data with `CLAUDE_CONFIG_DIR`; an existing custom Claude home data directory
+or `~/.claude/agent-dashboard` is reused if machine-local data does not yet
+exist. SQLite and its WAL files must not be synced.
 
 ### Remote and cloud hook delivery
 
@@ -255,8 +279,9 @@ implementation notes.
 > Run `npm run install-hooks` on the host — never inside a container. When run
 > inside Docker/Podman, the installer **refuses** and exits non-zero (issue
 > #193): a container-internal path written into a bind-mounted `~/.claude` would
-> break every host hook with `MODULE_NOT_FOUND`. The host handler POSTs to
-> `http://localhost:4820`, which a containerized dashboard already publishes.
+> break every host hook with `MODULE_NOT_FOUND`. Install with
+> `npm run install-hooks -- --both --dashboard-port 4820` so the host commands
+> carry the container's verified published port instead of relying on discovery.
 > (Escape hatch for running Claude Code *inside* the same container:
 > `CCAM_ALLOW_CONTAINER_HOOKS=1 npm run install-hooks`.)
 
@@ -583,7 +608,7 @@ flowchart LR
 The real handlers are intentionally small. `scripts/hook-handler.js` and
 `scripts/codex-hook-handler.js` parse stdin and delegate delivery to
 `scripts/hook-transport.js`. Local mode fans out to one live dashboard per
-unique SQLite data directory. Remote mode uses `CCAM_DASHBOARD_URL`, requires
+unique SQLite data directory for the same resolved Claude home. Remote mode uses `CCAM_DASHBOARD_URL`, requires
 HTTPS outside loopback, reads `CCAM_HOOK_TOKEN` or `CCAM_HOOK_TOKEN_FILE`, and
 sends `x-ccam-hook-token`. Requests resolve when the body is flushed, not when
 the dashboard replies, so a slow or unavailable server never delays the agent
@@ -596,18 +621,23 @@ fail silently with exit code 0.
 > 1. If `CLAUDE_DASHBOARD_PORT` is set in the environment, the handler treats
 >    it as an explicit operator override and POSTs to that single port —
 >    no discovery, no fan-out (useful for tests and container setups).
-> 2. Otherwise it reads `~/.claude/.agent-dashboard.json`, a JSON document
+> 2. Otherwise it reads the local `.agent-dashboard.json` registry, a JSON document
 >    that lists every dashboard server currently running on the machine.
->    Each server appends its `{port, pid, startedAt, dataDir}` entry on
+>    Each server appends its `{port, pid, startedAt, dataDir, claudeHome}` entry on
 >    startup and removes it on a clean shutdown. The handler **prunes any
->    entry whose PID is no longer alive** and POSTs the hook payload to one
+>    entry whose PID is no longer alive**, keeps only entries whose canonical
+>    `claudeHome` matches the hook process, and POSTs the hook payload to one
 >    port per **unique SQLite data directory** (lowest port wins when Docker
->    and `npm run dev` share `~/.claude/agent-dashboard`).
-> 3. If neither yields a target, the handler falls back to `4820`.
+>    and `npm run dev` share `~/.claude/agent-dashboard`). Legacy unscoped
+>    entries are accepted only in the default home's private registry.
+> 3. If no registered server matches, the handler sends nowhere rather than
+>    inferring that port `4820` belongs to the current Claude home. An explicit
+>    `CLAUDE_DASHBOARD_PORT` remains the opt-in override.
 >
-> Dashboards with **different** databases (e.g. the packaged desktop app using
-> its own Application Support data dir alongside `npm run dev`) still each
-> receive hooks. Dashboards sharing one database never double-ingest events.
+> Dashboards for the same Claude home with **different** databases (e.g. the
+> packaged desktop app using its own Application Support data dir alongside
+> `npm run dev`) still each receive hooks. Dashboards sharing one database
+> never double-ingest events, and dashboards for another Claude home receive none.
 
 ---
 
@@ -673,11 +703,11 @@ graph TB
 
 ### Transcript-derived sync
 
-Cursor uses the same fail-safe hook transport where available, but its native lifecycle starts under `~/.cursor/chats`, not in the later JSONL. The watcher creates `provider = 'cursor'` rows from `meta.json` at CLI launch, changes the main agent from waiting to working when `prompt_history.json` gains a submitted turn, persists a deduplicated `cursor_user_message` for Timeline/last-active state, and broadcasts the same session/agent/event WebSocket frames as hooks. A hook payload whose `transcript_path` matches `~/.cursor/projects/*/agent-transcripts/<session>/<session>.jsonl` is still classified as Cursor. The enrichment pass joins the canonical transcript when it arrives, updates native title/cwd/turn metadata, imports sibling `subagents/*.jsonl`, and snapshots the files under the dashboard data directory.
+Cursor combines the fail-safe native watcher with completion hooks. On startup CCAM atomically merges its `stop` and `afterAgentResponse` commands into `~/.cursor/hooks.json`, preserving unrelated commands and file mode; `npm run install-cursor-hooks` performs the same idempotent repair manually. The watcher still creates `provider = 'cursor'` rows from `meta.json` at CLI launch and records deduplicated `cursor_user_message` activity when `prompt_history.json` advances. `stop` supplies the exact turn boundary, while `afterAgentResponse` is usage-only and never pollutes Timeline with a duplicate completion event. Exact receipt hashes suppress repeated delivery without collapsing distinct status, text, or token payloads.
 
-Cursor has no Stop-equivalent that the sync can rely on, so its turn lifecycle is derived from activity. A main agent that is `working` with no tool in flight and no awaiting-input flag moves to **Waiting** once neither its `~/.cursor` files nor a hook have advanced for `DASHBOARD_WORKING_IDLE_SECONDS` (default 120 s). After 10 minutes without activity the session completes. A prompt that is only discovered after that window, for example while the dashboard was down, updates history without reviving the agent. The first sync after boot and every 5 minutes after that also complete any live-status agents still attached to `completed`/`abandoned` Cursor sessions. These are rows older builds left showing **Working** indefinitely, which the stale sweep never examined because it only looks at `active` sessions.
+Cursor completion payloads carry a stable `generation_id`, although a `/resume` command can emit the first event under a short-lived shell `session_id` and later report the canonical conversation ID. CCAM records that generation identity, chooses the transcript-bearing session as canonical, transactionally moves events/agents/token rows and references, keeps a durable alias for old URLs, and charges each generation once. Session endpoints resolve aliases and Session Detail replaces the stale URL. Hook model `default` is resolved from the matching assistant response in Cursor's native `store.db`, or from the preceding generation when the store is unavailable. Cursor reports inclusive input plus cache buckets, so CCAM subtracts cached input before populating the ordinary input bucket.
 
-Startup and periodic `cursor-ingest` sweeps also discover sessions that existed before the dashboard or never emitted a hook. This is the backfill path for older placeholder cards: when `meta.json` carries no title, the sweep reads the chat name read-only from the Cursor IDE's `User/globalStorage/state.vscdb` (`DASHBOARD_CURSOR_STATE_DB` overrides the path) and falls back to the first prompt, then `Cursor session <id>`, if that store is missing, locked, or unrecognized. Before JSONL exists, Conversation reads synthesize stable user-message rows from prompt history; once the transcript arrives, matching ids replace those rows without duplicates. Reads then resolve the original path first and the durable snapshot second, so messages and tool calls survive Cursor cleanup. `DASHBOARD_CURSOR_HOME` overrides the root and `DASHBOARD_CURSOR_SYNC_MS=0` disables only the polling fallback—filesystem watching remains active.
+Startup and periodic `cursor-ingest` sweeps also discover sessions that existed before the dashboard or never emitted a hook. The enrichment pass joins the canonical JSONL, imports sibling `subagents/*.jsonl`, and snapshots JSONL plus a compact native store before Cursor cleanup. The compact store reconciles the current root with legacy-only references, preserves repeated and parser-opaque raw blobs byte-for-byte, and excludes Cursor's unreachable historical roots. Source databases attach through read-only non-creating SQLite URIs, and a recoverable per-session lock serializes live snapshots with worker migration. A legacy full `store.db` is deleted only after root containment, raw structure, and source bytes verify. Legacy-only migration runs in a heap-limited worker, at most four stores per sync, without delaying ingestion; empty scheduled scans back off for five minutes, while attempted or incomplete work retries on the next sync. An unchanged source is excluded after five failures in one process and remains available for later repair. Conversation reads prefer ordered messages/tool calls from a complete readable store and otherwise use the richer JSONL, with prompt history only as the pre-transcript fallback. Duplicate transcript roots choose the more complete file. The first startup repair correlates historical multi-ID generations, imports available completion usage, removes usage-only response events, and exactly deduplicates repeated Stop rows; a marker makes the repair one-time. Native activity timing remains the safety net: an uncompleted working agent moves to **Waiting** after `DASHBOARD_WORKING_IDLE_SECONDS`, and the existing ten-minute completion/healing rules remain in force. `DASHBOARD_CURSOR_HOME` overrides the root and `DASHBOARD_CURSOR_SYNC_MS=0` disables only polling—filesystem watching remains active.
 
 On every event that carries a `transcript_path`, the shared `TranscriptCache` re-reads the JSONL (incrementally) and the ingestor keeps three session fields in sync with what the user is actually doing in the CLI:
 
